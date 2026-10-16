@@ -1,0 +1,27 @@
+[
+  {
+    "find": "boss",
+    "replace": "trùm",
+    "match_word": true
+  },
+  {
+    "find": "level",
+    "replace": "cấp độ",
+    "match_word": true
+  },
+  {
+    "find": "lv",
+    "replace": "cấp",
+    "match_word": true
+  },
+  {
+    "find": "PK",
+    "replace": "pê ca",
+    "match_word": true
+  },
+  {
+    "find": "NPC",
+    "replace": "en pi xi",
+    "match_word": true
+  }
+]

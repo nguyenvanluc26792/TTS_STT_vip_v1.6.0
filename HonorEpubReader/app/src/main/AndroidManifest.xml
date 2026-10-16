@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="LReader"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
+        android:hardwareAccelerated="true"
+        android:windowSoftInputMode="adjustResize"
+        android:theme="@style/Theme.HonorEpubReader">
+
+        <meta-data android:name="android.notch_support" android:value="true" />
+        <meta-data android:name="notch.config" android:value="portrait|landscape" />
+        <meta-data android:name="android.max_aspect" android:value="2.4" />
+
+        <!-- Primary Reader Activity: Matches MagicOS whitelist for 番茄免费小说 (com.dragon.read) -->
+        <activity
+            android:name="com.dragon.read.reader.ui.ReaderActivity"
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Aliases to guarantee matching across all MagicOS service queries -->
+        <activity-alias
+            android:name="com.dragon.read.reader.ReaderActivity"
+            android:targetActivity="com.dragon.read.reader.ui.ReaderActivity"
+            android:exported="true" />
+
+        <activity-alias
+            android:name="com.dragon.read.pages.main.MainFragmentActivity"
+            android:targetActivity="com.dragon.read.reader.ui.ReaderActivity"
+            android:exported="true" />
+
+        <activity-alias
+            android:name="com.dz.business.reader.ui.page.ReaderActivity"
+            android:targetActivity="com.dragon.read.reader.ui.ReaderActivity"
+            android:exported="true" />
+
+        <activity-alias
+            android:name="com.dz.business.splash.ui.SplashActivity"
+            android:targetActivity="com.dragon.read.reader.ui.ReaderActivity"
+            android:exported="true" />
+
+        <service
+            android:name="com.dragon.read.reader.ui.DragonBridgeAccessibilityService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+    </application>
+
+</manifest>

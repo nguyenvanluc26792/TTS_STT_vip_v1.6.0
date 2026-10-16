@@ -1,0 +1,2906 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Epub Voice Reader - Đọc Truyện Giọng AI</title>
+  <link href="https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,300;0,400;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-color: #fbf7ee;
+      --card-bg: #ffffff;
+      --text-color: #2c2523;
+      --text-muted: #79716b;
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --highlight: rgba(79, 70, 229, 0.12);
+      --highlight-border: #4f46e5;
+      --border-color: #e7e5e4;
+      --player-height: 84px;
+    }
+
+    body.theme-dark {
+      --bg-color: #18181b;
+      --card-bg: #27272a;
+      --text-color: #f4f4f5;
+      --text-muted: #a1a1aa;
+      --highlight: rgba(129, 140, 248, 0.18);
+      --highlight-border: #818cf8;
+      --border-color: #3f3f46;
+    }
+
+    body.theme-light {
+      --bg-color: #ffffff;
+      --card-bg: #f8fafc;
+      --text-color: #0f172a;
+      --text-muted: #64748b;
+      --highlight: rgba(59, 130, 246, 0.12);
+      --highlight-border: #3b82f6;
+      --border-color: #e2e8f0;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: background-color 0.2s, color 0.2s;
+    }
+
+    /* Header */
+    header {
+      height: 60px;
+      border-bottom: 1px solid var(--border-color);
+      background-color: var(--card-bg);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      z-index: 10;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 1.15rem;
+      color: var(--primary);
+      cursor: pointer;
+    }
+
+    .header-center {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      max-width: 45%;
+      overflow: hidden;
+    }
+
+    .book-title-meta {
+      font-weight: 700;
+      font-size: 0.95rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .progress-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: rgba(16, 185, 129, 0.12);
+      color: #059669;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .progress-badge:hover {
+      background: rgba(16, 185, 129, 0.2);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn {
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.88rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--border-color);
+      background: var(--card-bg);
+      color: var(--text-color);
+      transition: all 0.15s;
+    }
+    .btn:hover { background-color: var(--border-color); }
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+    .btn-primary:hover { background: var(--primary-hover); }
+
+    /* Main Container (Toàn màn hình đọc sách khi ẩn sidebar) */
+    .main-container {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 60px - var(--player-height));
+      overflow: hidden;
+      position: relative;
+    }
+
+    main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 35px 20px 80px;
+      display: flex;
+      justify-content: center;
+      scroll-behavior: smooth;
+    }
+
+    .reader-content {
+      max-width: 820px;
+      width: 100%;
+      font-family: 'Merriweather', serif;
+      line-height: 1.88;
+      font-size: 18px;
+    }
+
+    .chapter-title-heading {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 1.65rem;
+      font-weight: 700;
+      margin-bottom: 28px;
+      padding-bottom: 14px;
+      border-bottom: 2px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .paragraph-item {
+      margin-bottom: 20px;
+      padding: 8px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .paragraph-item:hover {
+      background-color: rgba(0, 0, 0, 0.04);
+    }
+    body.theme-dark .paragraph-item:hover {
+      background-color: rgba(255, 255, 255, 0.05);
+    }
+    .paragraph-item.active {
+      background-color: var(--highlight);
+      border-left: 4px solid var(--highlight-border);
+      font-weight: 500;
+    }
+    .paragraph-item.skipped {
+      opacity: 0.38;
+      text-decoration: line-through;
+      font-style: italic;
+    }
+
+    /* Floating Context Menu (Hiện khi nhấn giữ hoặc chuột phải vào đoạn văn) */
+    .para-context-menu {
+      position: fixed;
+      display: none;
+      z-index: 2000;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+      padding: 6px;
+      min-width: 220px;
+      animation: menuPop 0.15s ease-out;
+      user-select: none;
+    }
+    @keyframes menuPop {
+      from { opacity: 0; transform: scale(0.92) translateY(5px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .context-menu-header {
+      padding: 6px 12px 8px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 240px;
+    }
+    .context-menu-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text-color);
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+    .context-menu-item:hover {
+      background: var(--highlight);
+    }
+    .context-menu-item.danger {
+      color: #ef4444;
+    }
+    .context-menu-item.danger:hover {
+      background: rgba(239, 68, 68, 0.1);
+    }
+    .context-menu-item.success {
+      color: #10b981;
+    }
+    .context-menu-item.success:hover {
+      background: rgba(16, 185, 129, 0.1);
+    }
+
+    /* Chỉ báo cuối chương & cuộn sang chương mới */
+    .chapter-end-indicator {
+      margin-top: 45px;
+      margin-bottom: 35px;
+      text-align: center;
+      user-select: none;
+    }
+    .end-divider {
+      height: 1px;
+      background: var(--border-color);
+      margin-bottom: 22px;
+      opacity: 0.7;
+    }
+    .end-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 24px;
+      border-radius: 24px;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      font-size: 0.88rem;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .end-badge:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 14px rgba(79, 70, 229, 0.15);
+    }
+
+    /* Màn hình trống */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      height: 100%;
+      gap: 16px;
+      color: var(--text-muted);
+    }
+    .empty-dropzone {
+      border: 2px dashed var(--border-color);
+      padding: 45px 35px;
+      border-radius: 16px;
+      background: var(--card-bg);
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .empty-dropzone:hover {
+      border-color: var(--primary);
+    }
+
+    /* Drawer Mục Lục (Tự động ẩn, trượt ra khi bấm nút) */
+    .drawer-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      z-index: 100;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.25s ease;
+    }
+    .drawer-overlay.open {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .chapter-drawer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 360px;
+      max-width: 85vw;
+      height: 100vh;
+      background: var(--card-bg);
+      box-shadow: 4px 0 25px rgba(0,0,0,0.2);
+      z-index: 101;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(-100%);
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .chapter-drawer.open {
+      transform: translateX(0);
+    }
+
+    .drawer-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 700;
+      font-size: 1.05rem;
+    }
+    .drawer-search {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .drawer-search input {
+      width: 100%;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-color);
+      color: var(--text-color);
+      outline: none;
+    }
+    .drawer-list {
+      flex: 1;
+      overflow-y: auto;
+      list-style: none;
+    }
+    .drawer-item {
+      padding: 13px 20px;
+      font-size: 0.92rem;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: background 0.15s;
+    }
+    .drawer-item:hover { background-color: var(--highlight); }
+    .drawer-item.active {
+      background-color: var(--highlight);
+      color: var(--primary);
+      font-weight: 700;
+      border-left: 4px solid var(--primary);
+    }
+
+    /* Modal Tủ Sách (Lưu tối đa 10 cuốn) */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 110;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.25s ease;
+    }
+    .modal-overlay.open {
+      opacity: 1;
+      visibility: visible;
+    }
+    .library-modal {
+      width: 650px;
+      max-width: 92vw;
+      max-height: 85vh;
+      background: var(--card-bg);
+      border-radius: 16px;
+      box-shadow: 0 15px 40px rgba(0,0,0,0.25);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transform: scale(0.95);
+      transition: transform 0.2s ease;
+    }
+    .modal-overlay.open .library-modal {
+      transform: scale(1);
+    }
+    .modal-header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 700;
+      font-size: 1.15rem;
+    }
+    .modal-body {
+      padding: 16px 24px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .book-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      margin-bottom: 12px;
+      background: var(--bg-color);
+      transition: all 0.15s;
+    }
+    .book-card:hover {
+      border-color: var(--primary);
+    }
+    .book-card-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      overflow: hidden;
+    }
+    .book-card-info h4 {
+      font-size: 0.98rem;
+      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .book-card-info p {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    /* Thanh điều khiển âm thanh đáy */
+    .audio-player-bar {
+      height: var(--player-height);
+      background-color: var(--card-bg);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      z-index: 10;
+      box-shadow: 0 -4px 16px rgba(0,0,0,0.05);
+    }
+
+    .player-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 260px;
+    }
+    .voice-select {
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      background: var(--card-bg);
+      color: var(--text-color);
+      font-weight: 600;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .player-controls {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .play-btn {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(79, 70, 229, 0.35);
+      transition: transform 0.15s, background 0.15s;
+    }
+    .play-btn:hover {
+      transform: scale(1.05);
+      background: var(--primary-hover);
+    }
+    .control-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-color);
+      font-size: 1.3rem;
+      padding: 6px;
+      border-radius: 6px;
+    }
+    .control-btn:hover { background: var(--border-color); }
+
+    /* Thanh trượt tốc độ mượt mà */
+    .player-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      min-width: 320px;
+      justify-content: flex-end;
+    }
+    .speed-slider-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-color);
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+    }
+    .speed-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100px;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border-color);
+      outline: none;
+      cursor: pointer;
+    }
+    .speed-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--primary);
+      cursor: pointer;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    }
+    .speed-badge {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--primary);
+      min-width: 42px;
+      text-align: right;
+    }
+
+    /* Toast */
+    .toast-popup {
+      position: fixed;
+      top: 75px;
+      right: 24px;
+      background: #10b981;
+      color: #ffffff;
+      padding: 12px 20px;
+      border-radius: 10px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+      font-size: 0.92rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 1000;
+      transform: translateY(-20px);
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      pointer-events: none;
+    }
+    .toast-popup.show {
+      transform: translateY(0);
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .spinner {
+      border: 3px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top: 3px solid #fff;
+      width: 20px;
+      height: 20px;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    /* =====================================================================
+       MOBILE RESPONSIVE & ADAPTIVE STYLES
+       ===================================================================== */
+    .mobile-only { display: none !important; }
+    .desktop-only { display: inline-flex !important; }
+    .mobile-actions-bar { display: none; }
+
+    /* Drawer menu tiện ích trượt từ phải sang trên điện thoại */
+    .mobile-menu-drawer {
+      position: fixed;
+      inset: 0;
+      z-index: 120;
+      visibility: hidden;
+      opacity: 0;
+      transition: all 0.25s ease;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      justify-content: flex-end;
+    }
+    .mobile-menu-drawer.open {
+      visibility: visible;
+      opacity: 1;
+    }
+    .mobile-menu-panel {
+      width: 330px;
+      max-width: 86vw;
+      height: 100%;
+      background: var(--card-bg);
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: -5px 0 25px rgba(0,0,0,0.25);
+    }
+    .mobile-menu-drawer.open .mobile-menu-panel {
+      transform: translateX(0);
+    }
+    .mobile-menu-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 18px;
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: var(--text-color);
+      border-bottom: 1px solid var(--border-color);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .mobile-menu-item:hover, .mobile-menu-item:active {
+      background: var(--highlight);
+    }
+
+    @media (max-width: 768px) {
+      :root {
+        --player-height: 116px;
+      }
+      .desktop-only { display: none !important; }
+      .mobile-only { display: inline-flex !important; }
+      .desktop-actions { display: none !important; }
+      
+      header {
+        height: 52px;
+        padding: 0 10px;
+      }
+      .brand-title-text { display: none; }
+      .header-center {
+        max-width: 48%;
+        gap: 6px;
+      }
+      .book-title-meta {
+        font-size: 0.82rem;
+        max-width: 135px;
+      }
+      .mobile-actions-bar {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .btn-mobile-quick {
+        padding: 6px 10px;
+        font-size: 0.88rem;
+        border-radius: 8px;
+        line-height: 1;
+      }
+
+      /* Audio player bar trên điện thoại màn hình đứng (2 tầng riêng biệt) */
+      .audio-player-bar {
+        height: var(--player-height);
+        display: grid;
+        grid-template-columns: 1fr auto;
+        grid-template-rows: auto auto;
+        padding: 6px 12px calc(6px + env(safe-area-inset-bottom, 0px));
+        gap: 6px 8px;
+        align-items: center;
+      }
+      .player-left {
+        grid-column: 1 / 2;
+        grid-row: 1 / 2;
+        min-width: 0;
+        width: 100%;
+        display: flex;
+      }
+      .voice-select {
+        width: 100%;
+        height: 34px;
+        padding: 4px 6px;
+        font-size: 0.82rem;
+        border-radius: 6px;
+      }
+      .player-right {
+        grid-column: 2 / 3;
+        grid-row: 1 / 2;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        justify-content: flex-end;
+      }
+      .player-controls {
+        grid-column: 1 / 3;
+        grid-row: 2 / 3;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 26px;
+        width: 100%;
+        padding: 2px 0;
+      }
+      .play-btn {
+        width: 46px;
+        height: 46px;
+      }
+      .control-btn {
+        font-size: 1.4rem;
+        padding: 6px 14px;
+      }
+
+      /* Vùng đọc nội dung */
+      main {
+        padding: 14px 10px calc(var(--player-height) + 20px);
+      }
+      .chapter-title-heading {
+        font-size: 1.25rem;
+        margin-bottom: 14px;
+      }
+      .paragraph-item {
+        margin-bottom: 12px;
+        padding: 6px 8px;
+        font-size: 16px;
+      }
+
+      /* Tối ưu các Modal trên màn hình điện thoại */
+      .library-modal, .modal {
+        width: 95vw !important;
+        max-width: 95vw !important;
+        max-height: 88vh !important;
+        border-radius: 14px !important;
+      }
+      .modal-body {
+        padding: 14px !important;
+      }
+      input[type="text"], input[type="number"], select {
+        font-size: 16px !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Toast Popup -->
+  <div id="toastPopup" class="toast-popup">
+    <span>📍</span>
+    <span id="toastMsg">Đã khôi phục vị trí đọc gần nhất!</span>
+  </div>
+
+  <!-- Header -->
+  <header>
+    <div class="brand" onclick="openLibraryModal()">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/>
+        <path d="M6 6h10M6 10h10M6 14h6"/>
+      </svg>
+      <span class="brand-title-text">Epub Voice Reader</span>
+    </div>
+
+    <div class="header-center">
+      <div id="bookMetaInfo" class="book-title-meta">Chưa mở truyện</div>
+      <div id="progressBadge" class="progress-badge" style="display: none;" onclick="scrollToActiveParagraph()" title="Bấm để cuộn đến câu đang đọc">
+        📍 Chương 1 • Đoạn 1
+      </div>
+      <div id="preloadBadge" class="progress-badge desktop-only" style="display: none; background: rgba(79, 70, 229, 0.12); color: var(--primary); border: 1px solid rgba(79, 70, 229, 0.3);" onclick="togglePreloader()" title="Cơ chế tự động tải trước 50 chương: Bấm để Bật/Tắt">
+        ⚡ Đệm sẵn: 0/50 chương
+      </div>
+    </div>
+
+    <!-- Thanh nút thao tác trên máy tính (Desktop Actions) -->
+    <div class="header-actions desktop-actions">
+      <!-- Nút mở Drawer Mục lục -->
+      <button class="btn" onclick="toggleChapterDrawer()" title="Xem danh sách chương">
+        📑 Mục Lục
+      </button>
+
+      <!-- Nút mở Tủ sách (Lưu tối đa 10 truyện) -->
+      <button class="btn" onclick="openLibraryModal()" title="Mở tủ sách">
+        📚 Tủ Sách <span id="libraryCountBadge" style="font-size:0.78rem; opacity:0.8;">(0/10)</span>
+      </button>
+
+      <!-- Nút mở Cài đặt Bỏ qua câu (Skip rules) -->
+      <button class="btn" onclick="openSkipRulesModal()" title="Cài đặt danh sách các câu muốn bỏ qua không đọc" style="border-color: rgba(239, 68, 68, 0.35); color: #dc2626;">
+        🚫 Bỏ Qua Câu <span id="skipCountBadge" style="font-size:0.78rem; opacity:0.85;">(0)</span>
+      </button>
+
+      <!-- Nút mở Từ điển Phát Âm (Sửa lỗi đọc) -->
+      <button class="btn" onclick="openPronounceModal()" title="Từ điển sửa từ bị AI đọc sai" style="border-color: rgba(16, 185, 129, 0.35); color: #059669;">
+        📖 Sửa Phát Âm <span id="pronounceCountBadge" style="font-size:0.78rem; opacity:0.85;">(0)</span>
+      </button>
+
+      <!-- Nút đọc Web Online -->
+      <button class="btn" onclick="openWebNovelModal()" title="Đọc truyện chữ online từ website (XTruyện, Sọt Truyện...)" style="border-color: rgba(59, 130, 246, 0.5); color: #2563eb; font-weight: 700; background: rgba(59, 130, 246, 0.08);">
+        🌐 Đọc Web Online
+      </button>
+
+      <!-- Nút mở Hẹn Giờ Tắt -->
+      <button class="btn" onclick="openSleepTimerModal()" title="Hẹn giờ tắt đọc tự động khi ngủ" style="border-color: rgba(245, 158, 11, 0.4); color: #d97706; background: rgba(245, 158, 11, 0.08); font-weight: 600;">
+        ⏱️ <span id="headerTimerText">Hẹn Giờ</span>
+      </button>
+
+      <!-- Nút nạp truyện mới -->
+      <input type="file" id="epubFileInput" accept=".epub" style="display: none;">
+      <button class="btn btn-primary" onclick="document.getElementById('epubFileInput').click()">
+        ➕ Nạp EPUB
+      </button>
+
+      <select id="themeSelect" class="btn" onchange="changeTheme(this.value)">
+        <option value="sepia">Giấy vàng Sepia</option>
+        <option value="light">Nền sáng</option>
+        <option value="dark">Chế độ tối (Dark)</option>
+      </select>
+
+      <div style="display: flex; gap: 4px;">
+        <button class="btn" onclick="adjustFontSize(-1)" title="Giảm cỡ chữ">A-</button>
+        <button class="btn" onclick="adjustFontSize(1)" title="Tăng cỡ chữ">A+</button>
+      </div>
+    </div>
+
+    <!-- Thanh nút rút gọn trên điện thoại (Mobile Quick Actions) -->
+    <div class="mobile-actions-bar">
+      <button class="btn btn-mobile-quick" onclick="toggleChapterDrawer()" title="Mục lục chương">
+        📑
+      </button>
+      <button class="btn btn-mobile-quick" onclick="openLibraryModal()" title="Tủ sách">
+        📚 <span id="libraryCountBadgeMobile" style="font-size:0.75rem; font-weight:700;">(0)</span>
+      </button>
+      <button class="btn btn-primary btn-mobile-quick" onclick="toggleMobileMenu()" title="Mở danh mục tính năng">
+        ☰
+      </button>
+    </div>
+  </header>
+
+  <!-- Mobile Menu Drawer (Trượt ra khi bấm ☰ trên điện thoại) -->
+  <div id="mobileMenuDrawer" class="mobile-menu-drawer" onclick="closeMobileMenu(event)">
+    <div class="mobile-menu-panel" onclick="event.stopPropagation()">
+      <div style="padding: 16px 18px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-weight: 700; font-size: 1.05rem; display: flex; align-items: center; gap: 8px;">
+          📱 Menu Tiện Ích
+        </span>
+        <button class="btn" style="padding: 4px 8px;" onclick="closeMobileMenu()">✕</button>
+      </div>
+      <div style="flex: 1; overflow-y: auto;">
+        <div class="mobile-menu-item" onclick="openWebNovelModal(); closeMobileMenu();">
+          <span style="font-size: 1.25rem;">🌐</span>
+          <div>
+            <div>Đọc Truyện Web Online</div>
+            <div style="font-size: 0.76rem; color: var(--text-muted); font-weight: 400;">Dán link XTruyện, Sọt Truyện...</div>
+          </div>
+        </div>
+
+        <div class="mobile-menu-item" onclick="document.getElementById('epubFileInput').click(); closeMobileMenu();">
+          <span style="font-size: 1.25rem;">➕</span>
+          <div>
+            <div>Nạp File EPUB Mới</div>
+            <div style="font-size: 0.76rem; color: var(--text-muted); font-weight: 400;">Chọn file sách từ máy điện thoại</div>
+          </div>
+        </div>
+
+        <div class="mobile-menu-item" onclick="openSleepTimerModal(); closeMobileMenu();">
+          <span style="font-size: 1.25rem;">⏱️</span>
+          <div style="flex: 1;">
+            <div>Hẹn Giờ Tắt Đọc</div>
+            <div style="font-size: 0.76rem; color: #d97706; font-weight: 500;" id="mobileTimerMenuStatus">Chưa bật hẹn giờ</div>
+          </div>
+        </div>
+
+        <div class="mobile-menu-item" onclick="openPronounceModal(); closeMobileMenu();">
+          <span style="font-size: 1.25rem;">📖</span>
+          <div>
+            <div>Từ Điển Sửa Phát Âm AI</div>
+            <div style="font-size: 0.76rem; color: var(--text-muted); font-weight: 400;">Sửa từ ngữ đọc sai, boss, cấp...</div>
+          </div>
+        </div>
+
+        <div class="mobile-menu-item" onclick="openSkipRulesModal(); closeMobileMenu();">
+          <span style="font-size: 1.25rem;">🚫</span>
+          <div>
+            <div>Danh Sách Bỏ Qua Câu</div>
+            <div style="font-size: 0.76rem; color: var(--text-muted); font-weight: 400;">Bỏ qua tên tác giả, link nguồn...</div>
+          </div>
+        </div>
+
+        <!-- Cài đặt Chế độ nền -->
+        <div style="padding: 14px 18px; border-bottom: 1px solid var(--border-color);">
+          <div style="font-size: 0.82rem; font-weight: 700; color: var(--text-muted); margin-bottom: 8px;">CHẾ ĐỘ NỀN:</div>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;">
+            <button class="btn" style="padding: 8px 4px; font-size: 0.8rem; justify-content: center;" onclick="changeTheme('sepia')">📜 Sepia</button>
+            <button class="btn" style="padding: 8px 4px; font-size: 0.8rem; justify-content: center;" onclick="changeTheme('light')">☀️ Sáng</button>
+            <button class="btn" style="padding: 8px 4px; font-size: 0.8rem; justify-content: center;" onclick="changeTheme('dark')">🌙 Tối</button>
+          </div>
+        </div>
+
+        <!-- Cài đặt Cỡ chữ -->
+        <div style="padding: 14px 18px; border-bottom: 1px solid var(--border-color);">
+          <div style="font-size: 0.82rem; font-weight: 700; color: var(--text-muted); margin-bottom: 8px;">CỠ CHỮ NỘI DUNG:</div>
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <button class="btn" onclick="adjustFontSize(-1)" style="padding: 8px 16px; font-weight: 700;">A-</button>
+            <span id="mobileFontSizeBadge" style="font-weight: 700; font-size: 0.95rem; color: var(--primary);">18px</span>
+            <button class="btn" onclick="adjustFontSize(1)" style="padding: 8px 16px; font-weight: 700;">A+</button>
+          </div>
+        </div>
+
+        <!-- Trạng thái đệm 50 chương -->
+        <div style="padding: 14px 18px;">
+          <button class="btn" onclick="togglePreloader()" style="width: 100%; justify-content: center; padding: 10px; font-size: 0.88rem; background: rgba(79, 70, 229, 0.08); border-color: rgba(79, 70, 229, 0.3); color: var(--primary);">
+            ⚡ Đệm 50 chương: <span id="mobileDrawerBufferStatus">Đang quét...</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Drawer Mục Lục Chương (Ẩn mặc định, trượt ra khi bấm) -->
+  <div id="drawerOverlay" class="drawer-overlay" onclick="toggleChapterDrawer()"></div>
+  <div id="chapterDrawer" class="chapter-drawer">
+    <div class="drawer-header">
+      <span>Mục Lục Chương</span>
+      <button class="btn" style="padding: 4px 8px;" onclick="toggleChapterDrawer()">✕</button>
+    </div>
+    <div class="drawer-search">
+      <input type="text" id="chapterSearchInput" placeholder="Tìm kiếm chương..." oninput="filterChapters(this.value)">
+    </div>
+    <ul id="drawerChapterList" class="drawer-list"></ul>
+  </div>
+
+  <!-- Modal Tủ Sách (Lưu tối đa 10 truyện) -->
+  <div id="libraryModalOverlay" class="modal-overlay" onclick="closeLibraryModal(event)">
+    <div class="library-modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <span>📚 Tủ Sách Của Bạn (Lưu tối đa 10 cuốn)</span>
+        <button class="btn" style="padding: 4px 8px;" onclick="closeLibraryModal()">✕</button>
+      </div>
+      <div class="modal-body" id="libraryBooksContainer">
+        <!-- Render danh sách các cuốn sách -->
+      </div>
+      <div style="padding: 14px 24px; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+        <span style="font-size: 0.85rem; color: var(--text-muted);">Sách đã lưu sẽ mở ngay lập tức không cần nạp lại.</span>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn" onclick="openWebNovelModal(); closeLibraryModal();" style="color: #2563eb; border-color: rgba(59, 130, 246, 0.4);">
+            🌐 Dán Link Web
+          </button>
+          <button class="btn btn-primary" onclick="document.getElementById('epubFileInput').click(); closeLibraryModal();">
+            ➕ Nạp file EPUB
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Đọc Web Online (Tự động tải 50 chương đầu) -->
+  <div id="webNovelModalOverlay" class="modal-overlay" onclick="closeWebNovelModal(event)">
+    <div class="library-modal" onclick="event.stopPropagation()" style="width: 580px;">
+      <div class="modal-header">
+        <span>🌐 Đọc Truyện Chữ Từ Web Online</span>
+        <button class="btn" style="padding: 4px 8px;" onclick="closeWebNovelModal()">✕</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 16px; padding: 20px;">
+        <div style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.5;">
+          Dán link truyện hoặc link chương từ các website (ví dụ: <b>xtruyen.vn</b>, <b>sottruyen.com</b>...). Phần mềm sẽ tự động phân tích và tải sẵn <b>50 chương đầu</b> để đọc và nghe với giọng AI mượt mà, không giật lag!
+        </div>
+
+        <div>
+          <label style="font-size: 0.88rem; font-weight: 700; display: block; margin-bottom: 6px;">
+            Đường link truyện hoặc link chương:
+          </label>
+          <input type="text" id="webNovelUrlInput" placeholder="Ví dụ: https://sottruyen.com/truyen/... hoặc https://xtruyen.vn/truyen/..." style="width: 100%; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); font-size: 0.92rem; outline: none; box-sizing: border-box;" onkeydown="if(event.key==='Enter') submitWebNovel();">
+        </div>
+
+        <div>
+          <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 6px;">Hoặc thử nhanh các truyện mẫu:</span>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+            <button type="button" class="btn" style="font-size: 0.8rem; padding: 5px 10px;" onclick="setWebNovelSample('https://sottruyen.com/truyen/thai-co-hong-mong-the-tieu-nac')">
+              📖 Thái Cổ Hồng Mông Thể (Sọt Truyện)
+            </button>
+            <button type="button" class="btn" style="font-size: 0.8rem; padding: 5px 10px;" onclick="setWebNovelSample('https://xtruyen.vn/truyen/hong-mong-ba-the-quyet/chuong-1/')">
+              📖 Hồng Mông Bá Thể Quyết (XTruyện)
+            </button>
+          </div>
+        </div>
+
+        <div id="webNovelLoadingBox" style="display: none; padding: 12px; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: 8px; font-size: 0.88rem; color: #2563eb; display: flex; align-items: center; gap: 10px;">
+          <div class="spinner" style="border-top-color: #2563eb; width: 18px; height: 18px; border-width: 2.5px;"></div>
+          <span id="webNovelStatusText">Đang tải và giải mã 50 chương truyện từ web...</span>
+        </div>
+      </div>
+
+      <div style="padding: 14px 24px; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: 10px;">
+        <button class="btn" onclick="closeWebNovelModal()">Đóng</button>
+        <button class="btn btn-primary" id="btnSubmitWebNovel" onclick="submitWebNovel()">
+          🚀 Tải & Bắt Đầu Đọc
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Modal Danh Sách Câu Bỏ Qua (Skip Rules) -->
+  <div id="skipRulesModalOverlay" class="modal-overlay" onclick="closeSkipRulesModal(event)">
+    <div class="library-modal" onclick="event.stopPropagation()" style="max-width: 580px;">
+      <div class="modal-header">
+        <span>🚫 Danh Sách Câu Bỏ Qua (Không Đọc)</span>
+        <button class="btn" style="padding: 4px 8px;" onclick="closeSkipRulesModal()">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 20px;">
+        <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 14px; line-height: 1.5;">
+          Hệ thống sẽ <b>tự động bỏ qua không đọc và không tải âm thanh</b> các câu trùng khớp chính xác toàn bộ với danh sách bên dưới (như tên tác giả, nguồn, ký hiệu lặp lại đầu mỗi chương). Nếu câu trong truyện chỉ chứa một vài từ trong đó thì vẫn được đọc bình thường.
+        </p>
+
+        <!-- Ô nhập câu mới -->
+        <div style="display: flex; gap: 8px; margin-bottom: 14px;">
+          <input type="text" id="newSkipInput" placeholder="Ví dụ: Tác giả: Lừa Con Lon Ton" style="flex: 1; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); font-size: 0.9rem; outline: none;" onkeydown="if(event.key==='Enter') addSkipRuleFromInput()">
+          <button class="btn btn-primary" onclick="addSkipRuleFromInput()">+ Thêm</button>
+        </div>
+
+        <!-- Mẫu gợi ý nhanh lấy từ ảnh truyện -->
+        <div style="margin-bottom: 16px;">
+          <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">Mẫu nhanh (bấm để thêm):</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+            <button class="btn" style="font-size: 0.75rem; padding: 3px 8px;" onclick="quickAddSample('Tác giả: Lừa Con Lon Ton')">+ Tác giả: Lừa Con Lon Ton</button>
+            <button class="btn" style="font-size: 0.75rem; padding: 3px 8px;" onclick="quickAddSample('Dịch giả: AI thienloitruc.com')">+ Dịch giả: AI thienloitruc.com</button>
+            <button class="btn" style="font-size: 0.75rem; padding: 3px 8px;" onclick="quickAddSample('Thể loại: Tiên Hiệp')">+ Thể loại: Tiên Hiệp</button>
+            <button class="btn" style="font-size: 0.75rem; padding: 3px 8px;" onclick="quickAddSample('Nguồn: Tuấn Trần')">+ Nguồn: Tuấn Trần</button>
+            <button class="btn" style="font-size: 0.75rem; padding: 3px 8px;" onclick="quickAddSample('—★—')">+ —★—</button>
+            <button class="btn" style="font-size: 0.75rem; padding: 3px 8px;" onclick="quickAddSample('DTV-EBOOK')">+ DTV-EBOOK</button>
+            <button class="btn" style="font-size: 0.75rem; padding: 3px 8px;" onclick="quickAddSample('Giới thiệu')">+ Giới thiệu</button>
+          </div>
+        </div>
+
+        <!-- Danh sách câu đang bỏ qua -->
+        <div style="font-size: 0.88rem; font-weight: 700; margin-bottom: 8px;">
+          Các câu hiện tại đang bỏ qua (<span id="modalSkipCount">0</span>):
+        </div>
+        <div id="skipRulesListContainer" style="max-height: 240px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-color); padding: 8px;">
+          <!-- Render danh sách -->
+        </div>
+      </div>
+      <div style="padding: 12px 20px; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end;">
+        <button class="btn btn-primary" onclick="closeSkipRulesModal()">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Từ Điển Phát Âm (Sửa Lỗi Đọc AI) -->
+  <div id="pronounceModalOverlay" class="modal-overlay" onclick="closePronounceModal(event)">
+    <div class="library-modal" onclick="event.stopPropagation()" style="max-width: 620px;">
+      <div class="modal-header">
+        <span>📖 Từ Điển Phát Âm (Sửa Lỗi Đọc AI)</span>
+        <button class="btn" style="padding: 4px 8px;" onclick="closePronounceModal()">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 20px;">
+        <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 14px; line-height: 1.5;">
+          Hệ thống sẽ <b>tự động thay thế từ bị đọc sai bằng từ phát âm chuẩn</b> trước khi gửi cho AI phát âm. Chữ hiển thị trên màn hình vẫn giữ nguyên bản gốc để đọc, chỉ có âm thanh giọng đọc là được sửa.
+        </p>
+
+        <!-- Form thêm từ mới -->
+        <div style="background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; padding: 14px; margin-bottom: 16px;">
+          <div style="font-weight: 700; font-size: 0.88rem; margin-bottom: 10px;">Thêm quy tắc phát âm mới:</div>
+          <div style="display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 160px;">
+              <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Từ gốc (bị đọc sai):</label>
+              <input type="text" id="pronounceFindInput" placeholder="Ví dụ: boss, lv, PK" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.88rem; outline: none;">
+            </div>
+            <div style="flex: 1; min-width: 160px;">
+              <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Đọc thay thế bằng:</label>
+              <input type="text" id="pronounceReplaceInput" placeholder="Ví dụ: trùm, cấp, pê ca" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.88rem; outline: none;" onkeydown="if(event.key==='Enter') addPronounceRuleFromInput()">
+            </div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <label style="font-size: 0.82rem; display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-muted);">
+              <input type="checkbox" id="pronounceMatchWordCheckbox" checked>
+              <span>Khớp nguyên từ (khuyên dùng để tránh sửa nhầm từ khác)</span>
+            </label>
+            <button class="btn btn-primary" onclick="addPronounceRuleFromInput()">+ Thêm Quy Tắc</button>
+          </div>
+        </div>
+
+        <!-- Mẫu thông dụng -->
+        <div style="margin-bottom: 16px;">
+          <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">Mẫu hay dùng trong truyện (bấm để thêm nhanh):</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+            <button class="btn" style="font-size: 0.75rem; padding: 3px 8px;" onclick="quickAddPronounceSample('boss', 'trùm')">+ boss ➔ trùm</button>
+            <button class="btn" style="font-size: 0.75rem; padding: 3px 8px;" onclick="quickAddPronounceSample('lv', 'cấp')">+ lv ➔ cấp</button>
+            <button class="btn" style="font-size: 0.75rem; padding: 3px 8px;" onclick="quickAddPronounceSample('level', 'cấp độ')">+ level ➔ cấp độ</button>
+            <button class="btn" style="font-size: 0.75rem; padding: 3px 8px;" onclick="quickAddPronounceSample('PK', 'pê ca')">+ PK ➔ pê ca</button>
+            <button class="btn" style="font-size: 0.75rem; padding: 3px 8px;" onclick="quickAddPronounceSample('NPC', 'en pi xi')">+ NPC ➔ en pi xi</button>
+            <button class="btn" style="font-size: 0.75rem; padding: 3px 8px;" onclick="quickAddPronounceSample('1k', 'một nghìn')">+ 1k ➔ một nghìn</button>
+          </div>
+        </div>
+
+        <!-- Danh sách quy tắc hiện tại -->
+        <div style="font-size: 0.88rem; font-weight: 700; margin-bottom: 8px;">
+          Các từ đang thay thế (<span id="modalPronounceCount">0</span>):
+        </div>
+        <div id="pronounceRulesListContainer" style="max-height: 220px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-color); padding: 8px;">
+          <!-- Render danh sách quy tắc -->
+        </div>
+      </div>
+      <div style="padding: 12px 20px; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end;">
+        <button class="btn btn-primary" onclick="closePronounceModal()">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Hẹn Giờ Tắt (Sleep Timer) -->
+  <div id="sleepTimerModalOverlay" class="modal-overlay" onclick="closeSleepTimerModal(event)">
+    <div class="modal" onclick="event.stopPropagation()" style="max-width: 420px;">
+      <div class="modal-header">
+        <h3 style="display:flex; align-items:center; gap:8px;">⏱️ Hẹn Giờ Tắt Đọc Truyện</h3>
+        <button class="btn" style="padding: 4px 8px;" onclick="closeSleepTimerModal()">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+        <p style="font-size: 0.88rem; color: var(--text-muted); margin: 0; line-height: 1.5;">
+          Tự động tạm dừng đọc truyện khi hết giờ hoặc khi đọc xong chương, giúp bạn an tâm nghe truyện trước khi ngủ mà không sợ hết pin hay đọc suốt đêm.
+        </p>
+
+        <div id="activeTimerBanner" style="display: none; padding: 12px 14px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 8px; font-size: 0.95rem; color: #b45309; text-align: center; font-weight: 700;">
+          ⏳ Đang hẹn giờ: <span id="activeTimerCountdown" style="font-size: 1.15rem; color: #d97706;">00:00</span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+          <button class="btn" onclick="setSleepTimer(15)" style="padding: 12px 8px; font-weight: 600; font-size: 0.9rem;">⏱️ 15 Phút</button>
+          <button class="btn" onclick="setSleepTimer(30)" style="padding: 12px 8px; font-weight: 600; font-size: 0.9rem;">⏱️ 30 Phút</button>
+          <button class="btn" onclick="setSleepTimer(45)" style="padding: 12px 8px; font-weight: 600; font-size: 0.9rem;">⏱️ 45 Phút</button>
+          <button class="btn" onclick="setSleepTimer(60)" style="padding: 12px 8px; font-weight: 600; font-size: 0.9rem;">⏱️ 60 Phút</button>
+          <button class="btn" onclick="setSleepTimer('chapter')" style="padding: 12px 8px; font-weight: 600; font-size: 0.9rem; grid-column: span 2; border-color: rgba(59, 130, 246, 0.4); color: #2563eb;">📖 Đọc hết chương này rồi tắt</button>
+        </div>
+
+        <div style="display: flex; gap: 8px; align-items: center; margin-top: 4px;">
+          <input type="number" id="customMinutesInput" placeholder="Số phút tự nhập (vd: 20, 90)..." min="1" max="600" style="flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); font-size: 0.88rem; outline: none;" onkeydown="if(event.key==='Enter') setCustomSleepTimer()">
+          <button class="btn btn-primary" onclick="setCustomSleepTimer()" style="padding: 10px 16px;">Đặt Giờ</button>
+        </div>
+      </div>
+      <div class="modal-footer" style="padding: 12px 20px; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+        <button class="btn" onclick="cancelSleepTimer()" style="color: #dc2626; border-color: rgba(239, 68, 68, 0.35);">🛑 Hủy Hẹn Giờ</button>
+        <button class="btn" onclick="closeSleepTimerModal()">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Context Menu (Hiện khi nhấn giữ hoặc chuột phải vào đoạn văn) -->
+  <div id="paraContextMenu" class="para-context-menu">
+    <div id="contextMenuPreview" class="context-menu-header">Đoạn văn...</div>
+    <div id="menuOptionSkip" class="context-menu-item danger" onclick="onContextMenuAction('toggle_skip')">
+      <span id="menuOptionSkipText">🚫 Bỏ qua câu này</span>
+    </div>
+    <div class="context-menu-item" onclick="onContextMenuAction('pronounce')">
+      <span>✏️ Sửa từ đọc sai trong câu</span>
+    </div>
+    <div class="context-menu-item" onclick="onContextMenuAction('play')">
+      <span>▶️ Đọc từ câu này</span>
+    </div>
+    <div class="context-menu-item" onclick="onContextMenuAction('copy')">
+      <span>📋 Sao chép câu này</span>
+    </div>
+  </div>
+
+  <!-- Vùng Đọc Sách Toàn Màn Hình -->
+  <div class="main-container">
+    <main id="readerScrollArea">
+      <div id="readerContent" class="reader-content">
+        <div class="empty-state">
+          <div class="empty-dropzone" onclick="document.getElementById('epubFileInput').click()">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="margin-bottom: 12px; color: var(--primary);">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+            </svg>
+            <h3 style="margin-bottom: 8px;">Kéo thả hoặc bấm vào đây để nạp truyện</h3>
+            <p>Hỗ trợ file EPUB hoặc Đọc trực tiếp từ Web Online (tự động đệm 50 chương)</p>
+            <div style="margin-top: 16px; display: flex; gap: 10px; justify-content: center;" onclick="event.stopPropagation()">
+              <button class="btn btn-primary" onclick="document.getElementById('epubFileInput').click()">➕ Nạp File EPUB</button>
+              <button class="btn" onclick="openWebNovelModal()" style="border-color: rgba(59, 130, 246, 0.5); color: #2563eb; background: rgba(59, 130, 246, 0.08); font-weight: 700;">🌐 Đọc Từ Web Online</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Thanh Điều Khiển Phát Âm Thanh (Tự động thích ứng giao diện đứng trên điện thoại & máy tính) -->
+  <div class="audio-player-bar">
+    <div class="player-left">
+      <label class="desktop-only" style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">Giọng đọc:</label>
+      <select id="voiceSelect" class="voice-select" onchange="onVoiceChange(this.value)"></select>
+    </div>
+
+    <div class="player-controls">
+      <button class="control-btn" onclick="prevParagraph()" title="Câu trước">⏮</button>
+      <button id="playBtn" class="play-btn" onclick="togglePlay()" title="Phát / Dừng">
+        <svg id="playIcon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+      </button>
+      <button class="control-btn" onclick="nextParagraph()" title="Câu tiếp theo">⏭</button>
+    </div>
+
+    <div class="player-right">
+      <!-- Nút đổi tốc độ nhanh trên mobile (Bấm để xoay vòng tốc độ) -->
+      <button id="mobileSpeedBtn" class="btn mobile-only" onclick="cycleSpeed()" title="Bấm để đổi tốc độ đọc">
+        ⚡ <span id="mobileSpeedText">1.00x</span>
+      </button>
+
+      <!-- Thanh trượt tốc độ mượt mà từ 0.5x đến 3.0x trên PC -->
+      <div class="speed-slider-container desktop-only" title="Kéo thanh trượt để chỉnh tốc độ mượt mà">
+        <span style="font-size: 0.82rem; font-weight: 600; color: var(--text-muted);">Tốc độ:</span>
+        <input type="range" id="speedSlider" class="speed-slider" min="0.5" max="3.0" step="0.05" value="1.0" oninput="onSpeedSliderChange(this.value)">
+        <span id="speedValue" class="speed-badge">1.00x</span>
+      </div>
+
+      <button id="sleepTimerBtn" class="btn" onclick="openSleepTimerModal()" title="Hẹn giờ tắt đọc tự động khi ngủ" style="border-color: rgba(245, 158, 11, 0.4); color: #d97706; background: rgba(245, 158, 11, 0.08); font-weight: 600;">
+        ⏱️ <span id="sleepTimerText">Hẹn giờ</span>
+      </button>
+
+      <button id="bufferToggleBtn" class="btn desktop-only" onclick="togglePreloader()" title="Cơ chế đệm 50 chương: Tự động tải trước 50 chương tiếp theo, bù đắp liên tục khi đọc hết mỗi chương" style="background: rgba(79, 70, 229, 0.08); border-color: rgba(79, 70, 229, 0.3); color: var(--primary);">
+        ⚡ Đệm 50 chương: <span id="bufferStatusText">Đang quét...</span>
+      </button>
+    </div>
+  </div>
+
+  <audio id="audioPlayer" style="display: none;"></audio>
+
+  <script>
+    let bookData = null;
+    let currentChapterIndex = 0;
+    let currentParagraphIndex = 0;
+    let isPlaying = false;
+    let isLoading = false;
+    let voices = [];
+    let currentFontSize = 18;
+    let currentSpeed = 1.0;
+    const audio = document.getElementById('audioPlayer');
+
+    // =====================================================================
+    // QUẢN LÝ DANH SÁCH CÂU BỎ QUA (SKIP RULES)
+    // =====================================================================
+    let skipRules = [];
+
+    function normalizeForCompare(str) {
+      return (str || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    }
+
+    function isParagraphSkipped(text) {
+      if (!text) return true;
+      // Tự động bỏ qua câu nếu phát hiện chữ tiếng Hán
+      if (/[\u4e00-\u9fff]/.test(text)) return true;
+      if (!skipRules || skipRules.length === 0) return false;
+      const norm = normalizeForCompare(text);
+      return skipRules.some(r => norm === normalizeForCompare(r));
+    }
+
+    async function loadSkipRules() {
+      try {
+        const res = await fetch('/api/skip-rules');
+        skipRules = await res.json();
+        updateSkipBadge();
+      } catch (e) {
+        console.error('Lỗi nạp skip rules:', e);
+      }
+    }
+
+    function updateSkipBadge() {
+      const b = document.getElementById('skipCountBadge');
+      if (b) b.textContent = `(${skipRules.length})`;
+      const mb = document.getElementById('modalSkipCount');
+      if (mb) mb.textContent = skipRules.length;
+    }
+
+    async function saveSkipRulesToServer() {
+      try {
+        const res = await fetch('/api/skip-rules', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rules: skipRules })
+        });
+        const data = await res.json();
+        if (data.rules) skipRules = data.rules;
+        updateSkipBadge();
+        if (bookData) {
+          loadChapter(currentChapterIndex, currentParagraphIndex);
+        }
+      } catch (e) {
+        alert('Lỗi lưu danh sách bỏ qua: ' + e);
+      }
+    }
+
+    function addSkipRule(ruleText) {
+      const clean = (ruleText || '').trim();
+      if (!clean) return;
+      const norm = normalizeForCompare(clean);
+      if (skipRules.some(r => normalizeForCompare(r) === norm)) {
+        showToast(`ℹ️ Câu này đã có trong danh sách bỏ qua!`);
+        return;
+      }
+      skipRules.push(clean);
+      saveSkipRulesToServer();
+      showToast(`🚫 Đã thêm vào danh sách bỏ qua: "${clean.length > 35 ? clean.substring(0, 35) + '...' : clean}"`);
+      renderSkipRulesList();
+    }
+
+    function removeSkipRule(ruleText) {
+      const norm = normalizeForCompare(ruleText);
+      skipRules = skipRules.filter(r => normalizeForCompare(r) !== norm);
+      saveSkipRulesToServer();
+      showToast(`✅ Đã khôi phục (không còn bỏ qua): "${ruleText.length > 35 ? ruleText.substring(0, 35) + '...' : ruleText}"`);
+      renderSkipRulesList();
+    }
+
+    function addSkipRuleFromInput() {
+      const input = document.getElementById('newSkipInput');
+      const val = input.value.trim();
+      if (!val) {
+        alert('Vui lòng nhập câu muốn bỏ qua!');
+        return;
+      }
+      addSkipRule(val);
+      input.value = '';
+    }
+
+    function quickAddSample(sampleText) {
+      addSkipRule(sampleText);
+    }
+
+    function openSkipRulesModal() {
+      renderSkipRulesList();
+      document.getElementById('skipRulesModalOverlay').classList.add('open');
+      setTimeout(() => document.getElementById('newSkipInput').focus(), 100);
+    }
+
+    function closeSkipRulesModal(e) {
+      if (e && e.target !== e.currentTarget) return;
+      document.getElementById('skipRulesModalOverlay').classList.remove('open');
+    }
+
+    function renderSkipRulesList() {
+      const container = document.getElementById('skipRulesListContainer');
+      if (!container) return;
+      updateSkipBadge();
+      if (skipRules.length === 0) {
+        container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 0.88rem;">Chưa có câu nào trong danh sách bỏ qua.</div>';
+        return;
+      }
+      container.innerHTML = '';
+      skipRules.forEach((rule) => {
+        const item = document.createElement('div');
+        item.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:8px 12px; margin-bottom:6px; border-radius:6px; background:var(--card-bg); border:1px solid var(--border-color); font-size:0.88rem;';
+        
+        const textSpan = document.createElement('span');
+        textSpan.style.cssText = 'font-weight:500; word-break:break-word; margin-right:10px;';
+        textSpan.textContent = rule;
+        
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn';
+        delBtn.style.cssText = 'padding:3px 8px; font-size:0.75rem; color:#ef4444; border-color:rgba(239,68,68,0.3);';
+        delBtn.textContent = '🗑 Xoá';
+        delBtn.onclick = () => removeSkipRule(rule);
+        
+        item.appendChild(textSpan);
+        item.appendChild(delBtn);
+        container.appendChild(item);
+      });
+    }
+
+    // =====================================================================
+    // CONTEXT MENU NHẤN GIỮ / CHUỘT PHẢI ĐOẠN VĂN
+    // =====================================================================
+    let contextMenuTargetText = null;
+    let contextMenuTargetIndex = -1;
+
+    function showContextMenu(clientX, clientY, text, pIdx) {
+      contextMenuTargetText = text;
+      contextMenuTargetIndex = pIdx;
+
+      const menu = document.getElementById('paraContextMenu');
+      const preview = document.getElementById('contextMenuPreview');
+      const skipItem = document.getElementById('menuOptionSkip');
+      const skipText = document.getElementById('menuOptionSkipText');
+
+      const shortText = text.length > 32 ? text.substring(0, 32) + '...' : text;
+      preview.textContent = `"${shortText}"`;
+
+      if (isParagraphSkipped(text)) {
+        skipItem.className = 'context-menu-item success';
+        skipText.textContent = '✅ Khôi phục câu này (không bỏ qua nữa)';
+      } else {
+        skipItem.className = 'context-menu-item danger';
+        skipText.textContent = '🚫 Bỏ qua câu này (không đọc ở mọi chương)';
+      }
+
+      menu.style.display = 'block';
+
+      // Định vị menu thông minh trong khung hình
+      const menuRect = menu.getBoundingClientRect();
+      let left = clientX;
+      let top = clientY;
+
+      if (left + menuRect.width > window.innerWidth - 10) {
+        left = window.innerWidth - menuRect.width - 15;
+      }
+      if (top + menuRect.height > window.innerHeight - 10) {
+        top = clientY - menuRect.height - 10;
+      }
+      if (left < 10) left = 10;
+      if (top < 10) top = 10;
+
+      menu.style.left = left + 'px';
+      menu.style.top = top + 'px';
+    }
+
+    function hideContextMenu() {
+      const menu = document.getElementById('paraContextMenu');
+      if (menu) menu.style.display = 'none';
+    }
+
+    function onContextMenuAction(action) {
+      const text = contextMenuTargetText;
+      const idx = contextMenuTargetIndex;
+      hideContextMenu();
+      if (!text) return;
+
+      if (action === 'toggle_skip') {
+        if (isParagraphSkipped(text)) {
+          removeSkipRule(text);
+        } else {
+          addSkipRule(text);
+        }
+      } else if (action === 'pronounce') {
+        openPronounceModal(text);
+      } else if (action === 'play') {
+        jumpToParagraph(idx);
+      } else if (action === 'copy') {
+        navigator.clipboard.writeText(text).then(() => {
+          showToast('📋 Đã sao chép câu vào clipboard!');
+        }).catch(() => {
+          showToast('📋 Đã sao chép câu văn!');
+        });
+      }
+    }
+
+    // =====================================================================
+    // QUẢN LÝ TỪ ĐIỂN PHÁT ÂM (PRONUNCIATION RULES)
+    // Sửa các từ bị đọc sai trước khi phát âm
+    // =====================================================================
+    let pronounceRules = [];
+
+    async function loadPronounceRules() {
+      try {
+        const res = await fetch('/api/pronunciation-rules');
+        pronounceRules = await res.json();
+        updatePronounceBadge();
+      } catch (e) {
+        console.error('Lỗi nạp từ điển phát âm:', e);
+      }
+    }
+
+    function updatePronounceBadge() {
+      const b = document.getElementById('pronounceCountBadge');
+      if (b) b.textContent = `(${pronounceRules.length})`;
+      const mb = document.getElementById('modalPronounceCount');
+      if (mb) mb.textContent = pronounceRules.length;
+    }
+
+    async function savePronounceRulesToServer() {
+      try {
+        const res = await fetch('/api/pronunciation-rules', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rules: pronounceRules })
+        });
+        const data = await res.json();
+        if (data.rules) pronounceRules = data.rules;
+        updatePronounceBadge();
+        showToast('💾 Đã lưu và áp dụng quy tắc phát âm mới!');
+        renderPronounceList();
+      } catch (e) {
+        alert('Lỗi lưu từ điển phát âm: ' + e);
+      }
+    }
+
+    function addPronounceRule(findWord, replaceWord, matchWord = true) {
+      const f = (findWord || '').trim();
+      const r = (replaceWord || '').trim();
+      if (!f || !r) {
+        alert('Vui lòng nhập cả từ gốc và từ đọc thay thế!');
+        return;
+      }
+      const idx = pronounceRules.findIndex(item => item.find.toLowerCase() === f.toLowerCase());
+      if (idx >= 0) {
+        pronounceRules[idx] = { find: f, replace: r, match_word: matchWord };
+      } else {
+        pronounceRules.unshift({ find: f, replace: r, match_word: matchWord });
+      }
+      savePronounceRulesToServer();
+    }
+
+    function removePronounceRule(index) {
+      if (index >= 0 && index < pronounceRules.length) {
+        const removed = pronounceRules.splice(index, 1)[0];
+        savePronounceRulesToServer();
+        showToast(`🗑 Đã xoá quy tắc: "${removed.find}" ➔ "${removed.replace}"`);
+      }
+    }
+
+    function addPronounceRuleFromInput() {
+      const fInput = document.getElementById('pronounceFindInput');
+      const rInput = document.getElementById('pronounceReplaceInput');
+      const chk = document.getElementById('pronounceMatchWordCheckbox');
+      const fVal = fInput.value.trim();
+      const rVal = rInput.value.trim();
+      if (!fVal || !rVal) {
+        alert('Vui lòng nhập đủ từ gốc và từ thay thế!');
+        return;
+      }
+      addPronounceRule(fVal, rVal, chk.checked);
+      fInput.value = '';
+      rInput.value = '';
+    }
+
+    function quickAddPronounceSample(f, r) {
+      addPronounceRule(f, r, true);
+    }
+
+    function openPronounceModal(prefillFind = '') {
+      renderPronounceList();
+      const overlay = document.getElementById('pronounceModalOverlay');
+      overlay.classList.add('open');
+      const fInput = document.getElementById('pronounceFindInput');
+      const rInput = document.getElementById('pronounceReplaceInput');
+      if (prefillFind) {
+        fInput.value = '';
+        fInput.placeholder = `Từ cần sửa trong câu này...`;
+        setTimeout(() => fInput.focus(), 100);
+      } else {
+        fInput.placeholder = 'Ví dụ: boss, lv, PK';
+        setTimeout(() => fInput.focus(), 100);
+      }
+    }
+
+    function closePronounceModal(e) {
+      if (e && e.target !== e.currentTarget) return;
+      document.getElementById('pronounceModalOverlay').classList.remove('open');
+    }
+
+    function renderPronounceList() {
+      const container = document.getElementById('pronounceRulesListContainer');
+      if (!container) return;
+      updatePronounceBadge();
+      if (pronounceRules.length === 0) {
+        container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 0.88rem;">Chưa có từ nào trong từ điển phát âm.</div>';
+        return;
+      }
+      container.innerHTML = '';
+      pronounceRules.forEach((rule, idx) => {
+        const item = document.createElement('div');
+        item.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:9px 12px; margin-bottom:6px; border-radius:6px; background:var(--card-bg); border:1px solid var(--border-color); font-size:0.88rem;';
+        
+        const infoDiv = document.createElement('div');
+        infoDiv.innerHTML = `
+          <b style="color:var(--primary);">${escapeHtml(rule.find)}</b>
+          <span style="color:var(--text-muted); margin: 0 6px;">➔ đọc thành:</span>
+          <b style="color:#059669;">${escapeHtml(rule.replace)}</b>
+          ${rule.match_word ? '<span style="font-size:0.75rem; color:var(--text-muted); margin-left:6px;">(nguyên từ)</span>' : ''}
+        `;
+        
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn';
+        delBtn.style.cssText = 'padding:3px 8px; font-size:0.75rem; color:#ef4444; border-color:rgba(239,68,68,0.3);';
+        delBtn.textContent = '🗑 Xoá';
+        delBtn.onclick = () => removePronounceRule(idx);
+        
+        item.appendChild(infoDiv);
+        item.appendChild(delBtn);
+        container.appendChild(item);
+      });
+    }
+
+    function escapeHtml(text) {
+      return (text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // Tự động ẩn context menu khi chạm ra ngoài hoặc cuộn
+    document.addEventListener('pointerdown', (e) => {
+      if (!e.target.closest('#paraContextMenu')) {
+        hideContextMenu();
+      }
+    });
+    window.addEventListener('scroll', hideContextMenu, true);
+
+    function showToast(msg) {
+      const toast = document.getElementById('toastPopup');
+      document.getElementById('toastMsg').textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3500);
+    }
+
+    // Toggle Drawer Mục Lục Chương
+    function toggleChapterDrawer() {
+      const drawer = document.getElementById('chapterDrawer');
+      const overlay = document.getElementById('drawerOverlay');
+      const isOpen = drawer.classList.contains('open');
+      if (isOpen) {
+        drawer.classList.remove('open');
+        overlay.classList.remove('open');
+      } else {
+        renderDrawerChapters();
+        drawer.classList.add('open');
+        overlay.classList.add('open');
+      }
+    }
+
+    function filterChapters(query) {
+      renderDrawerChapters(query.toLowerCase().trim());
+    }
+
+    // Render danh sách chương trong Drawer
+    function renderDrawerChapters(filter = '') {
+      const list = document.getElementById('drawerChapterList');
+      list.innerHTML = '';
+      if (!bookData || !bookData.chapters) {
+        list.innerHTML = '<li style="padding:20px; text-align:center; color:var(--text-muted);">Chưa nạp truyện</li>';
+        return;
+      }
+
+      if (bookData.is_web) {
+        const webTop = document.createElement('div');
+        webTop.style.cssText = 'padding: 10px 14px; margin-bottom: 8px; background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25); border-radius: 8px; display:flex; justify-content:space-between; align-items:center;';
+        webTop.innerHTML = `
+          <span style="font-size:0.85rem; color:#2563eb; font-weight:600;">🌐 Truyện Web (${bookData.chapters.length} ch.)</span>
+          <button class="btn btn-primary" style="font-size:0.8rem; padding:4px 10px;" id="btnDrawerFetch50" onclick="manualPreloadWebChapters(50)">
+            📥 Tải trước 50 ch. tiếp
+          </button>
+        `;
+        list.appendChild(webTop);
+      }
+
+      bookData.chapters.forEach((ch, idx) => {
+        if (filter && !ch.title.toLowerCase().includes(filter)) return;
+        const li = document.createElement('li');
+        li.className = 'drawer-item' + (idx === currentChapterIndex ? ' active' : '');
+        li.innerHTML = `
+          <span style="overflow:hidden; text-overflow:ellipsis;">${ch.title}</span>
+          ${idx === currentChapterIndex ? '<span style="font-size:0.75rem; background:rgba(16,185,129,0.15); color:#059669; padding:2px 6px; border-radius:4px; font-weight:600;">Đang đọc</span>' : ''}
+        `;
+        li.onclick = () => {
+          toggleChapterDrawer();
+          loadChapter(idx, 0);
+        };
+        list.appendChild(li);
+      });
+    }
+
+    async function manualPreloadWebChapters(count = 50) {
+      if (!bookData || !bookData.is_web) return;
+      const btn = document.getElementById('btnDrawerFetch50');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ Đang nạp 50 chương...';
+      }
+      showToast(`🌐 Đang nạp thêm ${count} chương từ web vào bộ đệm...`);
+      try {
+        const res = await fetch('/api/web-novel/preload-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bookId: bookData.id, count: count })
+        });
+        const data = await res.json();
+        if (data.success && data.added > 0) {
+          showToast(`🎉 Đã nạp thành công thêm ${data.added} chương mới từ web! Tổng: ${data.totalChapters} chương.`);
+          const bRes = await fetch(`/api/books/${bookData.id}`);
+          const bData = await bRes.json();
+          if (bData && bData.chapters) {
+            bookData = bData;
+            renderDrawerChapters();
+          }
+          notifyPreloader();
+        } else {
+          showToast(data.message || '⚠️ Không thể nạp thêm chương hoặc đã đến chương mới nhất!');
+        }
+      } catch (e) {
+        alert('Lỗi nạp chương: ' + e);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '📥 Tải trước 50 ch. tiếp';
+        }
+      }
+    }
+
+    // Modal Tủ Sách (Lưu tối đa 10 cuốn)
+    async function openLibraryModal() {
+      await loadLibraryList();
+      document.getElementById('libraryModalOverlay').classList.add('open');
+    }
+
+    function closeLibraryModal() {
+      document.getElementById('libraryModalOverlay').classList.remove('open');
+    }
+
+    async function loadLibraryList() {
+      const container = document.getElementById('libraryBooksContainer');
+      container.innerHTML = '<div style="text-align:center; padding:20px;">Đang tải danh sách...</div>';
+      try {
+        const res = await fetch('/api/books');
+        const books = await res.json();
+        document.getElementById('libraryCountBadge').textContent = `(${books.length}/10)`;
+
+        if (!books || books.length === 0) {
+          container.innerHTML = '<div style="text-align:center; padding:40px; color:var(--text-muted);">Chưa có cuốn truyện nào trong tủ sách.<br>Hãy bấm "Nạp thêm file EPUB" bên dưới.</div>';
+          return;
+        }
+
+        container.innerHTML = '';
+        books.forEach((b) => {
+          const isCurrent = bookData && bookData.id === b.id;
+          const card = document.createElement('div');
+          card.className = 'book-card';
+          card.innerHTML = `
+            <div class="book-card-left">
+              <div style="width:40px; height:40px; border-radius:8px; background:${isCurrent ? 'var(--primary)' : (b.is_web ? '#2563eb' : 'var(--border-color)')}; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:1.1rem;">
+                ${b.is_web ? '🌐' : '📖'}
+              </div>
+              <div class="book-card-info">
+                <h4>${escapeHtml(b.title)} ${b.is_web ? '<span style="font-size:0.72rem; background:rgba(37,99,235,0.12); color:#2563eb; border:1px solid rgba(37,99,235,0.3); padding:2px 6px; border-radius:4px; margin-left:6px; font-weight:600;">Web Online</span>' : ''}</h4>
+                <p>${escapeHtml(b.author)} • ${b.totalChapters} chương • <strong>Đang đọc: Chương ${(b.lastChapter || 0) + 1}</strong></p>
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <button class="btn ${isCurrent ? '' : 'btn-primary'}" onclick="selectBookFromLibrary('${b.id}')">
+                ${isCurrent ? 'Đang mở' : 'Đọc tiếp'}
+              </button>
+              <button class="btn" style="color:#ef4444;" onclick="deleteBookFromLibrary('${b.id}', '${escapeHtml(b.title)}')" title="Xoá khỏi tủ sách">
+                🗑
+              </button>
+            </div>
+          `;
+          container.appendChild(card);
+        });
+      } catch (err) {
+        container.innerHTML = '<div style="color:red; text-align:center;">Lỗi tải tủ sách: ' + err.message + '</div>';
+      }
+    }
+
+    // Modal Đọc Web Online
+    function openWebNovelModal() {
+      document.getElementById('webNovelModalOverlay').classList.add('open');
+      const box = document.getElementById('webNovelLoadingBox');
+      if (box) box.style.display = 'none';
+      const btn = document.getElementById('btnSubmitWebNovel');
+      if (btn) btn.disabled = false;
+      setTimeout(() => {
+        const inp = document.getElementById('webNovelUrlInput');
+        if (inp) inp.focus();
+      }, 100);
+    }
+
+    function closeWebNovelModal(e) {
+      if (e && e.target !== e.currentTarget) return;
+      document.getElementById('webNovelModalOverlay').classList.remove('open');
+    }
+
+    function setWebNovelSample(sampleUrl) {
+      const inp = document.getElementById('webNovelUrlInput');
+      if (inp) inp.value = sampleUrl;
+    }
+
+    async function submitWebNovel() {
+      const inp = document.getElementById('webNovelUrlInput');
+      const url = (inp ? inp.value : '').trim();
+      if (!url) {
+        alert('Vui lòng nhập hoặc dán đường link truyện!');
+        if (inp) inp.focus();
+        return;
+      }
+
+      const box = document.getElementById('webNovelLoadingBox');
+      const statusText = document.getElementById('webNovelStatusText');
+      const btn = document.getElementById('btnSubmitWebNovel');
+
+      if (box) box.style.display = 'flex';
+      if (statusText) statusText.textContent = 'Đang phân tích website và tải trước 50 chương đầu...';
+      if (btn) btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/web-novel/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: url })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        closeWebNovelModal();
+        bookData = data;
+        document.getElementById('bookMetaInfo').textContent = `${data.title} - ${data.author}`;
+        renderDrawerChapters();
+
+        const targetCh = data.lastChapter || 0;
+        const targetPara = data.lastParagraph || 0;
+        loadChapter(targetCh, targetPara);
+        showToast(`🎉 Nạp truyện thành công: ${data.title} (${data.totalChapters} chương đã sẵn sàng!)`);
+
+        // Cập nhật số lượng sách trong tủ
+        const bRes = await fetch('/api/books');
+        const bList = await bRes.json();
+        document.getElementById('libraryCountBadge').textContent = `(${bList.length}/10)`;
+
+        if (inp) inp.value = '';
+      } catch (err) {
+        alert('Lỗi nạp truyện từ web: ' + err.message);
+      } finally {
+        if (box) box.style.display = 'none';
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    // Tự động nạp thêm chương từ web khi người đọc gần chạm đáy bộ đệm 50 chương
+    let isFetchingMoreWeb = false;
+    async function fetchMoreWebChapters(count = 5) {
+      if (!bookData || !bookData.is_web || isFetchingMoreWeb) return 0;
+      isFetchingMoreWeb = true;
+      try {
+        const res = await fetch('/api/web-novel/fetch-more', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bookId: bookData.id, count: count })
+        });
+        const data = await res.json();
+        if (data.success && data.added > 0) {
+          if (data.newChapters) {
+            bookData.chapters.push(...data.newChapters);
+          }
+          bookData.totalChapters = bookData.chapters.length;
+          renderDrawerChapters();
+          console.log(`[WebNovel] Đã tải thêm ${data.added} chương mới. Tổng: ${bookData.totalChapters}`);
+          return data.added;
+        }
+      } catch (err) {
+        console.error('Lỗi khi fetchMoreWebChapters:', err);
+      } finally {
+        isFetchingMoreWeb = false;
+      }
+      return 0;
+    }
+
+    async function selectBookFromLibrary(bookId) {
+      closeLibraryModal();
+      try {
+        const res = await fetch(`/api/books/${bookId}`);
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        bookData = data;
+        document.getElementById('bookMetaInfo').textContent = `${data.title} - ${data.author}`;
+        const targetCh = data.lastChapter || 0;
+        const targetPara = data.lastParagraph || 0;
+        loadChapter(targetCh, targetPara);
+        showToast(`✨ Đã mở: ${data.title} (Chương ${targetCh + 1}, Đoạn ${targetPara + 1})`);
+      } catch (err) {
+        alert('Lỗi mở sách: ' + err.message);
+      }
+    }
+
+    async function deleteBookFromLibrary(bookId, title) {
+      if (!confirm(`Bạn có chắc muốn xoá "${title}" khỏi tủ sách không?`)) return;
+      try {
+        await fetch(`/api/books/${bookId}`, { method: 'DELETE' });
+        await loadLibraryList();
+        if (bookData && bookData.id === bookId) {
+          bookData = null;
+          document.getElementById('bookMetaInfo').textContent = 'Chưa mở truyện';
+          document.getElementById('readerContent').innerHTML = `
+            <div class="empty-state">
+              <div class="empty-dropzone" onclick="document.getElementById('epubFileInput').click()">
+                <h3>Đã xoá truyện. Bấm vào đây để nạp truyện mới hoặc mở từ Tủ Sách!</h3>
+              </div>
+            </div>`;
+          updateProgressBadge();
+        }
+      } catch (err) {
+        alert('Lỗi xoá sách: ' + err.message);
+      }
+    }
+
+    // Tải danh sách giọng đọc
+    async function loadVoices() {
+      try {
+        const res = await fetch('/api/voices');
+        voices = await res.json();
+        const select = document.getElementById('voiceSelect');
+        select.innerHTML = '';
+        const savedVoice = localStorage.getItem('reader_saved_voice');
+
+        voices.forEach(v => {
+          const opt = document.createElement('option');
+          opt.value = v.id;
+          opt.textContent = `${v.name} (${v.provider === 'capcut' ? 'CapCut' : 'Edge'})`;
+          opt.dataset.provider = v.provider;
+          if (savedVoice && savedVoice === v.id) {
+            opt.selected = true;
+          }
+          select.appendChild(opt);
+        });
+      } catch (err) {
+        console.error('Lỗi nạp giọng:', err);
+      }
+    }
+
+    function onVoiceChange(val) {
+      localStorage.setItem('reader_saved_voice', val);
+      notifyPreloader();
+    }
+
+    // Chỉnh tốc độ đọc mượt mà bằng thanh trượt
+    function onSpeedSliderChange(val) {
+      currentSpeed = parseFloat(val);
+      document.getElementById('speedValue').textContent = currentSpeed.toFixed(2) + 'x';
+      audio.playbackRate = currentSpeed;
+      localStorage.setItem('reader_speed', currentSpeed.toString());
+      notifyPreloader();
+    }
+
+    // Cơ chế tự động đệm trước 50 chương (Sliding Window Preloader)
+    async function notifyPreloader(overrideCh = null) {
+      if (!bookData) return;
+      const chIdx = overrideCh !== null ? overrideCh : currentChapterIndex;
+      const voiceSelect = document.getElementById('voiceSelect');
+      const selectedOpt = voiceSelect.options[voiceSelect.selectedIndex] || {};
+      try {
+        await fetch('/api/preload/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            bookId: bookData.id,
+            chapterIndex: chIdx,
+            voiceId: selectedOpt.value || 'BV074_streaming',
+            provider: selectedOpt.dataset?.provider || 'capcut',
+            speed: currentSpeed,
+            windowSize: 50
+          })
+        });
+      } catch (e) {
+        console.error('Lỗi thông báo preloader:', e);
+      }
+    }
+
+    async function togglePreloader() {
+      try {
+        const res = await fetch('/api/preload/toggle', { method: 'POST' });
+        const data = await res.json();
+        showToast(data.enabled ? '⚡ Đã BẬT tự động đệm 50 chương tiếp theo!' : '⏸ Đã TẮT tự động đệm 50 chương.');
+        pollPreloadStatus();
+      } catch (e) {
+        alert('Lỗi: ' + e);
+      }
+    }
+
+    async function pollPreloadStatus() {
+      if (!bookData) return;
+      try {
+        const res = await fetch('/api/preload/status');
+        const st = await res.json();
+        const badge = document.getElementById('preloadBadge');
+        const statusText = document.getElementById('bufferStatusText');
+        
+        if (!st.enabled) {
+          if (badge) badge.style.display = 'none';
+          if (statusText) statusText.textContent = 'Đã tắt';
+          return;
+        }
+
+        // Tự động đồng bộ số chương nếu preloader tải thêm chương mới từ web
+        if (st.totalBookChapters && bookData.chapters && st.totalBookChapters > bookData.chapters.length && bookData.id === st.bookId) {
+          fetch(`/api/books/${bookData.id}`)
+            .then(r => r.json())
+            .then(updated => {
+              if (updated && updated.chapters && updated.chapters.length > bookData.chapters.length) {
+                bookData.chapters = updated.chapters;
+                bookData.totalChapters = updated.chapters.length;
+                renderDrawerChapters();
+                console.log(`[Sync] Đã tự động cập nhật ${updated.chapters.length} chương`);
+              }
+            }).catch(() => {});
+        }
+
+        if (badge) {
+          badge.style.display = 'inline-flex';
+          const icon = st.isWorking ? '🔄' : '⚡';
+          if (st.isWorking && st.workingChapter !== null) {
+            badge.innerHTML = `${icon} Đệm Ch.${st.workingChapter + 1} (${st.workingPara}/${st.totalWorkingParas || '...'}) • <b>${st.cachedCount}/${st.windowTotal}</b> ch.`;
+            badge.title = `Đang tải trước câu ${st.workingPara}/${st.totalWorkingParas} của Chương ${st.workingChapter + 1} (Luôn duy trì 50 chương dự trữ)`;
+          } else {
+            badge.innerHTML = `⚡ Đã đệm: <b>${st.cachedCount}/${st.windowTotal}</b> ch.`;
+            badge.title = `Đã đệm đủ 50 chương tiếp theo! Sẵn sàng nghe offline không lo gián đoạn mạng.`;
+          }
+        }
+
+        if (statusText) {
+          if (st.isWorking && st.workingChapter !== null) {
+            statusText.textContent = `Ch.${st.workingChapter + 1} [${st.workingPara}/${st.totalWorkingParas || '...'}] (${st.cachedCount}/${st.windowTotal})`;
+          } else {
+            statusText.textContent = `${st.cachedCount}/${st.windowTotal} đã sẵn sàng`;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Lưu vị trí đọc sách
+    function saveProgress() {
+      if (!bookData) return;
+      const progress = {
+        bookId: bookData.id,
+        bookTitle: bookData.title,
+        chapterIndex: currentChapterIndex,
+        paragraphIndex: currentParagraphIndex,
+        chapterTitle: bookData.chapters[currentChapterIndex]?.title || `Chương ${currentChapterIndex + 1}`,
+        updatedAt: new Date().toISOString()
+      };
+
+      localStorage.setItem('progress_' + bookData.id, JSON.stringify(progress));
+
+      fetch('/api/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(progress)
+      }).catch(() => {});
+
+      updateProgressBadge();
+    }
+
+    function updateProgressBadge() {
+      const badge = document.getElementById('progressBadge');
+      if (bookData && bookData.chapters && bookData.chapters.length > 0) {
+        badge.style.display = 'inline-flex';
+        badge.textContent = `📍 Chương ${currentChapterIndex + 1} • Đoạn ${currentParagraphIndex + 1}`;
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+
+    function scrollToActiveParagraph() {
+      const activeEl = document.getElementById(`para-${currentParagraphIndex}`);
+      if (activeEl) {
+        activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+
+    // Khởi tạo tự động mở sách và khôi phục vị trí đọc
+    async function initAutoResume() {
+      await loadVoices();
+      await loadSkipRules();
+      await loadPronounceRules();
+
+      // Phục hồi cài đặt giao diện
+      const savedTheme = localStorage.getItem('reader_theme') || 'sepia';
+      changeTheme(savedTheme);
+      document.getElementById('themeSelect').value = savedTheme;
+
+      const savedFontSize = localStorage.getItem('reader_font_size');
+      if (savedFontSize) {
+        currentFontSize = parseInt(savedFontSize);
+        document.getElementById('readerContent').style.fontSize = currentFontSize + 'px';
+      }
+
+      const savedSpeed = localStorage.getItem('reader_speed');
+      if (savedSpeed) {
+        currentSpeed = parseFloat(savedSpeed);
+        document.getElementById('speedSlider').value = currentSpeed;
+        document.getElementById('speedValue').textContent = currentSpeed.toFixed(2) + 'x';
+        audio.playbackRate = currentSpeed;
+      }
+
+      // Tự động kiểm tra sách mở gần nhất từ Tủ Sách
+      try {
+        const res = await fetch('/api/last-book');
+        const lastBook = await res.json();
+        if (lastBook && lastBook.chapters && lastBook.chapters.length > 0) {
+          bookData = lastBook;
+          document.getElementById('bookMetaInfo').textContent = `${lastBook.title} - ${lastBook.author}`;
+
+          const targetCh = Math.min(lastBook.lastChapter || 0, lastBook.chapters.length - 1);
+          const targetPara = lastBook.lastParagraph || 0;
+          loadChapter(targetCh, targetPara);
+          showToast(`✨ Đã mở: ${lastBook.title} (Chương ${targetCh + 1}, Đoạn ${targetPara + 1})`);
+        } else {
+          document.getElementById('bookMetaInfo').textContent = 'Chưa nạp truyện';
+        }
+      } catch (err) {
+        console.error('Lỗi khi khôi phục vị trí:', err);
+      }
+
+      // Cập nhật số lượng sách trong tủ
+      try {
+        const bRes = await fetch('/api/books');
+        const bList = await bRes.json();
+        document.getElementById('libraryCountBadge').textContent = `(${bList.length}/10)`;
+      } catch (_) {}
+
+      // Khởi động đồng bộ bộ đệm 50 chương
+      setInterval(pollPreloadStatus, 2000);
+      pollPreloadStatus();
+
+      // Kích hoạt tính năng cuộn con lăn chuyển chương
+      initScrollChapterSwitcher();
+    }
+
+    // Nạp file EPUB mới vào tủ sách
+    document.getElementById('epubFileInput').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      document.getElementById('bookMetaInfo').textContent = 'Đang phân tích EPUB...';
+
+      try {
+        const res = await fetch('/api/parse-epub', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        bookData = data;
+        document.getElementById('bookMetaInfo').textContent = `${data.title} - ${data.author}`;
+
+        const targetCh = data.lastChapter || 0;
+        const targetPara = data.lastParagraph || 0;
+        loadChapter(targetCh, targetPara);
+        showToast(`📚 Đã lưu truyện vào Tủ Sách & mở: Chương ${targetCh + 1}`);
+
+        // Cập nhật badge số lượng sách
+        const bRes = await fetch('/api/books');
+        const bList = await bRes.json();
+        document.getElementById('libraryCountBadge').textContent = `(${bList.length}/10)`;
+        notifyPreloader(targetCh);
+      } catch (err) {
+        alert('Lỗi nạp EPUB: ' + err.message);
+        document.getElementById('bookMetaInfo').textContent = 'Lỗi nạp file';
+      }
+    });
+
+    let currentPlaybackSessionId = 0;
+
+    function loadChapter(idx, targetParagraph = 0) {
+      // Dừng ngay lập tức âm thanh cũ và huỷ mọi request TTS đang chờ của chương trước
+      currentPlaybackSessionId++;
+      if (audio) {
+        audio.pause();
+        audio.onended = null;
+        audio.src = '';
+      }
+      setLoading(false);
+
+      currentChapterIndex = idx;
+      currentParagraphIndex = targetParagraph;
+
+      const ch = bookData.chapters[idx];
+      const reader = document.getElementById('readerContent');
+      reader.innerHTML = `
+        <div class="chapter-title-heading">
+          <span>${escapeHtml(ch.title)}</span>
+          <div style="display:flex; gap:8px;">
+            <button class="btn" style="font-size:0.8rem; padding:4px 10px;" onclick="toggleChapterDrawer()">
+              📑 Đổi chương
+            </button>
+            <button class="btn" style="font-size:0.8rem; padding:4px 10px;" onclick="jumpToParagraph(0)">
+              🔄 Đầu chương
+            </button>
+          </div>
+        </div>
+      `;
+
+      ch.paragraphs.forEach((p, pIdx) => {
+        const skipped = isParagraphSkipped(p);
+        const div = document.createElement('div');
+        div.className = 'paragraph-item' + (pIdx === currentParagraphIndex ? ' active' : '') + (skipped ? ' skipped' : '');
+        div.id = `para-${pIdx}`;
+        div.textContent = p;
+
+        let pressTimer = null;
+        let isLongPress = false;
+        let startX = 0, startY = 0;
+
+        div.addEventListener('pointerdown', (e) => {
+          isLongPress = false;
+          startX = e.clientX;
+          startY = e.clientY;
+          pressTimer = setTimeout(() => {
+            isLongPress = true;
+            showContextMenu(e.clientX, e.clientY, p, pIdx);
+          }, 450);
+        });
+
+        div.addEventListener('pointermove', (e) => {
+          if (Math.hypot(e.clientX - startX, e.clientY - startY) > 8) {
+            clearTimeout(pressTimer);
+          }
+        });
+
+        div.addEventListener('pointerup', () => {
+          clearTimeout(pressTimer);
+        });
+
+        div.addEventListener('pointercancel', () => {
+          clearTimeout(pressTimer);
+        });
+
+        // Chuột phải (desktop) cũng mở ngay menu tuỳ chọn
+        div.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          showContextMenu(e.clientX, e.clientY, p, pIdx);
+        });
+
+        div.addEventListener('click', () => {
+          if (isLongPress) return;
+          jumpToParagraph(pIdx);
+        });
+
+        reader.appendChild(div);
+      });
+
+      // Thêm chỉ báo cuối chương & gợi ý cuộn sang chương kế tiếp
+      const endIndicator = document.createElement('div');
+      endIndicator.className = 'chapter-end-indicator';
+      endIndicator.id = 'chapterEndIndicator';
+      if (idx + 1 < bookData.chapters.length) {
+        const nextCh = bookData.chapters[idx + 1];
+        endIndicator.innerHTML = `
+          <div class="end-divider"></div>
+          <div class="end-badge" onclick="triggerNextChapterByScroll()" title="Bấm hoặc cuộn con lăn chuột xuống để sang chương">
+            <span>⏬ Cuộn tiếp con lăn chuột để sang: <b>${escapeHtml(nextCh.title)}</b></span>
+          </div>
+        `;
+      } else {
+        endIndicator.innerHTML = `
+          <div class="end-divider"></div>
+          <div class="end-badge">
+            <span>🎉 Bạn đã đọc đến chương mới nhất của bộ truyện</span>
+          </div>
+        `;
+      }
+      reader.appendChild(endIndicator);
+
+      setTimeout(() => {
+        scrollToActiveParagraph();
+      }, 100);
+
+      saveProgress();
+      notifyPreloader(idx);
+
+      if (isPlaying) {
+        playParagraph(currentParagraphIndex);
+      }
+    }
+
+    // =====================================================================
+    // TỰ ĐỘNG CHUYỂN CHƯƠNG KHI CUỘN CON LĂN ĐẾN CUỐI TRANG
+    // =====================================================================
+    let isChapterTransitioning = false;
+    let wheelOverScrollAccumulator = 0;
+
+    async function triggerNextChapterByScroll() {
+      if (!bookData || isChapterTransitioning) return;
+      if (currentChapterIndex + 1 >= bookData.chapters.length) {
+        if (bookData.is_web) {
+          isChapterTransitioning = true;
+          showToast('⏳ Đang tải thêm chương tiếp theo từ web...');
+          const added = await fetchMoreWebChapters(5);
+          if (added > 0) {
+            triggerNextChapterByScroll();
+          } else {
+            showToast('🎉 Đã là chương mới nhất của truyện!');
+          }
+          setTimeout(() => { isChapterTransitioning = false; }, 800);
+          return;
+        }
+        showToast('🎉 Đã là chương cuối cùng của quyển truyện!');
+        return;
+      }
+      isChapterTransitioning = true;
+      const nextIdx = currentChapterIndex + 1;
+      const nextTitle = bookData.chapters[nextIdx]?.title || `Chương ${nextIdx + 1}`;
+      showToast(`📖 Đang chuyển sang: ${nextTitle}`);
+
+      // Dừng ngay lập tức audio hiện tại để tránh đọc lệch với chữ chương mới
+      currentPlaybackSessionId++;
+      if (audio) {
+        audio.pause();
+        audio.onended = null;
+        audio.src = '';
+      }
+      setLoading(false);
+
+      // Nếu là web novel và còn dưới 5 chương trong danh sách, tự động tải thêm
+      if (bookData.is_web && currentChapterIndex + 5 >= bookData.chapters.length) {
+        fetchMoreWebChapters(5);
+      }
+
+      const scrollArea = document.getElementById('readerScrollArea');
+      if (scrollArea) {
+        scrollArea.scrollTo({ top: 0, behavior: 'instant' });
+      }
+
+      loadChapter(nextIdx, 0);
+
+      setTimeout(() => {
+        isChapterTransitioning = false;
+      }, 600);
+    }
+
+    function initScrollChapterSwitcher() {
+      const scrollArea = document.getElementById('readerScrollArea');
+      if (!scrollArea) return;
+
+      // 1. Cuộn con lăn chuột (Mouse Wheel / Trackpad)
+      scrollArea.addEventListener('wheel', (e) => {
+        if (!bookData || isChapterTransitioning) return;
+        if (e.deltaY > 0) { // Đang lăn XUỐNG
+          const atBottom = (scrollArea.scrollTop + scrollArea.clientHeight) >= (scrollArea.scrollHeight - 30);
+          if (atBottom) {
+            wheelOverScrollAccumulator += e.deltaY;
+            if (wheelOverScrollAccumulator > 55) {
+              wheelOverScrollAccumulator = 0;
+              triggerNextChapterByScroll();
+            }
+          } else {
+            wheelOverScrollAccumulator = 0;
+          }
+        } else {
+          wheelOverScrollAccumulator = 0;
+        }
+      }, { passive: true });
+
+      // 2. Vuốt màn hình cảm ứng (Touch swipe trên điện thoại)
+      let touchStartY = 0;
+      scrollArea.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) touchStartY = e.touches[0].clientY;
+      }, { passive: true });
+
+      scrollArea.addEventListener('touchend', (e) => {
+        if (!bookData || isChapterTransitioning) return;
+        if (e.changedTouches.length === 1) {
+          const deltaY = touchStartY - e.changedTouches[0].clientY;
+          const atBottom = (scrollArea.scrollTop + scrollArea.clientHeight) >= (scrollArea.scrollHeight - 30);
+          if (atBottom && deltaY > 45) {
+            triggerNextChapterByScroll();
+          }
+        }
+      }, { passive: true });
+    }
+
+    function jumpToParagraph(pIdx) {
+      currentPlaybackSessionId++;
+      if (audio) {
+        audio.pause();
+        audio.onended = null;
+        audio.src = '';
+      }
+      setLoading(false);
+
+      if (bookData) {
+        const ch = bookData.chapters[currentChapterIndex];
+        while (ch && pIdx < ch.paragraphs.length && isParagraphSkipped(ch.paragraphs[pIdx])) {
+          pIdx++;
+        }
+      }
+      currentParagraphIndex = pIdx;
+      highlightActiveParagraph();
+      saveProgress();
+
+      if (isPlaying) {
+        playParagraph(pIdx);
+      } else {
+        togglePlay();
+      }
+    }
+
+    function highlightActiveParagraph() {
+      document.querySelectorAll('.paragraph-item').forEach(el => el.classList.remove('active'));
+      const activeEl = document.getElementById(`para-${currentParagraphIndex}`);
+      if (activeEl) {
+        activeEl.classList.add('active');
+        activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      updateProgressBadge();
+    }
+
+    // =====================================================================
+    // PHÁT GIỌNG ĐỌC ĐỒNG BỘ 100% VỚI ĐOẠN VĂN (ANTI-DESYNC ENGINE)
+    // =====================================================================
+    async function playParagraph(idx) {
+      if (!bookData) return;
+      const ch = bookData.chapters[currentChapterIndex];
+      if (!ch || !ch.paragraphs) return;
+
+      // Sinh session ID duy nhất cho lượt phát này
+      const mySessionId = ++currentPlaybackSessionId;
+      const targetChapter = currentChapterIndex;
+
+      // Dừng mọi âm thanh cũ và ngắt kết nối sự kiện kết thúc
+      if (audio) {
+        audio.pause();
+        audio.onended = null;
+      }
+
+      // Tự động bỏ qua các câu nằm trong danh sách bỏ qua
+      while (idx < ch.paragraphs.length && isParagraphSkipped(ch.paragraphs[idx])) {
+        console.log(`[Skip] Bỏ qua câu: "${ch.paragraphs[idx]}"`);
+        idx++;
+      }
+
+      // Nếu đã đọc hết các câu trong chương hiện tại
+      if (idx >= ch.paragraphs.length) {
+        if (sleepTimerMode === 'chapter') {
+          triggerSleepTimerExpired();
+          return;
+        }
+        if (currentChapterIndex + 1 < bookData.chapters.length) {
+          if (bookData.is_web && currentChapterIndex + 5 >= bookData.chapters.length) {
+            fetchMoreWebChapters(5);
+          }
+          loadChapter(currentChapterIndex + 1, 0);
+          return;
+        } else if (bookData.is_web) {
+          showToast('⏳ Đang tải thêm chương tiếp theo từ web...');
+          fetchMoreWebChapters(5).then(added => {
+            if (mySessionId !== currentPlaybackSessionId) return;
+            if (added > 0) {
+              loadChapter(currentChapterIndex + 1, 0);
+            } else {
+              pauseAudio();
+              showToast('🎉 Bạn đã nghe hết các chương hiện có của truyện!');
+            }
+          });
+          return;
+        } else {
+          pauseAudio();
+          showToast('🎉 Bạn đã nghe hết quyển truyện!');
+          return;
+        }
+      }
+
+      currentParagraphIndex = idx;
+      const targetPara = idx;
+      highlightActiveParagraph();
+      saveProgress();
+
+      const text = ch.paragraphs[idx].trim();
+      if (!text) {
+        // Nếu đoạn văn trống, chuyển sang đoạn kế tiếp
+        nextParagraph();
+        return;
+      }
+
+      const voiceSelect = document.getElementById('voiceSelect');
+      const selectedOpt = voiceSelect.options[voiceSelect.selectedIndex] || {};
+      const voiceId = selectedOpt.value || 'BV074_streaming';
+      const provider = selectedOpt.dataset?.provider || 'capcut';
+
+      setLoading(true);
+
+      try {
+        const res = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: text,
+            voice_id: voiceId,
+            provider: provider,
+            speed: currentSpeed
+          })
+        });
+
+        // Kiểm tra xem người dùng có chuyển chương, chuyển đoạn, hoặc bấm tạm dừng trong lúc đang tải audio không
+        if (mySessionId !== currentPlaybackSessionId || 
+            targetChapter !== currentChapterIndex || 
+            targetPara !== currentParagraphIndex || 
+            !isPlaying) {
+          console.log(`[AudioSync] Hủy nạp audio cũ của Ch.${targetChapter + 1} Đoạn ${targetPara + 1} do đã đổi sang Ch.${currentChapterIndex + 1} Đoạn ${currentParagraphIndex + 1}`);
+          return;
+        }
+
+        if (!res.ok) throw new Error('Lỗi server TTS (' + res.status + ')');
+
+        const blob = await res.blob();
+        if (blob.size < 300) throw new Error('Dữ liệu âm thanh nhận về quá ngắn');
+
+        // Kiểm tra lại lần nữa trước khi gán audio
+        if (mySessionId !== currentPlaybackSessionId || 
+            targetChapter !== currentChapterIndex || 
+            targetPara !== currentParagraphIndex || 
+            !isPlaying) {
+          return;
+        }
+
+        const audioUrl = URL.createObjectURL(blob);
+        audio.src = audioUrl;
+        audio.playbackRate = currentSpeed;
+
+        // Chỉ gắn onended khi audio của đúng đoạn này chuẩn bị phát
+        audio.onended = () => {
+          if (mySessionId === currentPlaybackSessionId && 
+              targetChapter === currentChapterIndex && 
+              targetPara === currentParagraphIndex && 
+              isPlaying) {
+            nextParagraph();
+          }
+        };
+
+        updateMediaSession(ch.title, text);
+        await audio.play();
+        setLoading(false);
+      } catch (err) {
+        console.error(`[Audio Error] Lỗi phát âm thanh Ch.${targetChapter + 1} Đoạn ${targetPara + 1}:`, err);
+        if (mySessionId !== currentPlaybackSessionId) return;
+        setLoading(false);
+        // Thử lại sau 1 giây thay vì tự ý nhảy cóc làm lệch chữ với tiếng
+        setTimeout(() => {
+          if (mySessionId === currentPlaybackSessionId && 
+              targetChapter === currentChapterIndex && 
+              targetPara === currentParagraphIndex && 
+              isPlaying) {
+            console.log('[AudioSync] Đang thử kết nối lại TTS...');
+            playParagraph(targetPara);
+          }
+        }, 1200);
+      }
+    }
+
+    function togglePlay() {
+      if (!bookData) {
+        alert('Vui lòng nạp truyện hoặc chọn từ Tủ Sách trước khi nghe!');
+        return;
+      }
+      if (isPlaying) {
+        pauseAudio();
+      } else {
+        isPlaying = true;
+        updatePlayBtn();
+        requestWakeLock();
+        initMediaSessionHandlers();
+        playParagraph(currentParagraphIndex);
+      }
+    }
+
+    function pauseAudio() {
+      currentPlaybackSessionId++;
+      isPlaying = false;
+      if (audio) {
+        audio.pause();
+        audio.onended = null;
+      }
+      releaseWakeLock();
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'paused';
+      }
+      setLoading(false);
+      updatePlayBtn();
+    }
+
+    // =====================================================================
+    // MEDIA SESSION API (HIỂN THỊ TRÊN THANH THÔNG BÁO VÀ MÀN HÌNH KHÓA ĐIỆN THOẠI)
+    // =====================================================================
+    const AUDIO_COVER_ARTWORK = [
+      {
+        src: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=512&auto=format&fit=crop&q=80',
+        sizes: '512x512',
+        type: 'image/jpeg'
+      },
+      {
+        src: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=192&auto=format&fit=crop&q=80',
+        sizes: '192x192',
+        type: 'image/jpeg'
+      }
+    ];
+
+    let mediaSessionInitialized = false;
+    function initMediaSessionHandlers() {
+      if (!('mediaSession' in navigator) || mediaSessionInitialized) return;
+      mediaSessionInitialized = true;
+
+      try {
+        navigator.mediaSession.setActionHandler('play', () => {
+          if (!isPlaying) togglePlay();
+        });
+        navigator.mediaSession.setActionHandler('pause', () => {
+          if (isPlaying) pauseAudio();
+        });
+        navigator.mediaSession.setActionHandler('previoustrack', () => {
+          prevParagraph();
+        });
+        navigator.mediaSession.setActionHandler('nexttrack', () => {
+          nextParagraph();
+        });
+        navigator.mediaSession.setActionHandler('seekbackward', () => {
+          prevParagraph();
+        });
+        navigator.mediaSession.setActionHandler('seekforward', () => {
+          nextParagraph();
+        });
+      } catch (err) {
+        console.warn('Lỗi gán action handler MediaSession:', err);
+      }
+    }
+
+    function updateMediaSession(chapterTitle, currentSentence) {
+      if (!('mediaSession' in navigator) || !bookData) return;
+      try {
+        const ch = bookData.chapters[currentChapterIndex];
+        const title = chapterTitle || ch?.title || `Chương ${currentChapterIndex + 1}`;
+        const artist = bookData.title || 'Trình Đọc Truyện AI';
+        const album = `Đoạn ${currentParagraphIndex + 1}/${ch?.paragraphs?.length || 0} • ${bookData.author || 'AI Voice'}`;
+
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: title,
+          artist: artist,
+          album: album,
+          artwork: AUDIO_COVER_ARTWORK
+        });
+        navigator.mediaSession.playbackState = 'playing';
+      } catch (e) {
+        console.warn('Lỗi updateMediaSession:', e);
+      }
+    }
+
+    // =====================================================================
+    // WAKE LOCK (HỖ TRỢ NGHE LIÊN TỤC KHI TẮT MÀN HÌNH HOẶC CHẠY NỀN)
+    // =====================================================================
+    let wakeLockSentinel = null;
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLockSentinel = await navigator.wakeLock.request('screen');
+          wakeLockSentinel.addEventListener('release', () => {
+            wakeLockSentinel = null;
+          });
+        }
+      } catch (_) {}
+    }
+
+    function releaseWakeLock() {
+      if (wakeLockSentinel) {
+        wakeLockSentinel.release().catch(() => {});
+        wakeLockSentinel = null;
+      }
+    }
+
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState === 'visible' && isPlaying) {
+        await requestWakeLock();
+      }
+    });
+
+    // =====================================================================
+    // HẸN GIỜ TẮT ĐỌC (SLEEP TIMER)
+    // =====================================================================
+    let sleepTimerEndTime = null;
+    let sleepTimerInterval = null;
+    let sleepTimerMode = null; // 'minutes' hoặc 'chapter'
+
+    function openSleepTimerModal() {
+      document.getElementById('sleepTimerModalOverlay').classList.add('open');
+      updateSleepTimerModalUI();
+    }
+
+    function closeSleepTimerModal(e) {
+      if (e && e.target && e.target.id !== 'sleepTimerModalOverlay') return;
+      document.getElementById('sleepTimerModalOverlay').classList.remove('open');
+    }
+
+    function updateSleepTimerModalUI() {
+      const banner = document.getElementById('activeTimerBanner');
+      const countdownEl = document.getElementById('activeTimerCountdown');
+      if (sleepTimerMode === 'minutes' && sleepTimerEndTime) {
+        const leftSec = Math.max(0, Math.round((sleepTimerEndTime - Date.now()) / 1000));
+        const m = Math.floor(leftSec / 60);
+        const s = leftSec % 60;
+        if (banner) banner.style.display = 'block';
+        if (countdownEl) countdownEl.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      } else if (sleepTimerMode === 'chapter') {
+        if (banner) banner.style.display = 'block';
+        if (countdownEl) countdownEl.textContent = 'Dừng khi đọc xong chương hiện tại';
+      } else {
+        if (banner) banner.style.display = 'none';
+      }
+    }
+
+    function setSleepTimer(val) {
+      if (val === 'chapter') {
+        sleepTimerMode = 'chapter';
+        sleepTimerEndTime = null;
+        if (sleepTimerInterval) clearInterval(sleepTimerInterval);
+        setTimerButtonLabel('Hết ch.');
+        showToast('⏱️ Đã đặt hẹn giờ: Dừng đọc khi hết chương này!');
+      } else {
+        const mins = parseInt(val);
+        if (!mins || mins <= 0) return;
+        sleepTimerMode = 'minutes';
+        sleepTimerEndTime = Date.now() + mins * 60 * 1000;
+        
+        if (sleepTimerInterval) clearInterval(sleepTimerInterval);
+        sleepTimerInterval = setInterval(checkSleepTimerTick, 1000);
+        
+        updateSleepTimerButtonText();
+        showToast(`⏱️ Đã đặt hẹn giờ tắt đọc sau ${mins} phút!`);
+      }
+      document.getElementById('sleepTimerModalOverlay').classList.remove('open');
+    }
+
+    function setCustomSleepTimer() {
+      const inp = document.getElementById('customMinutesInput');
+      const mins = parseInt(inp?.value);
+      if (!mins || mins <= 0) {
+        alert('Vui lòng nhập số phút hợp lệ!');
+        return;
+      }
+      setSleepTimer(mins);
+    }
+
+    function checkSleepTimerTick() {
+      if (sleepTimerMode !== 'minutes' || !sleepTimerEndTime) return;
+      const now = Date.now();
+      if (now >= sleepTimerEndTime) {
+        triggerSleepTimerExpired();
+        return;
+      }
+      updateSleepTimerButtonText();
+      updateSleepTimerModalUI();
+    }
+
+    function setTimerButtonLabel(label) {
+      const btnText = document.getElementById('sleepTimerText');
+      const headText = document.getElementById('headerTimerText');
+      if (btnText) btnText.textContent = label;
+      if (headText) headText.textContent = label;
+    }
+
+    function updateSleepTimerButtonText() {
+      if (sleepTimerMode === 'minutes' && sleepTimerEndTime) {
+        const leftSec = Math.max(0, Math.round((sleepTimerEndTime - Date.now()) / 1000));
+        const m = Math.floor(leftSec / 60);
+        const s = leftSec % 60;
+        const timeStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        setTimerButtonLabel(timeStr);
+      }
+    }
+
+    function triggerSleepTimerExpired() {
+      cancelSleepTimer(false);
+      if (isPlaying) {
+        pauseAudio();
+      }
+      showToast('😴 Đã hết giờ hẹn! Trình đọc tự động dừng để bạn nghỉ ngơi.');
+    }
+
+    function cancelSleepTimer(showNotify = true) {
+      if (sleepTimerInterval) {
+        clearInterval(sleepTimerInterval);
+        sleepTimerInterval = null;
+      }
+      sleepTimerEndTime = null;
+      sleepTimerMode = null;
+      setTimerButtonLabel('Hẹn giờ');
+      updateSleepTimerModalUI();
+      if (showNotify) showToast('🛑 Đã hủy hẹn giờ tắt đọc.');
+    }
+
+    function nextParagraph() {
+      currentPlaybackSessionId++;
+      if (audio) {
+        audio.pause();
+        audio.onended = null;
+      }
+      currentParagraphIndex++;
+      playParagraph(currentParagraphIndex);
+    }
+
+    function prevParagraph() {
+      if (currentParagraphIndex > 0) {
+        currentPlaybackSessionId++;
+        if (audio) {
+          audio.pause();
+          audio.onended = null;
+        }
+        currentParagraphIndex--;
+        playParagraph(currentParagraphIndex);
+      }
+    }
+
+    function setLoading(loading) {
+      isLoading = loading;
+      const btn = document.getElementById('playBtn');
+      if (loading) {
+        btn.innerHTML = '<div class="spinner"></div>';
+      } else {
+        updatePlayBtn();
+      }
+    }
+
+    function updatePlayBtn() {
+      const btn = document.getElementById('playBtn');
+      if (isPlaying) {
+        btn.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+      } else {
+        btn.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+      }
+    }
+
+    function changeTheme(theme) {
+      document.body.className = '';
+      if (theme !== 'sepia') {
+        document.body.classList.add('theme-' + theme);
+      }
+      localStorage.setItem('reader_theme', theme);
+    }
+
+    function adjustFontSize(delta) {
+      currentFontSize = Math.max(14, Math.min(28, currentFontSize + delta));
+      document.getElementById('readerContent').style.fontSize = currentFontSize + 'px';
+      localStorage.setItem('reader_font_size', currentFontSize);
+    }
+
+    async function preloadCurrentChapter() {
+      if (!bookData) return;
+      const ch = bookData.chapters[currentChapterIndex];
+      const voiceSelect = document.getElementById('voiceSelect');
+      const selectedOpt = voiceSelect.options[voiceSelect.selectedIndex];
+      
+      const confirmPreload = confirm(`Bạn có muốn tải trước toàn bộ ${ch.paragraphs.length} câu của "${ch.title}" vào cache máy không?`);
+      if (!confirmPreload) return;
+
+      let count = 0;
+      for (const p of ch.paragraphs) {
+        count++;
+        document.getElementById('bookMetaInfo').textContent = `Đang tải trước câu ${count}/${ch.paragraphs.length}...`;
+        await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: p,
+            voice_id: selectedOpt.value,
+            provider: selectedOpt.dataset.provider,
+            speed: currentSpeed
+          })
+        });
+        await new Promise(r => setTimeout(r, 600));
+      }
+
+      document.getElementById('bookMetaInfo').textContent = `${bookData.title} - ${bookData.author}`;
+      alert('Đã tải trước toàn bộ chương vào máy thành công! Bạn có thể nghe mượt mà không tốn mạng.');
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT') {
+        e.preventDefault();
+        togglePlay();
+      }
+    });
+
+    window.addEventListener('DOMContentLoaded', initAutoResume);
+  </script>
+</body>
+</html>

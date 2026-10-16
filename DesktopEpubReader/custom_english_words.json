@@ -1,0 +1,42 @@
+[
+  {
+    "word": "mmcsmd",
+    "phonetic": "",
+    "desc": "Thao tác chọn từ"
+  },
+  {
+    "word": "train start",
+    "phonetic": "",
+    "desc": ""
+  },
+  {
+    "word": "mmscfd",
+    "phonetic": "Triệu phít khối trên ngày",
+    "desc": ""
+  },
+  {
+    "word": "mmscmd",
+    "phonetic": "Triệu mét khối trên ngày",
+    "desc": ""
+  },
+  {
+    "word": "ramp-up",
+    "phonetic": "ram-áp",
+    "desc": "Tăng tốc, đẩy mạnh sản xuất"
+  },
+  {
+    "word": "prompt",
+    "phonetic": "prôm",
+    "desc": "Câu lệnh nhắc AI"
+  },
+  {
+    "word": "pipeline",
+    "phonetic": "pai-lai",
+    "desc": "Quy trình xử lý"
+  },
+  {
+    "word": "benchmark",
+    "phonetic": "ben-mác",
+    "desc": "Đánh giá hiệu năng"
+  }
+]

@@ -1,0 +1,76 @@
+Class/Func: ElevenLabsCapCutTTS
+
+--- Method: __init__ ---
+Constants: ('\nKhởi tạo client TTS.\n:param device_file: Đường dẫn lưu cache thiết bị giả lập (mặc định lưu tại temp).\n', 0, None, 'TEMP', 'TMP', '.', 'capcut_11labs_device.json')
+Names: ('requests', '_requests', 'ImportError', '_device_file', 'os', 'environ', 'get', 'path', 'join', '_get_device', 'device')
+
+--- Method: _rsa_encrypt ---
+Constants: ('Mã hóa chuỗi theo chuẩn PKCS#1 v1.5 với RSA Public Key của ByteDance.', 'utf-8', 7, 8, 3, 'Văn bản quá dài so với kích thước khóa RSA', 0, b'\x00\x02', None, b'\x00', 'big', 'ascii')
+Names: ('encode', '_RSA_N', 'bit_length', 'len', 'ValueError', 'bytearray', 'secrets', 'token_bytes', 'append', 'bytes', 'pow', 'int', 'from_bytes', '_RSA_E', 'base64', 'b64encode', 'to_bytes', 'decode')
+
+--- Method: _sign_payload ---
+Constants: (None, 'appid:', '&did:', '&creditDisable:false&ssml:', 'utf-8', '&extraInfo:')
+Names: ('_AID', 'hashlib', 'md5', 'encode', 'hexdigest', 'ElevenLabsCapCutTTS', '_rsa_encrypt')
+
+--- Method: _sign_header ---
+Constants: (None, '9e2c|', -7, '|3|', '|', '|11ac', 'utf-8')
+Names: ('_APPVR', 'hashlib', 'md5', 'encode', 'hexdigest')
+
+--- Method: _dump_json ---
+Constants: (None, (',', ':'), False, ('separators', 'ensure_ascii'))
+Names: ('json', 'dumps')
+
+--- Method: _escape_xml ---
+Constants: (None, '&', '&amp;', '<', '&lt;', '>', '&gt;', '"', '&quot;', "'", '&apos;')
+Names: ('replace',)
+
+--- Method: _generate_new_device ---
+Constants: (None, 7000000000000000000, 8000000000000000000, 'aid', 'app_name', 'CapCut', 'appvr', 'version_name', 'version_code', 'channel', 'device_platform', 'device_type', 'device_brand', 'os_version', 'device_id', 'iid', 'tdid', 'region', 'VN', 'loc', 'lan', 'vi-VN', 'pf', '3')
+Names: ('str', 'random', 'randint', 'choice', '_MAY', '_AID', '_APPVR')
+
+--- Method: _get_device ---
+Constants: (None, 'r', 'utf-8', ('encoding',), 'device_id', 'aid', 'w', 2, ('indent',))
+Names: ('os', 'path', 'exists', '_device_file', 'open', 'json', 'load', 'get', '_AID', 'Exception', '_generate_new_device', 'dump')
+
+--- Method: _build_query_params ---
+Constants: (None, ('app_name', 'device_type', 'os_version', 'channel', 'version_name', 'device_brand', 'device_id', 'iid', 'version_code', 'device_platform', 'aid'), 'region', 'babi_param')
+Names: ('device', '_dump_json')
+
+--- Method: _build_headers ---
+Constants: (None, 16, 'content-type', 'application/json', 'appvr', 'ch', 'channel', 'capcutpc_google', 'device-time', 'lan', 'vi-VN', 'loc', 'VN', 'pf', '3', 'sign-ver', '1', 'tdid', 'device_id', '', 'x-ss-stub', 'utf-8', 'x-ss-dp', 'aid', 'x-khronos', 'x-tt-trace-id', '00-', '-', '-01', 'user-agent', 'Cronet/TTNetVersion:1d7cc3b1 2025-07-16 QuicVersion:52c2b40d 2025-04-03', 'accept-encoding', 'gzip, deflate', 'store-country-code', 'store-country-code-src', 'did', '0', ('is-dispatch-us-ttp', 'is-app-region-us-ttp'))
+Names: ('int', 'time', 'secrets', 'token_hex', 'device', 'get', '_APPVR', 'str', 'hashlib', 'md5', 'encode', 'hexdigest', '_AID', 'lower')
+
+--- Method: _post ---
+Constants: ('Gửi POST request tới API (tự nhận diện requests hoặc urllib).', 'device-time', 'tdid', 'device_id', '', 'sign', 'utf-8', None, ('headers', 'data', 'timeout'), 'POST', ('data', 'headers', 'method'), ('timeout',))
+Names: ('_build_headers', '_sign_header', 'device', 'get', 'encode', '_requests', 'post', '_TIMEOUT', 'json', 'urllib', 'request', 'Request', 'urlopen', 'read', 'loads', 'Exception', 'gzip', 'decompress')
+
+--- Method: _resolve_voice ---
+Constants: ('Xác định Voice ID và Resource ID từ tên giọng hoặc ID.', 'id')
+Names: ('strip', 'TOP_ELEVENLABS_VOICES', 'items', 'lower', 'DEFAULT_11LABS_RID')
+
+--- Method: _create_task ---
+Constants: ('Tạo task tổng hợp giọng nói.', '    <voice name="', '" mock_tone_info="" platform="11labs" resource_id="', '" emotion="" emotion_scale="0" style="" role="" moyin_emotion="" is_clone_tone="false" need_subtitle_timestamp="false">\n        <prosody rate="1.0">', '</prosody>\n    </voice>', '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">\n', '\n', '\n</speak>', 'benefit_info', 'mp3', False, 'text_to_speech', 'device_id', ('audio_format', 'babi_param', 'credit_disable', 'extra_info', 'need_merge_voice', 'need_subtitle_timestamp', 'scene', 'ssml', 'sign'), True, '11labs_text_to_speech', 'v3', ('context', 'payload', 'req_key', 'task_version'), ('bind_id', 'can_queue', 'enter_from', 'tasks'), '?')
+Names: ('append', '_escape_xml', 'join', '_dump_json', '_BABI', '_sign_payload', 'device', 'str', 'uuid', 'uuid4', 'BASE_URL', '_PATH_NEW', 'urllib', 'parse', 'urlencode', '_build_query_params', '_post')
+
+--- Method: _query_task ---
+Constants: ('Truy vấn tiến độ hoàn thành của task.', 'tasks', '', 'sami_text_to_speech', 'v3', ('bind_id', 'id', 'req_key', 'task_version', 'token'), '?', None, False)
+Names: ('_dump_json', 'BASE_URL', '_PATH_QUERY', 'urllib', 'parse', 'urlencode', '_build_query_params', '_post')
+
+--- Method: synthesize_batch ---
+Constants: ('\nTổng hợp giọng nói cho danh sách các câu. Trả về danh sách URL file MP3.\n\n:param texts: Danh sách các câu văn bản cần đọc.\n:param voice: Tên giọng (vd: "Adam", "Mark", "Cassidy") hoặc Voice ID trực tiếp.\n:return: Danh sách chứa URL file MP3 tương ứng (None nếu câu đó lỗi).\n', 'Lỗi kết nối khi gửi task: %s', None, 'ret', '', '-6', 'Phát hiện shark block (-6), đang tự động đổi thiết bị mới...', True, ('force_refresh',), '0', 'Server từ chối: ret = %s, errmsg = %s', 'errmsg', 'data', 'tasks', 0, 'id', 'token', 1.0, 'status', 'succeed', 'payload', 'audio_subtitles', 'invalid_input', 'speech_url', 'failed', 'Server báo lỗi hoàn thành task: status=failed', 1, 'Tự động chia đôi lô câu để thử lại...', 2)
+Names: ('strip', '_resolve_voice', 'len', '_create_task', 'Exception', 'logger', 'warning', 'str', 'get', 'info', '_get_device', 'device', 'KeyError', 'IndexError', 'TypeError', 'time', '_POLL_TOI_DA', 'sleep', '_query_task', 'json', 'loads', 'enumerate', 'synthesize_batch')
+
+--- Method: get_audio_url ---
+Constants: ('\nLấy trực tiếp link CDN âm thanh MP3 từ một câu văn bản.\n\n:param text: Đoạn văn bản cần đọc.\n:param voice: Tên giọng (vd: "Adam", "Mark") hoặc Voice ID.\n:return: Đường link CDN file MP3 hoặc None.\n', ('voice',), 0, None)
+Names: ('synthesize_batch',)
+
+--- Method: synthesize ---
+Constants: ('\nTổng hợp văn bản và tải trực tiếp thành file MP3 trên máy tính.\n\n:param text: Văn bản cần đọc.\n:param output_file: Đường dẫn file MP3 đầu ra (vd: "output.mp3").\n:param voice: Tên giọng (vd: "Adam", "Mark") hoặc Voice ID.\n:return: True nếu thành công, False nếu thất bại.\n', ('voice',), 'Không lấy được URL âm thanh từ server.', False, True, ('exist_ok',), 3, 100, 'Đã tạo file MP3 thành công: %s (%d bytes)', 0.5, 'Không thể tải file âm thanh về máy.')
+Names: ('get_audio_url', 'logger', 'error', 'os', 'path', 'dirname', 'abspath', 'makedirs', 'range', 'urllib', 'request', 'urlretrieve', 'exists', 'getsize', 'info', 'Exception', 'time', 'sleep')
+
+--- Method: list_popular_voices ---
+Constants: ('Trả về danh sách các giọng ElevenLabs phổ biến sẵn dùng.',)
+Names: ('TOP_ELEVENLABS_VOICES',)
+Class/Func: _get_default_instance
+Class/Func: text_to_speech
+Class/Func: get_audio_url

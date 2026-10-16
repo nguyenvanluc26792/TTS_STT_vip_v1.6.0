@@ -1,0 +1,7 @@
+venv/`n__pycache__/`n*.pyc`nnode_modules/`n*.mp3`n*.wav`n*.ogg`n*.pth`n*.bin`n*.onnx`n.env
+DesktopEpubReader/cache/ 
+DesktopEpubReader/saved_books/ 
+cache/ 
+DesktopEpubReader/cache/ 
+DesktopEpubReader/saved_books/ 
+cache/ 
