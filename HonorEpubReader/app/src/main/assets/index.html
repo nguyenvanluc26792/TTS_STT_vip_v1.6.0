@@ -1946,6 +1946,29 @@
       color: var(--nr-accent, #38bdf8) !important;
       font-weight: 700 !important;
     }
+    .voice-pitch-chip {
+      flex: 1;
+      padding: 4px 0;
+      font-size: 0.69rem;
+      font-weight: 600;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      background: var(--card-bg, #fff);
+      color: var(--text-secondary);
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .voice-pitch-chip:active {
+      transform: scale(0.95);
+    }
+    .voice-pitch-chip.active {
+      background: rgba(168, 85, 247, 0.2) !important;
+      border-color: #a855f7 !important;
+      color: #c084fc !important;
+      font-weight: 700 !important;
+    }
     .voice-picker-trigger-btn {
       width: 100%;
       height: 34px;
@@ -4135,12 +4158,20 @@ body.zen-mode #nrFabAdd {
           ⚡ <span id="mobileSpeedText">1.00x</span>
         </button>
       </div>
-      <!-- Thanh trượt tốc độ đọc hiện ra khi bấm nút tốc độ -->
-      <div id="mobileSpeedSliderRow" style="display: none; align-items: center; gap: 8px; background: var(--card-bg); padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(79, 70, 229, 0.25); margin-top: 4px;">
-        <span style="font-size: 0.72rem; font-weight: 600; color: var(--text-secondary); white-space: nowrap;">⚡ Tốc độ:</span>
-        <input type="range" id="mobileSpeedSlider" min="0.5" max="2.5" step="0.05" value="1.00" style="flex: 1; accent-color: var(--primary); cursor: pointer; height: 16px;" oninput="onSpeedSliderChange(this.value)">
-        <span id="mobileSpeedSliderDisplay" style="font-size: 0.75rem; font-weight: 700; color: var(--primary); min-width: 38px; text-align: right;">1.00x</span>
-        <button type="button" class="btn" style="padding: 2px 6px; font-size: 0.70rem; height: 20px; line-height: 1; border-radius: 4px; background: rgba(16, 185, 129, 0.15); color: #059669; border: 1px solid rgba(16, 185, 129, 0.4); font-weight: 700;" onclick="toggleMobileSpeedSlider(event)" title="Xong">✓</button>
+      <!-- Thanh trượt tốc độ & cao độ đọc hiện ra khi bấm nút tốc độ -->
+      <div id="mobileSpeedSliderRow" style="display: none; flex-direction: column; gap: 6px; background: var(--card-bg); padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(79, 70, 229, 0.25); margin-top: 4px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 0.72rem; font-weight: 600; color: var(--text-secondary); white-space: nowrap; min-width: 54px;">⚡ Tốc độ:</span>
+          <input type="range" id="mobileSpeedSlider" min="0.5" max="2.5" step="0.05" value="1.00" style="flex: 1; accent-color: var(--primary); cursor: pointer; height: 16px;" oninput="onSpeedSliderChange(this.value)">
+          <span id="mobileSpeedSliderDisplay" style="font-size: 0.75rem; font-weight: 700; color: var(--primary); min-width: 38px; text-align: right;">1.00x</span>
+          <button type="button" class="btn" style="padding: 2px 6px; font-size: 0.70rem; height: 20px; line-height: 1; border-radius: 4px; background: rgba(16, 185, 129, 0.15); color: #059669; border: 1px solid rgba(16, 185, 129, 0.4); font-weight: 700;" onclick="toggleMobileSpeedSlider(event)" title="Xong">✓</button>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 0.72rem; font-weight: 600; color: var(--text-secondary); white-space: nowrap; min-width: 54px;">🎵 Cao độ:</span>
+          <input type="range" id="mobilePitchSlider" min="0.75" max="1.30" step="0.05" value="1.00" style="flex: 1; accent-color: #8b5cf6; cursor: pointer; height: 16px;" oninput="onPitchSliderChange(this.value)">
+          <span id="mobilePitchSliderDisplay" style="font-size: 0.75rem; font-weight: 700; color: #8b5cf6; min-width: 38px; text-align: right;">1.00x</span>
+          <button type="button" class="btn" style="padding: 2px 6px; font-size: 0.68rem; height: 20px; line-height: 1; border-radius: 4px; background: rgba(236, 72, 153, 0.12); color: #d946ef; border: 1px solid rgba(217, 70, 239, 0.3); font-weight: 700; white-space: nowrap;" onclick="openOfflineVoicesModal(); closeMobileMenu();" title="Quản lý & Tải 18 giọng AI Offline">💾 Tải</button>
+        </div>
       </div>
       <!-- Nút mở popup chọn giọng đẹp và nhỏ gọn thay vì select mặc định của Android -->
       <button type="button" id="voicePickerBtn" class="voice-picker-trigger-btn" onclick="openVoicePickerModal()">
@@ -4323,6 +4354,38 @@ body.zen-mode #nrFabAdd {
           <button type="button" class="voice-speed-chip" data-speed="1.75" onclick="onSpeedSliderChange(1.75)">1.75x</button>
           <button type="button" class="voice-speed-chip" data-speed="2.0" onclick="onSpeedSliderChange(2.0)">2.0x</button>
         </div>
+
+        <!-- THANH CHỈNH CAO ĐỘ (PITCH: TRẦM ẤM ↔ TRONG BỔNG) GIÚP GIỌNG OFFLINE VÀ ONLINE TRUYỀN CẢM HƠN -->
+        <div class="voice-speed-header" style="margin-top: 10px; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 8px;">
+          <span class="voice-speed-title">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="color:#a855f7;"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            Cao độ giọng (Trầm ↔ Bổng)
+          </span>
+          <span id="voicePickerPitchVal" class="voice-speed-badge" style="background: rgba(168, 85, 247, 0.15); color: #c084fc;">1.00x (Chuẩn)</span>
+        </div>
+        <div class="voice-speed-row">
+          <button type="button" class="voice-step-btn" onclick="adjustVoicePickerPitch(-0.05)" title="Trầm ấm hơn">−</button>
+          <input type="range" id="voicePickerPitchSlider" class="voice-speed-slider" min="0.75" max="1.30" step="0.05" value="1.0" oninput="onPitchSliderChange(this.value)">
+          <button type="button" class="voice-step-btn" onclick="adjustVoicePickerPitch(0.05)" title="Trong bổng hơn">+</button>
+        </div>
+        <div class="voice-speed-presets">
+          <button type="button" class="voice-pitch-chip" data-pitch="0.90" onclick="onPitchSliderChange(0.90)">0.90x (Trầm)</button>
+          <button type="button" class="voice-pitch-chip" data-pitch="0.95" onclick="onPitchSliderChange(0.95)">0.95x (Ấm)</button>
+          <button type="button" class="voice-pitch-chip active" data-pitch="1.0" onclick="onPitchSliderChange(1.0)">1.0x (Chuẩn)</button>
+          <button type="button" class="voice-pitch-chip" data-pitch="1.05" onclick="onPitchSliderChange(1.05)">1.05x (Sáng)</button>
+          <button type="button" class="voice-pitch-chip" data-pitch="1.15" onclick="onPitchSliderChange(1.15)">1.15x (Bổng)</button>
+        </div>
+      </div>
+
+      <!-- Banner Hướng Dẫn Tải Giọng Offline AI Truyền Cảm Trực Tiếp Trong App -->
+      <div style="margin: 6px 10px 4px; padding: 8px 10px; background: rgba(236, 72, 153, 0.08); border: 1px dashed rgba(217, 70, 239, 0.4); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+        <div style="font-size: 0.72rem; color: var(--text-color); line-height: 1.35;">
+          <span style="font-weight: 700; color: #d946ef;">💾 Tải 18 Giọng AI Offline (~63MB/giọng):</span><br>
+          <span style="color: var(--text-secondary); font-size: 0.69rem;">Giọng máy Google chỉ có 8.8MB cơ bản. Tải trực tiếp trong app tại đây:</span>
+        </div>
+        <button type="button" class="btn" style="flex-shrink: 0; font-size: 0.70rem; padding: 5px 9px; background: linear-gradient(135deg, #ec4899, #8b5cf6); color: #fff; font-weight: 700; border-radius: 6px; border: none; box-shadow: 0 2px 6px rgba(236, 72, 153, 0.3);" onclick="closeVoicePickerModal(); openOfflineVoicesModal(); closeMobileMenu();">
+          ⬇️ Tải Ngay
+        </button>
       </div>
 
       <div id="voicePickerList" style="flex: 1; overflow-y: auto; padding: 6px 10px; display: flex; flex-direction: column; gap: 4px; max-height: 46vh;">
@@ -4925,12 +4988,12 @@ body.zen-mode #nrFabAdd {
         <!-- CẬP NHẬT ỨNG DỤNG OTA SIÊU TỐC (~370KB) -->
         <div class="nr-card-title" style="color:var(--nr-accent); font-weight:700; display:flex; justify-content:space-between; align-items:center;">
           <span>⚡ Cập nhật ứng dụng OTA</span>
-          <span id="nrOtaBadge" style="font-size:0.75rem; padding:2px 8px; border-radius:99px; background:rgba(56,189,248,0.18); color:#38bdf8; font-weight:700;">v1.6.26</span>
+          <span id="nrOtaBadge" style="font-size:0.75rem; padding:2px 8px; border-radius:99px; background:rgba(56,189,248,0.18); color:#38bdf8; font-weight:700;">v1.6.33</span>
         </div>
         <div class="nr-card" style="border: 1.5px solid rgba(56, 189, 248, 0.35); background: linear-gradient(135deg, rgba(56, 189, 248, 0.08), rgba(249, 115, 22, 0.04)); border-radius: 18px; padding: 12px 16px; margin-bottom: 14px;">
           <div style="font-size:0.78rem; color:#b0b2c4; line-height:1.45; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
             <span>Phiên bản hiện tại trên máy:</span>
-            <b id="nrCurrentVerDisplay" style="color:#38bdf8; font-size:0.84rem; background:rgba(56,189,248,0.15); padding:2px 8px; border-radius:6px;">v1.6.26</b>
+            <b id="nrCurrentVerDisplay" style="color:#38bdf8; font-size:0.84rem; background:rgba(56,189,248,0.15); padding:2px 8px; border-radius:6px;">v1.6.33</b>
           </div>
 
           <div style="margin-bottom:10px; background:rgba(0,0,0,0.25); padding:8px 10px; border-radius:10px; border:1px solid rgba(255,255,255,0.08);">
@@ -4957,9 +5020,27 @@ body.zen-mode #nrFabAdd {
 
           <!-- Nút Cập nhật chỉ xuất hiện khi tìm thấy bản mới -->
           <div id="nrOtaActionWrap" style="display:none; margin-top:10px;">
-            <button id="btnNrCheckOta" class="nr-chip-btn active" style="width:100%; padding:10px 14px; background:#ef4444; border-color:#ef4444; color:#fff; font-weight:700; font-size:0.86rem; display:flex; align-items:center; justify-content:center; gap:6px; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.45); animation: nrPulse 1.8s infinite ease-in-out;" onclick="checkAndUpdateOta()">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
-              <span>⚡ Cài đặt bản cập nhật mới ngay (~370 KB)</span>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <button id="btnNrCheckOta" class="nr-chip-btn active" style="width:100%; padding:10px 14px; background:#ef4444; border-color:#ef4444; color:#fff; font-weight:700; font-size:0.86rem; display:flex; align-items:center; justify-content:center; gap:6px; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.45); animation: nrPulse 1.8s infinite ease-in-out;" onclick="checkAndUpdateOta()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+                <span>⚡ Cài đặt bản cập nhật nhẹ OTA (~370 KB)</span>
+              </button>
+              <button id="btnNrOtaApk" class="nr-chip-btn" style="width:100%; padding:9px 14px; background:rgba(16,185,129,0.18); border-color:#10b981; color:#34d399; font-weight:700; font-size:0.82rem; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="downloadFullApk()">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span>📦 Hoặc Tải bộ cài Full APK (~60 MB)</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Tùy chọn tải trực tiếp file APK đầy đủ bất cứ lúc nào -->
+          <div style="margin-top:12px; padding-top:10px; border-top:1px dashed rgba(255,255,255,0.12); display:flex; justify-content:space-between; align-items:center; gap:8px;">
+            <div style="display:flex; flex-direction:column; gap:2px; flex:1;">
+              <span style="font-size:0.80rem; font-weight:600; color:#e2e8f0;">📦 Tải bộ cài APK đầy đủ (Full APK)</span>
+              <span style="font-size:0.70rem; color:#94a3b8;">Cài đặt lại hoặc nâng cấp trọn bộ file APK (~60MB)</span>
+            </div>
+            <button type="button" class="nr-chip-btn" style="padding:7px 12px; font-size:0.76rem; border-color:#10b981; color:#10b981; font-weight:700; background:rgba(16,185,129,0.12); display:flex; align-items:center; gap:5px; flex-shrink:0;" onclick="downloadFullApk()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span>Tải Full APK</span>
             </button>
           </div>
 
@@ -5013,6 +5094,24 @@ body.zen-mode #nrFabAdd {
           </div>
           <div class="nr-link-row" onclick="openOfflineVoicesModal()">
             <span>Quản lý &amp; Tải 18 giọng AI Offline (Piper VITS)</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+          <div class="nr-link-row" style="cursor:pointer;" onclick="toggleMultiVoiceSetting()">
+            <div style="display:flex; flex-direction:column; gap:2px; flex:1;">
+              <span style="font-weight:600;">🎭 Kịch truyền thanh AI (3 Phương án)</span>
+              <span style="font-size:0.75rem; color:#888;">Tự động phân vai Nam - Nữ, ngắt nghỉ &amp; biểu cảm theo ngữ cảnh</span>
+            </div>
+            <span id="nrMultiVoiceStatus" class="nr-badge" style="background:#10b981; color:#fff; font-size:0.72rem; padding:3px 8px; border-radius:12px; font-weight:600;">ĐANG BẬT</span>
+          </div>
+          <div class="nr-link-row" style="cursor:pointer;" onclick="toggleSfxSetting()">
+            <div style="display:flex; flex-direction:column; gap:2px; flex:1;">
+              <span style="font-weight:600;">🔊 Âm thanh điện ảnh SFX (Tiên Hiệp)</span>
+              <span style="font-size:0.75rem; color:#888;">Tiếng sấm sét/nổ (ầm, bùm), quyền cước (phanh, bịch), kiếm khí (vút, keng)</span>
+            </div>
+            <span id="nrSfxStatus" class="nr-badge" style="background:#10b981; color:#fff; font-size:0.72rem; padding:3px 8px; border-radius:12px; font-weight:600;">ĐANG BẬT</span>
+          </div>
+          <div class="nr-link-row" onclick="openSystemTtsSettings()">
+            <span>Mở Cài đặt Giọng nói Hệ thống (Text-to-speech) của điện thoại</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
           </div>
         </div>
@@ -5378,6 +5477,7 @@ body.zen-mode #nrFabAdd {
     let voices = [];
     let currentFontSize = 18;
     let currentSpeed = 1.0;
+    let currentPitch = 1.0;
     const audio = document.getElementById('audioPlayer');
     window._currentAudioBlobUrl = null;
     function cleanupCurrentAudioUrl() {
@@ -6021,7 +6121,61 @@ body.zen-mode #nrFabAdd {
 
         if (typeof initOtaSettingsUI === 'function') initOtaSettingsUI();
         if (typeof syncVoiceUIElements === 'function') syncVoiceUIElements();
+        updateMultiVoiceUI();
+        updateSfxUI();
       } catch (e) {}
+    }
+
+    function updateMultiVoiceUI() {
+      const isEnabled = localStorage.getItem('reader_multi_voice') !== '0';
+      const badge = document.getElementById('nrMultiVoiceStatus');
+      if (badge) {
+        if (isEnabled) {
+          badge.textContent = 'ĐANG BẬT';
+          badge.style.background = '#10b981';
+          badge.style.color = '#fff';
+        } else {
+          badge.textContent = 'ĐÃ TẮT';
+          badge.style.background = '#4b5563';
+          badge.style.color = '#9ca3af';
+        }
+      }
+    }
+
+    function toggleMultiVoiceSetting() {
+      const current = localStorage.getItem('reader_multi_voice') !== '0';
+      const next = !current;
+      localStorage.setItem('reader_multi_voice', next ? '1' : '0');
+      updateMultiVoiceUI();
+      if (typeof showToast === 'function') {
+        showToast(next ? '🎭 Đã bật Kịch truyền thanh AI (Phân vai Nam - Nữ & Diễn cảm)' : 'Đã tắt Kịch truyền thanh');
+      }
+    }
+
+    function updateSfxUI() {
+      const isEnabled = localStorage.getItem('reader_sfx_enabled') !== '0';
+      const badge = document.getElementById('nrSfxStatus');
+      if (badge) {
+        if (isEnabled) {
+          badge.textContent = 'ĐANG BẬT';
+          badge.style.background = '#10b981';
+          badge.style.color = '#fff';
+        } else {
+          badge.textContent = 'ĐÃ TẮT';
+          badge.style.background = '#4b5563';
+          badge.style.color = '#9ca3af';
+        }
+      }
+    }
+
+    function toggleSfxSetting() {
+      const current = localStorage.getItem('reader_sfx_enabled') !== '0';
+      const next = !current;
+      localStorage.setItem('reader_sfx_enabled', next ? '1' : '0');
+      updateSfxUI();
+      if (typeof showToast === 'function') {
+        showToast(next ? '🔊 Đã bật Âm thanh điện ảnh SFX (Tiên Hiệp)' : 'Đã tắt Âm thanh điện ảnh SFX');
+      }
     }
 
     async function parseNovelClientSideDirect(url, prefTitle = '', prefAuthor = '') {
@@ -6922,8 +7076,8 @@ body.zen-mode #nrFabAdd {
                .replace(/!\?+/g, '!?')
                .replace(/\.{2,}/g, '…');
 
-      // 3. Chuẩn hóa thán từ (Interjections): thêm dấu phẩy để AI ngắt hơi và nhấn âm tự nhiên
-      res = res.replace(/(?:^|[\s.!?…“"—])(A|Ồ|Ô|Hừ|Á|Ôi|Hơ|Chao ôi|Trời ơi|Ha ha|Hì hì|Hừm)(?=\s+[\p{L}\p{N}])/gui, function(match, word) {
+      // 3. Chuẩn hóa thán từ (Interjections): thêm dấu phẩy để AI ngắt hơi và nhấn âm tự nhiên (bỏ A, Ô, Á để không làm hỏng tên riêng như Ô Hạo, A Bảo)
+      res = res.replace(/(?:^|[\s.!?…“"—])(Ồ|Hừ|Ôi|Hơ|Chao ôi|Trời ơi|Ha ha|Hì hì|Hừm|Ô kìa|Ô hay)(?=\s+[\p{L}\p{N}])/gui, function(match, word) {
         return match.replace(word, word + ',');
       });
 
@@ -6935,7 +7089,8 @@ body.zen-mode #nrFabAdd {
                .replace(/(?<![\p{L}\p{N}])VI(?![\p{L}\p{N}])/gu, 'Vy')
                .replace(/(?<![\p{L}\p{N}])xi(?![\p{L}\p{N}])/gu, 'xy')
                .replace(/(?<![\p{L}\p{N}])Xi(?![\p{L}\p{N}])/gu, 'Xy')
-               .replace(/(?<![\p{L}\p{N}])XI(?![\p{L}\p{N}])/gu, 'Xy');
+               .replace(/(?<![\p{L}\p{N}])XI(?![\p{L}\p{N}])/gu, 'Xy')
+               .replace(/(?<![\p{L}\p{N}])[Ôô](?![\p{L}\p{N}])/gu, 'Ôh');
 
       // Dọn dẹp dấu câu trơ trọi, biểu tượng và khoảng trắng dư thừa
       res = res.replace(/\s*([,;:.!?…])\s*/g, '$1 ')
@@ -7252,6 +7407,14 @@ body.zen-mode #nrFabAdd {
     function openOfflineVoicesModal() {
       document.getElementById('offlineVoicesModalOverlay').classList.add('open');
       loadOfflineVoicesData();
+    }
+
+    function openSystemTtsSettings() {
+      if (window.HonorBridge && window.HonorBridge.openTtsSettings) {
+        window.HonorBridge.openTtsSettings();
+      } else {
+        showToast('⚙️ Hãy mở Cài đặt điện thoại -> Chuyển văn bản thành giọng nói');
+      }
     }
 
     function closeOfflineVoicesModal(e) {
@@ -9779,6 +9942,7 @@ body.zen-mode #nrFabAdd {
     function openVoicePickerModal() {
       renderCustomVoicePickerList();
       initVoicePickerSpeedUI();
+      initVoicePickerPitchUI();
       const modal = document.getElementById('voicePickerModalOverlay');
       if (modal) modal.classList.add('open');
     }
@@ -9807,6 +9971,71 @@ body.zen-mode #nrFabAdd {
       if (newSpeed < 0.5) newSpeed = 0.5;
       if (newSpeed > 2.5) newSpeed = 2.5;
       onSpeedSliderChange(newSpeed);
+    }
+
+    function initVoicePickerPitchUI() {
+      const slider = document.getElementById('voicePickerPitchSlider');
+      const valEl = document.getElementById('voicePickerPitchVal');
+      if (slider) slider.value = currentPitch;
+      if (valEl) {
+        let tag = '';
+        if (currentPitch < 0.92) tag = ' (Trầm)';
+        else if (currentPitch > 1.08) tag = ' (Bổng)';
+        else if (Math.abs(currentPitch - 0.95) < 0.02) tag = ' (Ấm)';
+        else tag = ' (Chuẩn)';
+        valEl.textContent = currentPitch.toFixed(2) + 'x' + tag;
+      }
+      updateVoicePitchChips(currentPitch);
+      const mobSlider = document.getElementById('mobilePitchSlider');
+      if (mobSlider) mobSlider.value = currentPitch;
+      const mobDisplay = document.getElementById('mobilePitchSliderDisplay');
+      if (mobDisplay) mobDisplay.textContent = currentPitch.toFixed(2) + 'x';
+    }
+
+    function updateVoicePitchChips(pitch) {
+      document.querySelectorAll('.voice-pitch-chip').forEach(chip => {
+        const chipPitch = parseFloat(chip.dataset.pitch);
+        if (Math.abs(chipPitch - pitch) < 0.03) {
+          chip.classList.add('active');
+        } else {
+          chip.classList.remove('active');
+        }
+      });
+    }
+
+    function adjustVoicePickerPitch(delta) {
+      let newPitch = Math.round((currentPitch + delta) * 100) / 100;
+      if (newPitch < 0.75) newPitch = 0.75;
+      if (newPitch > 1.30) newPitch = 1.30;
+      onPitchSliderChange(newPitch);
+    }
+
+    function onPitchSliderChange(val) {
+      currentPitch = parseFloat(val);
+      const valStr = currentPitch.toFixed(2) + 'x';
+      const vpSlider = document.getElementById('voicePickerPitchSlider');
+      if (vpSlider) vpSlider.value = currentPitch;
+      const vpVal = document.getElementById('voicePickerPitchVal');
+      if (vpVal) {
+        let tag = '';
+        if (currentPitch < 0.92) tag = ' (Trầm)';
+        else if (currentPitch > 1.08) tag = ' (Bổng)';
+        else if (Math.abs(currentPitch - 0.95) < 0.02) tag = ' (Ấm)';
+        else tag = ' (Chuẩn)';
+        vpVal.textContent = valStr + tag;
+      }
+      const mobSlider = document.getElementById('mobilePitchSlider');
+      if (mobSlider) mobSlider.value = currentPitch;
+      const mobDisplay = document.getElementById('mobilePitchSliderDisplay');
+      if (mobDisplay) mobDisplay.textContent = valStr;
+
+      updateVoicePitchChips(currentPitch);
+      if (window.HonorBridge && window.HonorBridge.setNativePitch) {
+        try {
+          window.HonorBridge.setNativePitch(currentPitch);
+        } catch (_) {}
+      }
+      localStorage.setItem('reader_pitch', currentPitch.toString());
     }
 
     function closeVoicePickerModal(e) {
@@ -10272,6 +10501,11 @@ body.zen-mode #nrFabAdd {
         if (audio) audio.playbackRate = currentSpeed;
       }
       if (typeof initVoicePickerSpeedUI === 'function') initVoicePickerSpeedUI();
+      const savedPitch = localStorage.getItem('reader_pitch');
+      if (savedPitch) {
+        currentPitch = parseFloat(savedPitch);
+      }
+      if (typeof initVoicePickerPitchUI === 'function') initVoicePickerPitchUI();
 
       // 2. TỐC ĐỘ ÁNH SÁNG: Khôi phục tức thì (<20ms) nội dung chương & vị trí đọc từ cache cục bộ
       let restoredFromQuickCache = false;
@@ -10428,16 +10662,33 @@ body.zen-mode #nrFabAdd {
       // Tránh ngắt câu ở các tên miền web và địa chỉ (ví dụ: banlong.us, banlong. us, truyenfull.vn, .com, v.v.)
       text = text.replace(/\.\s*([a-zA-Z]{2,6})\b/g, '\uE000$1');
 
+      // DIALOGUE MASKING: Bảo vệ toàn bộ dấu chấm, chấm than, hỏi chấm bên trong ngoặc kép
+      // Giúp giữ trọn vẹn lời thoại nhân vật, ngăn chặn triệt để tình trạng rớt vai hoặc ngắt câu sau dấu chấm
+      text = text.replace(/([“"«「『][^”"»」』]+[”"»」』])/g, (quoteBlock) => {
+        return quoteBlock
+          .replace(/\./g, '\uE001')
+          .replace(/!/g, '\uE002')
+          .replace(/\?/g, '\uE003')
+          .replace(/…/g, '\uE004');
+      });
+
       // Tách câu chuẩn xác theo các dấu kết câu . ! ? … \n kèm theo dấu đóng ngoặc kép/ngoặc đơn nếu có
       const regex = /([^.!?…\n]+(?:[.!?…]+["'”’»)]*|[\n]+|$))/g;
       const matches = text.match(regex);
-      if (!matches) return [text.replace(/\uE000/g, '.')];
+      if (!matches) {
+        return [text.replace(/\uE000/g, '.').replace(/\uE001/g, '.').replace(/\uE002/g, '!').replace(/\uE003/g, '?').replace(/\uE004/g, '…')];
+      }
 
       const rawSentences = [];
       let buffer = '';
 
       for (let i = 0; i < matches.length; i++) {
-        let part = matches[i].trim().replace(/\uE000/g, '.');
+        let part = matches[i].trim()
+          .replace(/\uE000/g, '.')
+          .replace(/\uE001/g, '.')
+          .replace(/\uE002/g, '!')
+          .replace(/\uE003/g, '?')
+          .replace(/\uE004/g, '…');
         if (!part) continue;
 
         // Tránh tách nhầm số thập phân ví dụ "3." trong "3.14" hoặc "$1." trong "$1.500"
@@ -10451,12 +10702,12 @@ body.zen-mode #nrFabAdd {
           buffer = '';
         }
 
-        // Nếu một câu quá dài (> 200 ký tự không có dấu chấm), tách tiếp theo dấu phẩy / chấm phẩy
-        if (part.length > 200) {
+        // Nếu một câu quá dài (> 220 ký tự không có dấu chấm), tách tiếp theo dấu phẩy / chấm phẩy
+        if (part.length > 220) {
           const subParts = part.split(/([,;:—]\s+)/);
           let subBuf = '';
           for (const s of subParts) {
-            if (subBuf.length + s.length > 150 && subBuf.length > 30) {
+            if (subBuf.length + s.length > 160 && subBuf.length > 30) {
               rawSentences.push(subBuf.trim());
               subBuf = s;
             } else {
@@ -10486,7 +10737,7 @@ body.zen-mode #nrFabAdd {
           const isQuoteEnd = /["'”’»)]\s*$/.test(curr);
           const isAttributionTag = /^(?:[a-zà-ỹ]|hắn|chàng|nàng|ông|bà|người|ai đó|giọng|tiếng|khẽ|lẩm bẩm|thầm nghĩ|cười|nói|đáp|hỏi|than|kêu|hét)/i.test(next);
 
-          if (isQuoteEnd && isAttributionTag && next.length <= 60 && (curr.length + next.length <= 180)) {
+          if (isQuoteEnd && isAttributionTag && next.length <= 60 && (curr.length + next.length <= 200)) {
             curr = curr + ' ' + next;
             i++;
           } else if (curr.length <= 14 && next.length > 0 && (curr.length + next.length <= 160)) {
@@ -11158,7 +11409,266 @@ body.zen-mode #nrFabAdd {
     const paragraphPrefetchInFlight = new Set();
 
     function getAudioCacheKey(chIdx, sIdx, vId) {
-      return `${chIdx}_${sIdx}_${vId}`;
+      const mv = (localStorage.getItem('reader_multi_voice') !== '0') ? 'mv1' : 'mv0';
+      return `${chIdx}_${sIdx}_${vId}_${mv}`;
+    }
+
+    // =====================================================================
+    // HỆ THỐNG PHÂN VAI KỊCH TRUYỀN THANH TIÊN HIỆP & BỘ NHỚ LUÂN PHIÊN (TURN-TAKING)
+    // =====================================================================
+    let lastDialogueGender = 'male';
+
+    function analyzeDialogueGender(text) {
+      if (!text) return 'narration';
+      const isQuote = /^[“"«「『]/.test(text.trim()) || /^[-–—]\s*/.test(text.trim()) || /[“"«「『][^”"»」』]+[”"»」』]/.test(text);
+      if (!isQuote) return 'narration';
+
+      let dialogueContent = text;
+      const quoteMatch = text.match(/[“"«「『]([^”"»」』]+)[”"»」』]/);
+      if (quoteMatch) {
+        dialogueContent = quoteMatch[1];
+      } else {
+        dialogueContent = text.replace(/^[-–—]\s*/, '');
+      }
+
+      const lower = dialogueContent.toLowerCase();
+      const firstWords = lower.split(/\s+/).slice(0, 10).join(' ');
+
+      let fScore = 0;
+      let mScore = 0;
+
+      // TẦNG 1: ĐẠI TỪ TỰ XƯNG NỘI BỘ (Xianxia First-Person Pronouns - Trọng số quyết định +5)
+      const femaleSelf = ['tiểu nữ', 'thiếp', 'thiếp thân', 'nô gia', 'nô tỳ', 'bản cung', 'tiểu muội', 'bần ni', 'lão thân', 'muội muội', 'muội', 'nhi thần', 'bản cô nương'];
+      const maleSelf = ['tại hạ', 'lão phu', 'bản tọa', 'bổn tọa', 'bần đạo', 'lão nạp', 'bản công tử', 'tiểu sinh', 'mỗ', 'vi sư', 'mạt tướng', 'huynh đệ', 'bản vương', 'bổn vương', 'trẫm', 'bản tôn', 'bổn tôn', 'tiểu tử', 'vi huynh', 'lão hủ'];
+
+      if (femaleSelf.some(w => firstWords.includes(w))) fScore += 5;
+      if (maleSelf.some(w => firstWords.includes(w))) mScore += 5;
+
+      // TẦNG 2: XƯNG HÔ HƯỚNG TỚI NGƯỜI NGHE (Vocative to Interlocutor - Nghịch đảo +4)
+      const femaleToMale = ['sư huynh', 'công tử', 'chàng', 'đại ca', 'phu quân', 'tướng công', 'huynh', 'phụ thân', 'lão gia', 'vương gia', 'hoàng thượng', 'biểu ca'];
+      const maleToFemale = ['nương tử', 'tiểu thư', 'cô nương', 'tiểu nha đầu', 'sư muội', 'nàng', 'ái phi', 'tiên tử', 'thánh nữ', 'muội muội', 'mẫu thân', 'nương'];
+
+      if (femaleToMale.some(w => firstWords.includes(w))) fScore += 4;
+      if (maleToFemale.some(w => firstWords.includes(w))) mScore += 4;
+
+      // TẦNG 3: DẪN NHẬP / THOÁT THOẠI NGOÀI NGOẶC (Lead-in / Lead-out Attribution +3)
+      const outerText = text.replace(/[“"«「『][^”"»」』]+[”"»」』]/g, ' ').toLowerCase();
+      const femaleTitles = ['nàng', 'cô ấy', 'tiểu thư', 'sư muội', 'tỷ tỷ', 'mẫu thân', 'mẹ', 'nữ tử', 'công chúa', 'nương tử', 'thiếu nữ', 'phu nhân', 'muội muội', 'tiên tử', 'thánh nữ', 'nha hoàn', 'bà lão', 'mỹ phụ', 'nữ nhi', 'sư tôn', 'sư nương'];
+      const maleTitles = ['chàng', 'hắn', 'công tử', 'sư huynh', 'huynh đệ', 'phụ thân', 'cha', 'nam tử', 'huynh trưởng', 'thiếu niên', 'đại ca', 'lão giả', 'đạo nhân', 'lão tổ', 'môn chủ', 'chưởng môn', 'tông chủ', 'tiểu tử', 'gã', 'y', 'trượng phu', 'nam nhân'];
+      const speechVerbs = ['nói', 'đáp', 'hỏi', 'than', 'cười', 'thầm', 'bảo', 'nghẹn ngào', 'thì thào', 'thỏ thẻ', 'quát', 'thét', 'gầm', 'rống', 'la', 'cười lạnh', 'hừ lạnh', 'trầm giọng', 'lẩm bẩm', 'thốt lên', 'hô', 'nhủ', 'nghĩ', 'truyền âm', 'tiếp lời', 'khẽ nói'];
+
+      if (femaleTitles.some(t => outerText.includes(t))) {
+        fScore += 2;
+        if (speechVerbs.some(v => outerText.includes(v))) fScore += 2;
+      }
+      if (maleTitles.some(t => outerText.includes(t))) {
+        mScore += 2;
+        if (speechVerbs.some(v => outerText.includes(v))) mScore += 2;
+      }
+
+      // TẦNG 4: TURN-TAKING LUÂN PHIÊN HỘI THOẠI (Nếu câu ngắn không chứa từ chỉ thị)
+      if (fScore === 0 && mScore === 0) {
+        lastDialogueGender = (lastDialogueGender === 'male') ? 'female' : 'male';
+        return lastDialogueGender;
+      }
+
+      const finalGender = (fScore > mScore) ? 'female' : 'male';
+      lastDialogueGender = finalGender;
+      return finalGender;
+    }
+
+    // =====================================================================
+    // HỆ THỐNG HIỆU ỨNG ÂM THANH ĐIỆN ẢNH (WEB AUDIO PROCEDURAL SFX ENGINE)
+    // =====================================================================
+    const SfxEngine = (function() {
+      let audioCtx = null;
+      function getAudioContext() {
+        if (!audioCtx) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioContextClass) audioCtx = new AudioContextClass();
+        }
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(() => {});
+        }
+        return audioCtx;
+      }
+
+      function unlock() {
+        try {
+          const ctx = getAudioContext();
+          if (ctx) {
+            if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+            const buf = ctx.createBuffer(1, 1, 22050);
+            const src = ctx.createBufferSource();
+            src.buffer = buf;
+            src.connect(ctx.destination);
+            src.start(0);
+          }
+        } catch(e) {}
+      }
+
+      function playImpact() {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(160, now);
+        osc.frequency.exponentialRampToValueAtTime(55, now + 0.22);
+        gain.gain.setValueAtTime(0.8, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.28);
+
+        const snapLen = Math.floor(ctx.sampleRate * 0.08);
+        const snapBuf = ctx.createBuffer(1, snapLen, ctx.sampleRate);
+        const snapData = snapBuf.getChannelData(0);
+        for (let i = 0; i < snapLen; i++) snapData[i] = Math.random() * 2 - 1;
+        const snapSrc = ctx.createBufferSource();
+        snapSrc.buffer = snapBuf;
+        const snapFilter = ctx.createBiquadFilter();
+        snapFilter.type = 'bandpass';
+        snapFilter.frequency.value = 850;
+        const snapGain = ctx.createGain();
+        snapGain.gain.setValueAtTime(0.4, now);
+        snapGain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+        snapSrc.connect(snapFilter);
+        snapFilter.connect(snapGain);
+        snapGain.connect(ctx.destination);
+        snapSrc.start(now);
+      }
+
+      function playExplosion() {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+
+        const osc = ctx.createOscillator();
+        const oscGain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(180, now);
+        osc.frequency.exponentialRampToValueAtTime(65, now + 0.35);
+        oscGain.gain.setValueAtTime(0.7, now);
+        oscGain.gain.exponentialRampToValueAtTime(0.01, now + 0.45);
+        osc.connect(oscGain);
+        oscGain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.5);
+
+        const bufferSize = Math.floor(ctx.sampleRate * 0.9);
+        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          data[i] = Math.random() * 2 - 1;
+        }
+        const noise = ctx.createBufferSource();
+        noise.buffer = buffer;
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(450, now);
+        filter.frequency.exponentialRampToValueAtTime(110, now + 0.85);
+
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.85, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.9);
+
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        noise.start(now);
+      }
+
+      function playClash() {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+        [2400, 3850, 5600].forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, now);
+          osc.frequency.exponentialRampToValueAtTime(freq * 0.95, now + 0.5);
+          const initialVol = 0.35 / (idx + 1);
+          gain.gain.setValueAtTime(initialVol, now);
+          gain.gain.exponentialRampToValueAtTime(0.005, now + 0.55);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.58);
+        });
+      }
+
+      function playWhoosh() {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+        const bufferSize = Math.floor(ctx.sampleRate * 0.35);
+        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          data[i] = Math.random() * 2 - 1;
+        }
+        const noise = ctx.createBufferSource();
+        noise.buffer = buffer;
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(400, now);
+        filter.frequency.exponentialRampToValueAtTime(1800, now + 0.16);
+        filter.frequency.exponentialRampToValueAtTime(300, now + 0.32);
+        filter.Q.value = 2.2;
+
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.05, now);
+        gain.gain.linearRampToValueAtTime(0.5, now + 0.14);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.34);
+
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        noise.start(now);
+      }
+
+      return {
+        unlock: unlock,
+        play: function(type) {
+          try {
+            if (localStorage.getItem('reader_sfx_enabled') === '0') return;
+            unlock();
+            if (type === 'impact') playImpact();
+            else if (type === 'explosion') playExplosion();
+            else if (type === 'clash') playClash();
+            else if (type === 'whoosh') playWhoosh();
+          } catch (e) {
+            console.warn('[SFX Engine Error]', e);
+          }
+        }
+      };
+    })();
+
+    const SFX_PATTERNS = [
+      { type: 'explosion', regex: /(?:^|[\s“"«'–—])(oanh\s+long(?:\s+long)?|oành(?:\s+oành)?|oanh|ầm(?:\s+ầm){1,2}|ầm\s+vang|ầm|đùng\s+đoàng|đùng(?:\s+đùng)?|đoàng|bùm(?:\s+bùm)?|nổ\s+tung)(?:\s+một\s+tiếng)?(?=[!?.…,\s”"»'–—]|$)/i },
+      { type: 'impact', regex: /(?:^|[\s“"«'–—])(rầm(?:\s+rầm)?|bịch(?:\s+bịch)?|huỵch|bộp(?:\s+bộp)?|bốp(?:\s+bốp)?|chát|rắc(?:\s+rắc)?|bành)(?:\s+một\s+tiếng)?(?=[!?.…,\s”"»'–—]|$)/i },
+      { type: 'clash', regex: /(?:^|[\s“"«'–—])(leng\s+keng|keng(?:\s+keng)?|choang(?:\s+choang)?|xoảng(?:\s+xoảng)?|xủng\s+xoảng|boong|coong)(?:\s+một\s+tiếng)?(?=[!?.…,\s”"»'–—]|$)/i },
+      { type: 'whoosh', regex: /(?:^|[\s“"«'–—])(vun\s+vút|vút(?:\s+vút)?|vèo(?:\s+vèo)?|xẹt(?:\s+xẹt)?|xoẹt(?:\s+xoẹt)?|chéo|vù(?:\s+vù)?|phù)(?:\s+một\s+tiếng)?(?=[!?.…,\s”"»'–—]|$)/i }
+    ];
+
+    function detectSfxInText(text) {
+      if (!text) return null;
+      for (const p of SFX_PATTERNS) {
+        if (p.regex.test(text)) return p.type;
+      }
+      return null;
+    }
+
+    function pruneSfxFromText(text) {
+      if (!text) return text;
+      let res = text;
+      const pruneRegex = /(?:^|[\s“"«'–—])(?:oanh\s+long(?:\s+long)?|oành(?:\s+oành)?|oanh|ầm(?:\s+ầm){1,2}|ầm\s+vang|ầm|đùng\s+đoàng|đùng(?:\s+đùng)?|đoàng|bùm(?:\s+bùm)?|nổ\s+tung|rầm(?:\s+rầm)?|bịch(?:\s+bịch)?|huỵch|bộp(?:\s+bộp)?|bốp(?:\s+bốp)?|chát|rắc(?:\s+rắc)?|bành|leng\s+keng|keng(?:\s+keng)?|choang(?:\s+choang)?|xoảng(?:\s+xoảng)?|xủng\s+xoảng|boong|coong|vun\s+vút|vút(?:\s+vút)?|vèo(?:\s+vèo)?|xẹt(?:\s+xẹt)?|xoẹt(?:\s+xoẹt)?|chéo|vù(?:\s+vù)?|phù)(?:\s+một\s+tiếng)?[!?.…,”"»'–—\s]*/gi;
+      res = res.replace(pruneRegex, ' ').replace(/\s{2,}/g, ' ').trim();
+      return res;
     }
 
     async function prefetchSentenceAudio(chIdx, sIdx) {
@@ -11166,7 +11676,11 @@ body.zen-mode #nrFabAdd {
 
       const text = allSentences[sIdx].trim();
       if (!text || isParagraphSkipped(text)) return;
-      const spokenText = filterSkippedPhrases(text);
+      let spokenText = filterSkippedPhrases(text);
+      const sfxType = detectSfxInText(spokenText);
+      if (sfxType && (localStorage.getItem('reader_sfx_enabled') !== '0')) {
+        spokenText = pruneSfxFromText(spokenText);
+      }
       if (!spokenText || !/[\p{L}\p{N}]/u.test(spokenText)) return;
 
       const voiceSelect = document.getElementById('voiceSelect');
@@ -11190,7 +11704,8 @@ body.zen-mode #nrFabAdd {
             voice_id: voiceId,
             provider: provider,
             speed: currentSpeed,
-            bilingual_mode: currentBilingualMode
+            bilingual_mode: currentBilingualMode,
+            multi_voice: (localStorage.getItem('reader_multi_voice') !== '0')
           })
         });
         if (res.ok) {
@@ -11326,8 +11841,32 @@ body.zen-mode #nrFabAdd {
         nextParagraph();
         return;
       }
-      const spokenText = filterSkippedPhrases(text);
+
+      // KÍCH HOẠT HIỆU ỨNG ÂM THANH ĐIỆN ẢNH (FOLEY SFX) VÀ CẮT BỎ TỪ TƯỢNG THANH THÔ
+      const sfxType = detectSfxInText(text);
+      if (sfxType && (localStorage.getItem('reader_sfx_enabled') !== '0')) {
+        SfxEngine.play(sfxType);
+      }
+
+      let spokenText = filterSkippedPhrases(text);
+      if (sfxType && (localStorage.getItem('reader_sfx_enabled') !== '0')) {
+        SfxEngine.play(sfxType);
+        spokenText = pruneSfxFromText(spokenText);
+      }
+
       if (!spokenText || !/[\p{L}\p{N}]/u.test(spokenText)) {
+        if (sfxType && (localStorage.getItem('reader_sfx_enabled') !== '0')) {
+          console.log(`[SFX] Đã phát hiệu ứng '${sfxType}', chuyển tiếp câu`);
+          setLoading(false);
+          updateMediaSession(ch.title, text);
+          const sfxDelay = (sfxType === 'explosion') ? 1150 : (sfxType === 'clash' ? 750 : 550);
+          setTimeout(() => {
+            if (isPlaying && mySessionId === currentPlaybackSessionId) {
+              advanceToNextSentenceWithContextualPause();
+            }
+          }, sfxDelay);
+          return;
+        }
         console.log(`[Skip] Bỏ qua câu do không còn từ đọc sau khi lọc cụm từ: "${text}"`);
         nextParagraph();
         return;
@@ -11341,10 +11880,39 @@ body.zen-mode #nrFabAdd {
       // 1. Giọng hệ thống máy Android (android_native)
       const isSystemNativeVoice = (provider === 'native' || voiceId === 'android_native');
       if (isSystemNativeVoice) {
-        if (window.HonorBridge && window.HonorBridge.speakNative) {
+        let effectivePitch = currentPitch;
+        let effectiveSpeed = currentSpeed;
+        const isMultiVoice = (localStorage.getItem('reader_multi_voice') !== '0');
+        if (isMultiVoice) {
+          const role = analyzeDialogueGender(spokenText);
+          if (role === 'female') {
+            effectivePitch = Math.min(2.0, currentPitch * 1.15); // Cao hơn, trong trẻo cho nhân vật nữ
+          } else if (role === 'male') {
+            effectivePitch = Math.max(0.5, currentPitch * 0.88); // Trầm ấm cho nhân vật nam
+          }
+          if (/[!？！]/.test(spokenText)) {
+            effectiveSpeed = Math.min(2.0, currentSpeed * 1.05); // Hào hứng, cao trào
+          } else if (/(\.\.\.|…)/.test(spokenText)) {
+            effectiveSpeed = Math.max(0.5, currentSpeed * 0.94); // Suy tư, ngập ngừng
+          }
+        }
+        if (window.HonorBridge && window.HonorBridge.speakNativeWithPitch) {
           setLoading(false);
           updateMediaSession(ch.title, spokenText);
-          const ok = window.HonorBridge.speakNative(spokenText, currentSpeed);
+          const ok = window.HonorBridge.speakNativeWithPitch(spokenText, effectiveSpeed, effectivePitch);
+          if (!ok) {
+            console.warn('[Native TTS] Thử lại câu...');
+            setTimeout(() => {
+              if (isPlaying && mySessionId === currentPlaybackSessionId) {
+                playParagraph(idx + 1);
+              }
+            }, 300);
+          }
+          return;
+        } else if (window.HonorBridge && window.HonorBridge.speakNative) {
+          setLoading(false);
+          updateMediaSession(ch.title, spokenText);
+          const ok = window.HonorBridge.speakNative(spokenText, effectiveSpeed);
           if (!ok) {
             console.warn('[Native TTS] Thử lại câu...');
             setTimeout(() => {
@@ -11360,7 +11928,8 @@ body.zen-mode #nrFabAdd {
           window.speechSynthesis.cancel();
           const utt = new SpeechSynthesisUtterance(spokenText);
           utt.lang = 'vi-VN';
-          utt.rate = currentSpeed;
+          utt.rate = effectiveSpeed;
+          utt.pitch = effectivePitch;
           utt.onend = () => { advanceToNextSentenceWithContextualPause(); };
           utt.onerror = () => { advanceToNextSentenceWithContextualPause(); };
           updateMediaSession(ch.title, spokenText);
@@ -11387,7 +11956,8 @@ body.zen-mode #nrFabAdd {
               voice_id: voiceId,
               provider: provider,
               speed: currentSpeed,
-              bilingual_mode: currentBilingualMode
+              bilingual_mode: currentBilingualMode,
+              multi_voice: (localStorage.getItem('reader_multi_voice') !== '0')
             })
           });
 
@@ -11448,6 +12018,12 @@ body.zen-mode #nrFabAdd {
         advanceToNextSentenceWithContextualPause();
       };
 
+      // Nếu câu có hiệu ứng âm thanh (SFX) ở đầu, tạo khoảng nghỉ ngắn 320ms để tiếng nổ/binh khí nổ vang trước khi giọng đọc bắt đầu
+      if (sfxType && (localStorage.getItem('reader_sfx_enabled') !== '0')) {
+        await new Promise(r => setTimeout(r, 320));
+        if (mySessionId !== currentPlaybackSessionId || !isPlaying) return;
+      }
+
       try {
         await audio.play();
         setLoading(false);
@@ -11479,6 +12055,7 @@ body.zen-mode #nrFabAdd {
         if (isPlaying) {
           pauseAudio();
         } else {
+          SfxEngine.unlock();
           isPlaying = true;
           updatePlayBtn();
           requestWakeLock();
@@ -12863,10 +13440,10 @@ body.zen-mode #nrFabAdd {
     // ==========================================
     // OTA UPDATE ENGINE (Hỗ trợ 3G / 4G / Wi-Fi toàn cầu & Kiểm tra phiên bản)
     // ==========================================
-    const DEFAULT_OTA_3G_URL = 'https://boston-alternate-pubs-eugene.trycloudflare.com';
+    const DEFAULT_OTA_3G_URL = 'https://rehab-survey-clusters-joins.trycloudflare.com';
     const DEFAULT_OTA_WIFI_URL = 'http://192.168.1.204:5000';
-    const CURRENT_APP_VERSION = 'v1.6.26';
-    const CURRENT_APP_BUILD = 186;
+    const CURRENT_APP_VERSION = 'v1.6.33';
+    const CURRENT_APP_BUILD = 193;
 
     function initOtaSettingsUI() {
       const input = document.getElementById('nrOtaServerInput');
@@ -12878,7 +13455,7 @@ body.zen-mode #nrFabAdd {
 
       // Lưu trữ và ưu tiên link 3G Cloudflare chính xác cho tất cả các bản sau
       let currentServer = (localStorage.getItem('honor_ota_server') || '').trim();
-      if (!currentServer || (currentServer.includes('trycloudflare.com') && !currentServer.includes('boston-alternate-pubs-eugene'))) {
+      if (!currentServer || (currentServer.includes('trycloudflare.com') && !currentServer.includes('rehab-survey-clusters-joins'))) {
         currentServer = DEFAULT_OTA_3G_URL;
         localStorage.setItem('honor_ota_server', DEFAULT_OTA_3G_URL);
       }
@@ -12896,6 +13473,33 @@ body.zen-mode #nrFabAdd {
           label.textContent = '🏠 Wi-Fi Nhà';
           label.style.color = '#a3e635';
         }
+      }
+    }
+
+    function downloadFullApk() {
+      const input = document.getElementById('nrOtaServerInput');
+      let server = (input && input.value ? input.value.trim() : '') || localStorage.getItem('honor_ota_server') || '';
+      
+      // Nếu server rỗng hoặc trỏ về localhost / 127.0.0.1 của điện thoại -> Tự động chuyển sang Cloudflare 3G hoặc Wi-Fi
+      if (!server || server.includes('127.0.0.1') || server.includes('localhost')) {
+        server = DEFAULT_OTA_3G_URL;
+      }
+      server = server.replace(/\/+$/, '');
+      if (!server.startsWith('http')) {
+        server = 'http://' + server;
+      }
+      const apkUrl = `${server}/LReader.apk`;
+
+      if (typeof showHonorToast === 'function') {
+        showHonorToast('🚀 Đang mở tải Full APK: ' + apkUrl);
+      } else if (typeof showToast === 'function') {
+        showToast('🚀 Đang mở tải Full APK: ' + apkUrl);
+      }
+
+      if (window.HonorBridge && window.HonorBridge.downloadApk) {
+        window.HonorBridge.downloadApk(apkUrl);
+      } else {
+        window.open(apkUrl, '_blank');
       }
     }
 

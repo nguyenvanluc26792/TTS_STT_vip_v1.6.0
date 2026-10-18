@@ -225,14 +225,14 @@ def get_ota_version():
         stat = bundle_path.stat()
         return jsonify({
             "success": True,
-            "version": "v1.6.32",
-            "version_code": 192,
+            "version": "v1.6.33",
+            "version_code": 193,
             "size": stat.st_size,
             "updated_at": int(stat.st_mtime),
             "changelog": [
-                "🛡️ Sửa lỗi đọc tên riêng: Bảo toàn nguyên vẹn tên Ô Hạo (không còn bị đọc thành 'Ông Hạo')",
-                "🎯 Bảo vệ danh xưng Mã Binh, Binh biến: Loại bỏ 'binh' khỏi bộ lọc SFX để không nuốt chữ của tên nhân vật",
-                "⚡ Dialogue Masking & Foley SFX Engine: Tiếp tục hoạt động chuẩn xác, sống động"
+                "💥 Âm thanh điện ảnh SFX: Thay thế trọn vẹn từ tượng thanh (Oanh long, ầm ầm, keng, vút...) bằng hiệu ứng âm thanh thật, loại bỏ hoàn toàn việc đọc thô chữ 'long'",
+                "🎧 Đồng bộ Web Audio & Native Audio Generator: Tự động unlock AudioContext và sinh âm thanh WAV nổi đa kênh",
+                "🛡️ Bảo toàn nguyên vẹn tên riêng Ô Hạo, Mã Binh"
             ]
         })
     return jsonify({"success": False}), 404
@@ -655,7 +655,7 @@ def apply_pronunciation_rules(text, rules=None):
     result = re.sub(r'\.{2,}', '…', result)
 
     # 3. Chuẩn hóa thán từ (Interjections): thêm dấu phẩy để AI ngắt hơi và nhấn âm tự nhiên (bỏ A, Ô, Á để không làm hỏng tên riêng như Ô Hạo, A Bảo)
-    result = re.sub(r'(?i)(?<=^|[\s.!?…\u201C\u201D"\'—–\-])(Ồ|Hừ|Ôi|Hơ|Chao ôi|Trời ơi|Ha ha|Hì hì|Hừm|Ô kìa|Ô hay)(?=\s+[\w\u00C0-\u1EF9])', r'\1,', result)
+    result = re.sub(r'(?i)(^|[\s.!?…\u201C\u201D"\'—–\-])(Ồ|Hừ|Ôi|Hơ|Chao ôi|Trời ơi|Ha ha|Hì hì|Hừm|Ô kìa|Ô hay)(?=\s+[\w\u00C0-\u1EF9])', r'\1\2,', result)
 
     # 4. Chuẩn hóa phát âm tiếng Việt cho CapCut / ByteDance TTS:
     # Tránh bị nhận nhầm thành số La Mã VI (6 -> sáu/sáo) và XI (11 -> mười mốt)
@@ -1385,6 +1385,7 @@ def delete_offline_voice():
 @app.route("/api/tts", methods=["POST"])
 def get_tts():
     notify_interactive_start()
+    spoken_text = ""
     try:
         req = request.get_json(force=True, silent=True) or {}
         text = req.get("text", "").strip()
@@ -1405,6 +1406,17 @@ def get_tts():
         filtered_text = filter_skipped_phrases(text, book_id=book_id)
         if not filtered_text or not re.search(r'\w', filtered_text, re.UNICODE):
             return send_file(io.BytesIO(get_silent_audio()), mimetype=default_mime)
+
+        # Kiểm tra và xử lý từ tượng thanh (Foley SFX Engine)
+        sfx_type, pruned_sfx = offline_tts.detect_and_prune_sfx(filtered_text)
+        if sfx_type:
+            if not pruned_sfx or not re.search(r'\w', pruned_sfx, re.UNICODE):
+                # Câu thuần túy là từ tượng thanh (ví dụ: "Oanh long!", "Ầm!", "Keng!", "Vút!")
+                sfx_wav = offline_tts.generate_sfx_wav_bytes(sfx_type)
+                if sfx_wav:
+                    return send_file(io.BytesIO(sfx_wav), mimetype="audio/wav")
+            else:
+                filtered_text = pruned_sfx
 
         spoken_text = apply_pronunciation_rules(filtered_text)
         spoken_text = bilingual.convert_symbols_to_spoken_text(spoken_text)

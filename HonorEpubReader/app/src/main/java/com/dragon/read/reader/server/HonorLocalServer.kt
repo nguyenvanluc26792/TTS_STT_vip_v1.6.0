@@ -658,10 +658,30 @@ class HonorLocalServer(
                            .replace(Regex("\\s+"), " ")
                            .trim()
 
-                // Tự động cắt bỏ các từ tượng thanh độc lập để giọng đọc không phát âm thô
-                val sfxCleaned = text.replace(Regex("(?i)(?:^|[\\s“\"«'–—])(?:ầm\\s+ầm|ầm|bùm|đùng|đoàng|oành|oanh|phanh|bịch|bộp|rầm|rắc|bốp|chát|keng|choang|xoảng|leng\\s+keng|vút|vèo|xẹt|chéo)[!?.…,”\"»'\\s]+"), " ").trim()
+                // Nhận diện và cắt bỏ từ tượng thanh (Foley SFX Engine)
+                val sfxExplosion = Regex("(?i)(?:^|[\\s“\"«'–—])(?:oanh\\s+long(?:\\s+long)?|oành(?:\\s+oành)?|oanh|ầm(?:\\s+ầm){1,2}|ầm\\s+vang|ầm|đùng\\s+đoàng|đùng(?:\\s+đùng)?|đoàng|bùm(?:\\s+bùm)?|nổ\\s+tung)(?:\\s+một\\s+tiếng)?(?=[!?.…,”\"»'–—\\s]|$)")
+                val sfxImpact = Regex("(?i)(?:^|[\\s“\"«'–—])(?:rầm(?:\\s+rầm)?|bịch(?:\\s+bịch)?|huỵch|bộp(?:\\s+bộp)?|bốp(?:\\s+bốp)?|chát|rắc(?:\\s+rắc)?|bành)(?:\\s+một\\s+tiếng)?(?=[!?.…,”\"»'–—\\s]|$)")
+                val sfxClash = Regex("(?i)(?:^|[\\s“\"«'–—])(?:leng\\s+keng|keng(?:\\s+keng)?|choang(?:\\s+choang)?|xoảng(?:\\s+xoảng)?|xủng\\s+xoảng|boong|coong)(?:\\s+một\\s+tiếng)?(?=[!?.…,”\"»'–—\\s]|$)")
+                val sfxWhoosh = Regex("(?i)(?:^|[\\s“\"«'–—])(?:vun\\s+vút|vút(?:\\s+vút)?|vèo(?:\\s+vèo)?|xẹt(?:\\s+xẹt)?|xoẹt(?:\\s+xoẹt)?|chéo|vù(?:\\s+vù)?|phù)(?:\\s+một\\s+tiếng)?(?=[!?.…,”\"»'–—\\s]|$)")
+
+                val detectedSfxType = when {
+                    sfxExplosion.containsMatchIn(text) -> "explosion"
+                    sfxImpact.containsMatchIn(text) -> "impact"
+                    sfxClash.containsMatchIn(text) -> "clash"
+                    sfxWhoosh.containsMatchIn(text) -> "whoosh"
+                    else -> null
+                }
+
+                val pruneAllSfx = Regex("(?i)(?:^|[\\s“\"«'–—])(?:oanh\\s+long(?:\\s+long)?|oành(?:\\s+oành)?|oanh|ầm(?:\\s+ầm){1,2}|ầm\\s+vang|ầm|đùng\\s+đoàng|đùng(?:\\s+đùng)?|đoàng|bùm(?:\\s+bùm)?|nổ\\s+tung|rầm(?:\\s+rầm)?|bịch(?:\\s+bịch)?|huỵch|bộp(?:\\s+bộp)?|bốp(?:\\s+bốp)?|chát|rắc(?:\\s+rắc)?|bành|leng\\s+keng|keng(?:\\s+keng)?|choang(?:\\s+choang)?|xoảng(?:\\s+xoảng)?|xủng\\s+xoảng|boong|coong|vun\\s+vút|vút(?:\\s+vút)?|vèo(?:\\s+vèo)?|xẹt(?:\\s+xẹt)?|xoẹt(?:\\s+xoẹt)?|chéo|vù(?:\\s+vù)?|phù)(?:\\s+một\\s+tiếng)?[!?.…,”\"»'–—\\s]*")
+                val sfxCleaned = text.replace(pruneAllSfx, " ").trim()
                 if (sfxCleaned.any { it.isLetterOrDigit() }) {
                     text = sfxCleaned
+                } else if (detectedSfxType != null) {
+                    // Câu thuần túy là từ tượng thanh (ví dụ: "Oanh long!", "Ầm ầm ầm!", "Keng!", "Vút!")
+                    val wavBytes = SfxAudioGenerator.generateWav(detectedSfxType)
+                    val resp = newFixedLengthResponse(Response.Status.OK, "audio/wav", ByteArrayInputStream(wavBytes), wavBytes.size.toLong())
+                    resp.addHeader("Cache-Control", "no-cache, no-store, must-revalidate")
+                    return resp
                 }
 
                 if (text.isEmpty() || !text.any { it.isLetterOrDigit() }) {
@@ -1540,4 +1560,116 @@ class HonorLocalServer(
         }
     }
 }
+
+/**
+ * Bộ sinh âm thanh hiệu ứng (Foley SFX Engine) độc lập:
+ * Tự động tạo file âm thanh chuẩn 16-bit PCM WAV 22050Hz mono
+ * cho các hiệu ứng nổ sấm sét, quyền cước, đao kiếm va chạm, kiếm khí xé gió.
+ */
+object SfxAudioGenerator {
+    fun generateWav(type: String): ByteArray {
+        val sampleRate = 22050
+        val dur = when (type) {
+            "explosion" -> 0.85
+            "clash" -> 0.55
+            "whoosh" -> 0.35
+            else -> 0.40 // impact
+        }
+        val numSamples = (sampleRate * dur).toInt()
+        val pcm = ShortArray(numSamples)
+        val random = java.util.Random()
+
+        when (type) {
+            "explosion" -> {
+                for (i in 0 until numSamples) {
+                    val t = i.toDouble() / sampleRate
+                    val freq = 90.0 * Math.exp(-t * 3.5) + 35.0
+                    val phase = 2.0 * Math.PI * freq * t
+                    val sub = Math.sin(phase) * Math.exp(-t * 3.5)
+                    val noise = (random.nextDouble() * 2.0 - 1.0) * Math.exp(-t * 4.5)
+                    val sample = (sub * 0.65 + noise * 0.35) * 0.95
+                    val clamped = sample.coerceIn(-1.0, 1.0)
+                    pcm[i] = (clamped * 32767.0).toInt().toShort()
+                }
+            }
+            "clash" -> {
+                for (i in 0 until numSamples) {
+                    val t = i.toDouble() / sampleRate
+                    val b1 = Math.sin(2.0 * Math.PI * 2350.0 * t) * Math.exp(-t * 7.0)
+                    val b2 = Math.sin(2.0 * Math.PI * 3400.0 * t) * Math.exp(-t * 9.0)
+                    val b3 = Math.sin(2.0 * Math.PI * 5100.0 * t) * Math.exp(-t * 14.0)
+                    val click = (random.nextDouble() * 2.0 - 1.0) * Math.exp(-t * 70.0)
+                    val sample = (b1 * 0.35 + b2 * 0.3 + b3 * 0.2 + click * 0.15) * 0.9
+                    val clamped = sample.coerceIn(-1.0, 1.0)
+                    pcm[i] = (clamped * 32767.0).toInt().toShort()
+                }
+            }
+            "whoosh" -> {
+                for (i in 0 until numSamples) {
+                    val t = i.toDouble() / sampleRate
+                    val env = Math.pow(Math.sin(Math.PI * t / dur), 2.0)
+                    val noise = random.nextDouble() * 2.0 - 1.0
+                    val carrier = Math.sin(2.0 * Math.PI * (600.0 + 1400.0 * Math.sin(Math.PI * t / dur)) * t)
+                    val sample = (noise * 0.4 + carrier * 0.6) * env * 0.9
+                    val clamped = sample.coerceIn(-1.0, 1.0)
+                    pcm[i] = (clamped * 32767.0).toInt().toShort()
+                }
+            }
+            else -> { // impact
+                for (i in 0 until numSamples) {
+                    val t = i.toDouble() / sampleRate
+                    val freq = 120.0 * Math.exp(-t * 8.0) + 40.0
+                    val phase = 2.0 * Math.PI * freq * t
+                    val sub = Math.sin(phase) * Math.exp(-t * 9.0)
+                    val noise = (random.nextDouble() * 2.0 - 1.0) * Math.exp(-t * 25.0)
+                    val sample = (sub * 0.75 + noise * 0.25) * 0.95
+                    val clamped = sample.coerceIn(-1.0, 1.0)
+                    pcm[i] = (clamped * 32767.0).toInt().toShort()
+                }
+            }
+        }
+
+        val totalAudioLen = pcm.size * 2
+        val totalDataLen = totalAudioLen + 36
+        val header = ByteArray(44)
+        val channels = 1
+        val byteRate = sampleRate * channels * 2
+
+        header[0] = 'R'.code.toByte(); header[1] = 'I'.code.toByte(); header[2] = 'F'.code.toByte(); header[3] = 'F'.code.toByte()
+        header[4] = (totalDataLen and 0xff).toByte()
+        header[5] = ((totalDataLen shr 8) and 0xff).toByte()
+        header[6] = ((totalDataLen shr 16) and 0xff).toByte()
+        header[7] = ((totalDataLen shr 24) and 0xff).toByte()
+        header[8] = 'W'.code.toByte(); header[9] = 'A'.code.toByte(); header[10] = 'V'.code.toByte(); header[11] = 'E'.code.toByte()
+        header[12] = 'f'.code.toByte(); header[13] = 'm'.code.toByte(); header[14] = 't'.code.toByte(); header[15] = ' '.code.toByte()
+        header[16] = 16; header[17] = 0; header[18] = 0; header[19] = 0
+        header[20] = 1; header[21] = 0 // PCM
+        header[22] = channels.toByte(); header[23] = 0
+        header[24] = (sampleRate and 0xff).toByte()
+        header[25] = ((sampleRate shr 8) and 0xff).toByte()
+        header[26] = ((sampleRate shr 16) and 0xff).toByte()
+        header[27] = ((sampleRate shr 24) and 0xff).toByte()
+        header[28] = (byteRate and 0xff).toByte()
+        header[29] = ((byteRate shr 8) and 0xff).toByte()
+        header[30] = ((byteRate shr 16) and 0xff).toByte()
+        header[31] = ((byteRate shr 24) and 0xff).toByte()
+        header[32] = (channels * 2).toByte(); header[33] = 0
+        header[34] = 16; header[35] = 0
+        header[36] = 'd'.code.toByte(); header[37] = 'a'.code.toByte(); header[38] = 't'.code.toByte(); header[39] = 'a'.code.toByte()
+        header[40] = (totalAudioLen and 0xff).toByte()
+        header[41] = ((totalAudioLen shr 8) and 0xff).toByte()
+        header[42] = ((totalAudioLen shr 16) and 0xff).toByte()
+        header[43] = ((totalAudioLen shr 24) and 0xff).toByte()
+
+        val out = ByteArray(44 + totalAudioLen)
+        System.arraycopy(header, 0, out, 0, 44)
+        var offset = 44
+        for (sample in pcm) {
+            out[offset++] = (sample.toInt() and 0xff).toByte()
+            out[offset++] = ((sample.toInt() shr 8) and 0xff).toByte()
+        }
+        return out
+    }
+}
+
 

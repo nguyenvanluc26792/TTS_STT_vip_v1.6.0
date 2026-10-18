@@ -4988,12 +4988,12 @@ body.zen-mode #nrFabAdd {
         <!-- CẬP NHẬT ỨNG DỤNG OTA SIÊU TỐC (~370KB) -->
         <div class="nr-card-title" style="color:var(--nr-accent); font-weight:700; display:flex; justify-content:space-between; align-items:center;">
           <span>⚡ Cập nhật ứng dụng OTA</span>
-          <span id="nrOtaBadge" style="font-size:0.75rem; padding:2px 8px; border-radius:99px; background:rgba(56,189,248,0.18); color:#38bdf8; font-weight:700;">v1.6.32</span>
+          <span id="nrOtaBadge" style="font-size:0.75rem; padding:2px 8px; border-radius:99px; background:rgba(56,189,248,0.18); color:#38bdf8; font-weight:700;">v1.6.33</span>
         </div>
         <div class="nr-card" style="border: 1.5px solid rgba(56, 189, 248, 0.35); background: linear-gradient(135deg, rgba(56, 189, 248, 0.08), rgba(249, 115, 22, 0.04)); border-radius: 18px; padding: 12px 16px; margin-bottom: 14px;">
           <div style="font-size:0.78rem; color:#b0b2c4; line-height:1.45; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
             <span>Phiên bản hiện tại trên máy:</span>
-            <b id="nrCurrentVerDisplay" style="color:#38bdf8; font-size:0.84rem; background:rgba(56,189,248,0.15); padding:2px 8px; border-radius:6px;">v1.6.32</b>
+            <b id="nrCurrentVerDisplay" style="color:#38bdf8; font-size:0.84rem; background:rgba(56,189,248,0.15); padding:2px 8px; border-radius:6px;">v1.6.33</b>
           </div>
 
           <div style="margin-bottom:10px; background:rgba(0,0,0,0.25); padding:8px 10px; border-radius:10px; border:1px solid rgba(255,255,255,0.08);">
@@ -11493,6 +11493,20 @@ body.zen-mode #nrFabAdd {
         return audioCtx;
       }
 
+      function unlock() {
+        try {
+          const ctx = getAudioContext();
+          if (ctx) {
+            if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+            const buf = ctx.createBuffer(1, 1, 22050);
+            const src = ctx.createBufferSource();
+            src.buffer = buf;
+            src.connect(ctx.destination);
+            src.start(0);
+          }
+        } catch(e) {}
+      }
+
       function playImpact() {
         const ctx = getAudioContext();
         if (!ctx) return;
@@ -11500,21 +11514,51 @@ body.zen-mode #nrFabAdd {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(140, now);
-        osc.frequency.exponentialRampToValueAtTime(35, now + 0.25);
-        gain.gain.setValueAtTime(0.7, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.28);
+        osc.frequency.setValueAtTime(160, now);
+        osc.frequency.exponentialRampToValueAtTime(55, now + 0.22);
+        gain.gain.setValueAtTime(0.8, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start(now);
-        osc.stop(now + 0.3);
+        osc.stop(now + 0.28);
+
+        const snapLen = Math.floor(ctx.sampleRate * 0.08);
+        const snapBuf = ctx.createBuffer(1, snapLen, ctx.sampleRate);
+        const snapData = snapBuf.getChannelData(0);
+        for (let i = 0; i < snapLen; i++) snapData[i] = Math.random() * 2 - 1;
+        const snapSrc = ctx.createBufferSource();
+        snapSrc.buffer = snapBuf;
+        const snapFilter = ctx.createBiquadFilter();
+        snapFilter.type = 'bandpass';
+        snapFilter.frequency.value = 850;
+        const snapGain = ctx.createGain();
+        snapGain.gain.setValueAtTime(0.4, now);
+        snapGain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+        snapSrc.connect(snapFilter);
+        snapFilter.connect(snapGain);
+        snapGain.connect(ctx.destination);
+        snapSrc.start(now);
       }
 
       function playExplosion() {
         const ctx = getAudioContext();
         if (!ctx) return;
         const now = ctx.currentTime;
-        const bufferSize = Math.floor(ctx.sampleRate * 0.7);
+
+        const osc = ctx.createOscillator();
+        const oscGain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(180, now);
+        osc.frequency.exponentialRampToValueAtTime(65, now + 0.35);
+        oscGain.gain.setValueAtTime(0.7, now);
+        oscGain.gain.exponentialRampToValueAtTime(0.01, now + 0.45);
+        osc.connect(oscGain);
+        oscGain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.5);
+
+        const bufferSize = Math.floor(ctx.sampleRate * 0.9);
         const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
         const data = buffer.getChannelData(0);
         for (let i = 0; i < bufferSize; i++) {
@@ -11524,12 +11568,12 @@ body.zen-mode #nrFabAdd {
         noise.buffer = buffer;
         const filter = ctx.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(300, now);
-        filter.frequency.exponentialRampToValueAtTime(50, now + 0.65);
+        filter.frequency.setValueAtTime(450, now);
+        filter.frequency.exponentialRampToValueAtTime(110, now + 0.85);
 
         const gain = ctx.createGain();
-        gain.gain.setValueAtTime(0.8, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.68);
+        gain.gain.setValueAtTime(0.85, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.9);
 
         noise.connect(filter);
         filter.connect(gain);
@@ -11541,19 +11585,19 @@ body.zen-mode #nrFabAdd {
         const ctx = getAudioContext();
         if (!ctx) return;
         const now = ctx.currentTime;
-        [1850, 2400, 3100].forEach((freq, idx) => {
+        [2400, 3850, 5600].forEach((freq, idx) => {
           const osc = ctx.createOscillator();
           const gain = ctx.createGain();
-          osc.type = 'sine';
+          osc.type = 'triangle';
           osc.frequency.setValueAtTime(freq, now);
-          osc.frequency.exponentialRampToValueAtTime(freq * 0.96, now + 0.4);
-          const initialVol = 0.3 / (idx + 1);
+          osc.frequency.exponentialRampToValueAtTime(freq * 0.95, now + 0.5);
+          const initialVol = 0.35 / (idx + 1);
           gain.gain.setValueAtTime(initialVol, now);
-          gain.gain.exponentialRampToValueAtTime(0.005, now + 0.45);
+          gain.gain.exponentialRampToValueAtTime(0.005, now + 0.55);
           osc.connect(gain);
           gain.connect(ctx.destination);
           osc.start(now);
-          osc.stop(now + 0.46);
+          osc.stop(now + 0.58);
         });
       }
 
@@ -11571,14 +11615,14 @@ body.zen-mode #nrFabAdd {
         noise.buffer = buffer;
         const filter = ctx.createBiquadFilter();
         filter.type = 'bandpass';
-        filter.frequency.setValueAtTime(450, now);
-        filter.frequency.exponentialRampToValueAtTime(1400, now + 0.18);
-        filter.frequency.exponentialRampToValueAtTime(350, now + 0.34);
-        filter.Q.value = 2.0;
+        filter.frequency.setValueAtTime(400, now);
+        filter.frequency.exponentialRampToValueAtTime(1800, now + 0.16);
+        filter.frequency.exponentialRampToValueAtTime(300, now + 0.32);
+        filter.Q.value = 2.2;
 
         const gain = ctx.createGain();
         gain.gain.setValueAtTime(0.05, now);
-        gain.gain.linearRampToValueAtTime(0.4, now + 0.15);
+        gain.gain.linearRampToValueAtTime(0.5, now + 0.14);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.34);
 
         noise.connect(filter);
@@ -11588,9 +11632,11 @@ body.zen-mode #nrFabAdd {
       }
 
       return {
+        unlock: unlock,
         play: function(type) {
           try {
             if (localStorage.getItem('reader_sfx_enabled') === '0') return;
+            unlock();
             if (type === 'impact') playImpact();
             else if (type === 'explosion') playExplosion();
             else if (type === 'clash') playClash();
@@ -11603,10 +11649,10 @@ body.zen-mode #nrFabAdd {
     })();
 
     const SFX_PATTERNS = [
-      { type: 'explosion', regex: /(?:^|[\s“"«'–—])(ầm\s+ầm|ầm|bùm|đùng|đoàng|oành|oanh|nổ tung)(?=[!?.…,\s”"»'–—]|$)/i },
-      { type: 'impact', regex: /(?:^|[\s“"«'–—])(bịch|bộp|rầm|rắc|bốp|chát|huỵch)(?=[!?.…,\s”"»'–—]|$)/i },
-      { type: 'clash', regex: /(?:^|[\s“"«'–—])(keng|choang|xoảng|boong|leng\s+keng|xủng\s+xoảng)(?=[!?.…,\s”"»'–—]|$)/i },
-      { type: 'whoosh', regex: /(?:^|[\s“"«'–—])(vút|vèo|xẹt|chéo|vun\s+vút|phù)(?=[!?.…,\s”"»'–—]|$)/i }
+      { type: 'explosion', regex: /(?:^|[\s“"«'–—])(oanh\s+long(?:\s+long)?|oành(?:\s+oành)?|oanh|ầm(?:\s+ầm){1,2}|ầm\s+vang|ầm|đùng\s+đoàng|đùng(?:\s+đùng)?|đoàng|bùm(?:\s+bùm)?|nổ\s+tung)(?:\s+một\s+tiếng)?(?=[!?.…,\s”"»'–—]|$)/i },
+      { type: 'impact', regex: /(?:^|[\s“"«'–—])(rầm(?:\s+rầm)?|bịch(?:\s+bịch)?|huỵch|bộp(?:\s+bộp)?|bốp(?:\s+bốp)?|chát|rắc(?:\s+rắc)?|bành)(?:\s+một\s+tiếng)?(?=[!?.…,\s”"»'–—]|$)/i },
+      { type: 'clash', regex: /(?:^|[\s“"«'–—])(leng\s+keng|keng(?:\s+keng)?|choang(?:\s+choang)?|xoảng(?:\s+xoảng)?|xủng\s+xoảng|boong|coong)(?:\s+một\s+tiếng)?(?=[!?.…,\s”"»'–—]|$)/i },
+      { type: 'whoosh', regex: /(?:^|[\s“"«'–—])(vun\s+vút|vút(?:\s+vút)?|vèo(?:\s+vèo)?|xẹt(?:\s+xẹt)?|xoẹt(?:\s+xoẹt)?|chéo|vù(?:\s+vù)?|phù)(?:\s+một\s+tiếng)?(?=[!?.…,\s”"»'–—]|$)/i }
     ];
 
     function detectSfxInText(text) {
@@ -11620,9 +11666,9 @@ body.zen-mode #nrFabAdd {
     function pruneSfxFromText(text) {
       if (!text) return text;
       let res = text;
-      const pruneRegex = /(?:^|[\s“"«'–—])(?:ầm\s+ầm|ầm|bùm|đùng|đoàng|oành|oanh|nổ tung|bịch|bộp|rầm|rắc|bốp|chát|huỵch|keng|choang|xoảng|boong|leng\s+keng|xủng\s+xoảng|vút|vèo|xẹt|chéo|vun\s+vút|phù)(?:\s*!+|\s*\.+|\s*,+)?(?=[\s”"»'–—]|$)/gi;
+      const pruneRegex = /(?:^|[\s“"«'–—])(?:oanh\s+long(?:\s+long)?|oành(?:\s+oành)?|oanh|ầm(?:\s+ầm){1,2}|ầm\s+vang|ầm|đùng\s+đoàng|đùng(?:\s+đùng)?|đoàng|bùm(?:\s+bùm)?|nổ\s+tung|rầm(?:\s+rầm)?|bịch(?:\s+bịch)?|huỵch|bộp(?:\s+bộp)?|bốp(?:\s+bốp)?|chát|rắc(?:\s+rắc)?|bành|leng\s+keng|keng(?:\s+keng)?|choang(?:\s+choang)?|xoảng(?:\s+xoảng)?|xủng\s+xoảng|boong|coong|vun\s+vút|vút(?:\s+vút)?|vèo(?:\s+vèo)?|xẹt(?:\s+xẹt)?|xoẹt(?:\s+xoẹt)?|chéo|vù(?:\s+vù)?|phù)(?:\s+một\s+tiếng)?[!?.…,”"»'–—\s]*/gi;
       res = res.replace(pruneRegex, ' ').replace(/\s{2,}/g, ' ').trim();
-      return res || text;
+      return res;
     }
 
     async function prefetchSentenceAudio(chIdx, sIdx) {
@@ -11804,17 +11850,21 @@ body.zen-mode #nrFabAdd {
 
       let spokenText = filterSkippedPhrases(text);
       if (sfxType && (localStorage.getItem('reader_sfx_enabled') !== '0')) {
+        SfxEngine.play(sfxType);
         spokenText = pruneSfxFromText(spokenText);
       }
 
       if (!spokenText || !/[\p{L}\p{N}]/u.test(spokenText)) {
         if (sfxType && (localStorage.getItem('reader_sfx_enabled') !== '0')) {
           console.log(`[SFX] Đã phát hiệu ứng '${sfxType}', chuyển tiếp câu`);
+          setLoading(false);
+          updateMediaSession(ch.title, text);
+          const sfxDelay = (sfxType === 'explosion') ? 1150 : (sfxType === 'clash' ? 750 : 550);
           setTimeout(() => {
             if (isPlaying && mySessionId === currentPlaybackSessionId) {
               advanceToNextSentenceWithContextualPause();
             }
-          }, 450);
+          }, sfxDelay);
           return;
         }
         console.log(`[Skip] Bỏ qua câu do không còn từ đọc sau khi lọc cụm từ: "${text}"`);
@@ -11968,6 +12018,12 @@ body.zen-mode #nrFabAdd {
         advanceToNextSentenceWithContextualPause();
       };
 
+      // Nếu câu có hiệu ứng âm thanh (SFX) ở đầu, tạo khoảng nghỉ ngắn 320ms để tiếng nổ/binh khí nổ vang trước khi giọng đọc bắt đầu
+      if (sfxType && (localStorage.getItem('reader_sfx_enabled') !== '0')) {
+        await new Promise(r => setTimeout(r, 320));
+        if (mySessionId !== currentPlaybackSessionId || !isPlaying) return;
+      }
+
       try {
         await audio.play();
         setLoading(false);
@@ -11999,6 +12055,7 @@ body.zen-mode #nrFabAdd {
         if (isPlaying) {
           pauseAudio();
         } else {
+          SfxEngine.unlock();
           isPlaying = true;
           updatePlayBtn();
           requestWakeLock();
@@ -13385,8 +13442,8 @@ body.zen-mode #nrFabAdd {
     // ==========================================
     const DEFAULT_OTA_3G_URL = 'https://rehab-survey-clusters-joins.trycloudflare.com';
     const DEFAULT_OTA_WIFI_URL = 'http://192.168.1.204:5000';
-    const CURRENT_APP_VERSION = 'v1.6.32';
-    const CURRENT_APP_BUILD = 192;
+    const CURRENT_APP_VERSION = 'v1.6.33';
+    const CURRENT_APP_BUILD = 193;
 
     function initOtaSettingsUI() {
       const input = document.getElementById('nrOtaServerInput');

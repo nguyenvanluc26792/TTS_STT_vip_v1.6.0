@@ -436,30 +436,55 @@ def generate_sfx_samples(sfx_type, sample_rate=22050):
             samples.append(val)
     return samples
 
+def generate_sfx_wav_bytes(sfx_type, sample_rate=22050):
+    """
+    Sinh file WAV âm thanh hiệu ứng (SFX) 16-bit PCM mono chuẩn.
+    """
+    samples = generate_sfx_samples(sfx_type, sample_rate)
+    if not samples:
+        return None
+    import io, wave, struct
+    buf = io.BytesIO()
+    with wave.open(buf, 'wb') as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        raw = bytearray()
+        for s in samples:
+            val = max(-32767, min(32767, int(s * 32767)))
+            raw.extend(struct.pack('<h', val))
+        wf.writeframes(raw)
+    return buf.getvalue()
+
 def detect_and_prune_sfx(text):
     """
-    Phát hiện từ tượng thanh độc lập và cắt bỏ (Prune) khỏi văn bản đọc để TTS không đọc thô
+    Phát hiện từ tượng thanh độc lập và cắt bỏ (Prune) khỏi văn bản đọc để TTS không đọc thô:
+    - 1. Nổ / Sấm: oanh long, oanh long long, ầm, ầm ầm, bùm, đùng, đoàng, oành, oanh, nổ tung
+    - 2. Va chạm / Quyền cước: rầm, bịch, huỵch, bộp, bốp, chát, rắc, bành
+    - 3. Binh khí: keng, choang, xoảng, leng keng, xủng xoảng, boong, coong
+    - 4. Kiếm khí / Xé gió: vun vút, vút, vèo, xẹt, xoẹt, chéo, vù, phù
+    Hỗ trợ kèm cụm 'một tiếng' (ví dụ: 'oanh long một tiếng', 'keng một tiếng', 'rầm một tiếng')
     """
     import re
-    # 1. Nổ / Sấm: ầm, ầm ầm, bùm, đùng, đoàng, oành, nổ
-    m = re.search(r'(?:^|[\s“"«\'–—])(ầm\s+ầm|ầm|bùm|đùng|đoàng|oành|oanh)(?=[!?.…,”"»\'\s]|$)', text, re.I)
+    # 1. Nổ / Sấm sét: oanh long (long), oành, ầm ầm, bùm, đùng đoàng, nổ tung
+    m = re.search(r'(?i)(?:^|[\s“"«\'–—])(oanh\s+long(?:\s+long)?|oành(?:\s+oành)?|oanh|ầm(?:\s+ầm){1,2}|ầm\s+vang|ầm|đùng\s+đoàng|đùng(?:\s+đùng)?|đoàng|bùm(?:\s+bùm)?|nổ\s+tung)(?:\s+một\s+tiếng)?(?=[!?.…,”"»\'–—\s]|$)', text)
     if m:
-        pruned = re.sub(r'(?:^|[\s“"«\'–—])(?:ầm\s+ầm|ầm|bùm|đùng|đoàng|oành|oanh)[!?.…,”"»\']*\s*', ' ', text, flags=re.I).strip()
+        pruned = re.sub(r'(?i)(?:^|[\s“"«\'–—])(?:oanh\s+long(?:\s+long)?|oành(?:\s+oành)?|oanh|ầm(?:\s+ầm){1,2}|ầm\s+vang|ầm|đùng\s+đoàng|đùng(?:\s+đùng)?|đoàng|bùm(?:\s+bùm)?|nổ\s+tung)(?:\s+một\s+tiếng)?[!?.…,”"»\'–—\s]*', ' ', text).strip()
         return 'explosion', pruned
-    # 2. Va chạm / Quyền cước: phanh, bịch, bộp, rầm, rắc, bốp, chát
-    m = re.search(r'(?:^|[\s“"«\'–—])(phanh|bịch|bộp|rầm|rắc|bốp|chát)(?=[!?.…,”"»\'\s]|$)', text, re.I)
+    # 2. Va chạm / Quyền cước: rầm, bịch, huỵch, bộp, bốp, chát, rắc, bành
+    m = re.search(r'(?i)(?:^|[\s“"«\'–—])(rầm(?:\s+rầm)?|bịch(?:\s+bịch)?|huỵch|bộp(?:\s+bộp)?|bốp(?:\s+bốp)?|chát|rắc(?:\s+rắc)?|bành)(?:\s+một\s+tiếng)?(?=[!?.…,”"»\'–—\s]|$)', text)
     if m:
-        pruned = re.sub(r'(?:^|[\s“"«\'–—])(?:phanh|bịch|bộp|rầm|rắc|bốp|chát)[!?.…,”"»\']*\s*', ' ', text, flags=re.I).strip()
+        pruned = re.sub(r'(?i)(?:^|[\s“"«\'–—])(?:rầm(?:\s+rầm)?|bịch(?:\s+bịch)?|huỵch|bộp(?:\s+bộp)?|bốp(?:\s+bốp)?|chát|rắc(?:\s+rắc)?|bành)(?:\s+một\s+tiếng)?[!?.…,”"»\'–—\s]*', ' ', text).strip()
         return 'impact', pruned
-    # 3. Binh khí: keng, choang, xoảng, leng keng, xủng xoảng
-    m = re.search(r'(?:^|[\s“"«\'–—])(keng|choang|xoảng|leng\s+keng|xủng\s+xoảng)(?=[!?.…,”"»\'\s]|$)', text, re.I)
+    # 3. Binh khí: leng keng, keng, choang, xoảng, xủng xoảng, boong, coong
+    m = re.search(r'(?i)(?:^|[\s“"«\'–—])(leng\s+keng|keng(?:\s+keng)?|choang(?:\s+choang)?|xoảng(?:\s+xoảng)?|xủng\s+xoảng|boong|coong)(?:\s+một\s+tiếng)?(?=[!?.…,”"»\'–—\s]|$)', text)
     if m:
-        pruned = re.sub(r'(?:^|[\s“"«\'–—])(?:keng|choang|xoảng|leng\s+keng|xủng\s+xoảng)[!?.…,”"»\']*\s*', ' ', text, flags=re.I).strip()
+        pruned = re.sub(r'(?i)(?:^|[\s“"«\'–—])(?:leng\s+keng|keng(?:\s+keng)?|choang(?:\s+choang)?|xoảng(?:\s+xoảng)?|xủng\s+xoảng|boong|coong)(?:\s+một\s+tiếng)?[!?.…,”"»\'–—\s]*', ' ', text).strip()
         return 'clash', pruned
-    # 4. Kiếm khí / Xé gió: vút, vèo, xẹt, chéo
-    m = re.search(r'(?:^|[\s“"«\'–—])(vút|vèo|xẹt|chéo)(?=[!?.…,”"»\'\s]|$)', text, re.I)
+    # 4. Kiếm khí / Xé gió: vun vút, vút, vèo, xẹt, xoẹt, chéo, vù, phù
+    m = re.search(r'(?i)(?:^|[\s“"«\'–—])(vun\s+vút|vút(?:\s+vút)?|vèo(?:\s+vèo)?|xẹt(?:\s+xẹt)?|xoẹt(?:\s+xoẹt)?|chéo|vù(?:\s+vù)?|phù)(?:\s+một\s+tiếng)?(?=[!?.…,”"»\'–—\s]|$)', text)
     if m:
-        pruned = re.sub(r'(?:^|[\s“"«\'–—])(?:vút|vèo|xẹt|chéo)[!?.…,”"»\']*\s*', ' ', text, flags=re.I).strip()
+        pruned = re.sub(r'(?i)(?:^|[\s“"«\'–—])(?:vun\s+vút|vút(?:\s+vút)?|vèo(?:\s+vèo)?|xẹt(?:\s+xẹt)?|xoẹt(?:\s+xoẹt)?|chéo|vù(?:\s+vù)?|phù)(?:\s+một\s+tiếng)?[!?.…,”"»\'–—\s]*', ' ', text).strip()
         return 'whoosh', pruned
     return None, text
 
