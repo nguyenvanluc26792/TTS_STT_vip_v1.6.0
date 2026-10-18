@@ -38,6 +38,7 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -77,6 +78,7 @@ class ReaderActivity : ComponentActivity() {
     private var isMediaPlaying = false
     private var isEyeTrackingSuspendedByMedia = false
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
+    private var lastBackPressTime = 0L
 
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -89,6 +91,37 @@ class ReaderActivity : ComponentActivity() {
         }
     }
 
+    private fun setupBackPressHandler() {
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                webView.evaluateJavascript("""
+                    (function() {
+                        if (document.body.classList.contains('zen-mode')) {
+                            if (typeof window.exitZenMode === 'function') window.exitZenMode();
+                            return 'EXITED_ZEN';
+                        }
+                        if (typeof nrCurrentTab !== 'undefined' && nrCurrentTab === 'reader') {
+                            if (typeof switchNrTab === 'function') switchNrTab('shelf');
+                            return 'SWITCHED_SHELF';
+                        }
+                        return 'DEFAULT';
+                    })();
+                """.trimIndent()) { res ->
+                    val clean = res?.trim('"') ?: "DEFAULT"
+                    if (clean == "DEFAULT") {
+                        val now = System.currentTimeMillis()
+                        if (now - lastBackPressTime < 2000) {
+                            finish()
+                        } else {
+                            lastBackPressTime = now
+                            Toast.makeText(this@ReaderActivity, "Nhấn lần nữa để thoát ứng dụng", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        })
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -96,23 +129,60 @@ class ReaderActivity : ComponentActivity() {
         try {
             val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
             Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-                Log.e(TAG, "FATAL CRASH caught on thread ${thread.name}: ${throwable.message}", throwable)
+                Log.e(TAG, "CRASH caught on thread ${thread.name}: ${throwable.message}", throwable)
+                try {
+                    val crashFile = java.io.File(filesDir, "crash_log.txt")
+                    val sw = java.io.StringWriter()
+                    val pw = java.io.PrintWriter(sw)
+                    throwable.printStackTrace(pw)
+                    val stackTrace = sw.toString()
+                    val info = "=== CRASH AT ${java.util.Date()} ===\nThread: ${thread.name}\nException: ${throwable::class.java.name}: ${throwable.message}\n$stackTrace\n\n"
+                    crashFile.appendText(info, Charsets.UTF_8)
+                } catch (e: Throwable) {}
+
+                // Nếu là thread phụ (không phải main thread), ngăn ngừa app bị đóng ngang
+                if (thread.name != "main") {
+                    Log.w(TAG, "Suppressed crash on background thread ${thread.name} to keep app alive!")
+                    return@setDefaultUncaughtExceptionHandler
+                }
+
+                // Nếu là main thread, tự động phục hồi và khởi động lại thay vì văng ra ngoài màn hình chính
+                try {
+                    val intent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                    }
+                    if (intent != null) {
+                        startActivity(intent)
+                        Runtime.getRuntime().exit(0)
+                        return@setDefaultUncaughtExceptionHandler
+                    }
+                } catch (e: Throwable) {}
+
                 defaultHandler?.uncaughtException(thread, throwable)
             }
         } catch (e: Throwable) {
             Log.e(TAG, "Error setting exception handler: ${e.message}")
         }
 
+        setupBackPressHandler()
+
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         currentAnimMode = prefs.getInt(KEY_ANIM_MODE, InputManagerExHelper.ANIM_CURL)
 
         setupWindowCutoutAndFullscreen()
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
+            }
+        }
+        setupMediaServiceListener()
+
         try {
             // Dọn sạch toàn bộ cache audio cũ (bao gồm bất kỳ file demo 242KB nào còn sót lại)
             cacheDir.listFiles()?.forEach { f ->
-                if (f.name.startsWith("tts")) {
-                    f.deleteRecursively()
+                if (f.name.endsWith(".mp3") || f.name.endsWith(".wav") || f.name.startsWith("tts")) {
+                    f.delete()
                 }
             }
         } catch (e: Exception) {
@@ -303,6 +373,61 @@ class ReaderActivity : ComponentActivity() {
         )
     }
 
+    private fun setupMediaServiceListener() {
+        ReaderMediaService.actionListener = object : MediaActionListener {
+            override fun onPlay() {
+                runOnUiThread {
+                    webView.evaluateJavascript("""
+                        (function() {
+                            if (typeof window.resumeAudio === 'function') window.resumeAudio();
+                            else if (typeof window.togglePlay === 'function') window.togglePlay();
+                        })();
+                    """.trimIndent(), null)
+                }
+            }
+
+            override fun onPause() {
+                runOnUiThread {
+                    webView.evaluateJavascript("""
+                        (function() {
+                            if (typeof window.pauseAudio === 'function') window.pauseAudio();
+                        })();
+                    """.trimIndent(), null)
+                }
+            }
+
+            override fun onNext() {
+                runOnUiThread {
+                    webView.evaluateJavascript("""
+                        (function() {
+                            if (typeof window.nextParagraph === 'function') window.nextParagraph();
+                        })();
+                    """.trimIndent(), null)
+                }
+            }
+
+            override fun onPrevious() {
+                runOnUiThread {
+                    webView.evaluateJavascript("""
+                        (function() {
+                            if (typeof window.prevParagraph === 'function') window.prevParagraph();
+                        })();
+                    """.trimIndent(), null)
+                }
+            }
+
+            override fun onStop() {
+                runOnUiThread {
+                    webView.evaluateJavascript("""
+                        (function() {
+                            if (typeof window.pauseAudio === 'function') window.pauseAudio();
+                        })();
+                    """.trimIndent(), null)
+                }
+            }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         applyImmersiveSticky()
@@ -321,6 +446,10 @@ class ReaderActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            ReaderMediaService.stop(this)
+            ReaderMediaService.actionListener = null
+        } catch (e: Exception) {}
         try {
             textToSpeech?.stop()
             textToSpeech?.shutdown()
@@ -754,6 +883,7 @@ class ReaderActivity : ComponentActivity() {
                     try {
                         rootLayout.removeView(webView)
                         webView.destroy()
+                        webView = WebView(this@ReaderActivity)
                         configureWebView()
                         rootLayout.addView(webView, 0)
                         loadUrl(getServerUrl())
@@ -1153,30 +1283,7 @@ class ReaderActivity : ComponentActivity() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
-            webView.evaluateJavascript("""
-                (function() {
-                    if (document.body.classList.contains('zen-mode')) {
-                        window.exitZenMode();
-                        return 'EXITED_ZEN';
-                    }
-                    if (typeof nrCurrentTab !== 'undefined' && nrCurrentTab === 'reader') {
-                        switchNrTab('shelf');
-                        return 'SWITCHED_SHELF';
-                    }
-                    return 'DEFAULT';
-                })();
-            """.trimIndent()) { res ->
-                val clean = res?.trim('"') ?: "DEFAULT"
-                if (clean == "DEFAULT") {
-                    runOnUiThread {
-                        if (webView.canGoBack()) {
-                            webView.goBack()
-                        } else {
-                            finish()
-                        }
-                    }
-                }
-            }
+            onBackPressedDispatcher.onBackPressed()
             return true
         }
 
@@ -1424,6 +1531,36 @@ class ReaderActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
+        fun updateMediaSession(title: String, artist: String, isPlaying: Boolean, album: String) {
+            try {
+                runOnUiThread {
+                    this@ReaderActivity.onMediaPlayingChanged(isPlaying)
+                    ReaderMediaService.startOrUpdate(
+                        this@ReaderActivity,
+                        title = title,
+                        artist = artist,
+                        isPlaying = isPlaying,
+                        album = album
+                    )
+                }
+            } catch (e: Throwable) {
+                Log.e(TAG, "Error in updateMediaSession: ${e.message}")
+            }
+        }
+
+        @JavascriptInterface
+        fun stopMediaService() {
+            try {
+                runOnUiThread {
+                    this@ReaderActivity.onMediaPlayingChanged(false)
+                    ReaderMediaService.stop(this@ReaderActivity)
+                }
+            } catch (e: Throwable) {
+                Log.e(TAG, "Error in stopMediaService: ${e.message}")
+            }
+        }
+
+        @JavascriptInterface
         fun openDiagnostics() {
             runOnUiThread {
                 this@ReaderActivity.showEyeTrackingDiagnosticsDialog()
@@ -1467,6 +1604,16 @@ class ReaderActivity : ComponentActivity() {
         fun reloadApp() {
             runOnUiThread {
                 loadUrl(getServerUrl())
+            }
+        }
+
+        @JavascriptInterface
+        fun getBatteryLevel(): Int {
+            return try {
+                val bm = getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
+                bm?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
+            } catch (e: Throwable) {
+                -1
             }
         }
 

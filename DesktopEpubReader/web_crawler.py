@@ -279,8 +279,46 @@ def parse_sottruyen_story(url, max_chapters=50):
 # -------------------------------------------------------------
 def resolve_first_chapter_url(url):
     """Tự động phân giải URL truyện chính (chưa vào chương) sang link Chương 1 chuẩn xác"""
+    url = url.strip()
+
+    # 1. Đặc thù Truyenfullmoi: luôn cần .html ở đuôi và slug không dính hậu tố -f1, .13
+    if 'truyenfullmoi.net' in url:
+        if '/chuong-' in url or '/chapter-' in url:
+            clean_u = url
+            if not clean_u.endswith('.html'):
+                clean_u = re.sub(r'/+$', '', clean_u) + '.html'
+            return clean_u
+        try:
+            parsed = urlparse(url)
+            slug = parsed.path.strip('/')
+            slug = re.sub(r'\.\d+.*$', '', slug)
+            slug = re.sub(r'-f\d+.*$', '', slug)
+            if slug:
+                return f"https://truyenfullmoi.net/{slug}/chuong-1.html"
+        except Exception:
+            pass
+        m = re.search(r'truyenfullmoi\.net/([a-zA-Z0-9\-_]+?)(?:-f\d+)?(?:\.\d+)?/?$', url)
+        if m:
+            return f"https://truyenfullmoi.net/{m.group(1)}/chuong-1.html"
+
     if any(k in url.lower() for k in ['chuong-', 'chapter-', 'chuong_']):
         return url
+
+    # Chuẩn hóa cấu trúc URL theo chuẩn của các website truyện phổ biến
+    if 'truyenhoan.com' in url:
+        m = re.search(r'truyenhoan\.com/([^/.]+)(?:\.\d+)?/?', url)
+        if m:
+            return f"https://truyenhoan.com/{m.group(1)}/chuong-1.html"
+
+    if 'xtruyen.vn/truyen/' in url:
+        m = re.search(r'xtruyen\.vn/truyen/([^/]+)/?', url)
+        if m:
+            return f"https://xtruyen.vn/truyen/{m.group(1)}/chuong-1/"
+
+    if 'sottruyen.com/truyen/' in url:
+        m = re.search(r'sottruyen\.com/truyen/([^/]+)/?', url)
+        if m:
+            return f"https://sottruyen.com/truyen/{m.group(1)}/chuong-1"
 
     parsed = urlparse(url)
     slug = [p for p in parsed.path.split('/') if p][-1]
@@ -291,21 +329,23 @@ def resolve_first_chapter_url(url):
         if r.status_code == 200:
             soup = BeautifulSoup(r.text, 'html.parser')
 
-            # 1. Tìm trực tiếp link có chứa base_slug và chuong-1
+            # 1. Quét tìm link có chữ "đọc từ đầu", "đọc ngay", hoặc đúng Chương 1 bằng regex
             for a in soup.find_all('a', href=True):
-                href = a['href']
-                if base_slug in href and any(p in href.lower() for p in ['chuong-1.', 'chuong-1/', 'chuong-01.', 'chuong-01/', 'chapter-1']):
+                href = a['href'].strip()
+                if not href or href == '#' or href.startswith('javascript'):
+                    continue
+                txt = a.get_text().strip()
+                # Kiểm tra văn bản "đọc từ đầu", "đọc ngay", "đọc truyện"
+                if any(k in txt.lower() for k in ['đọc từ đầu', 'đọc ngay', 'đọc truyện']):
+                    return urljoin(url, href)
+                # Kiểm tra regex href cho đúng chương 1 (không dính số phía sau như 10, 11, 1338)
+                if re.search(r'[/-](?:chuong|chapter|c)[-_]?0*1(?:\.html|/|\?|$)', href.lower()):
+                    return urljoin(url, href)
+                # Kiểm tra regex text cho đúng chương 1
+                if re.search(r'(?:chương|chuong|chapter)\s*0*1(?:\s*[:.-]|\s+\D|$)', txt.lower()) and not re.search(r'(?:chương|chuong|chapter)\s*0*1\d', txt.lower()):
                     return urljoin(url, href)
 
-            # 2. Tìm link văn bản "chương 1", "đọc từ đầu", "đọc truyện"
-            for a in soup.find_all('a', href=True):
-                href = a['href']
-                txt = a.get_text().strip().lower()
-                if any(k in txt for k in ['đọc từ đầu', 'đọc ngay', 'đọc truyện', 'chương 1', 'chuong 1', 'chương 01']):
-                    if href and href != '#' and not href.startswith('javascript'):
-                        return urljoin(url, href)
-
-            # 3. Đặc thù truyenfullmoi, truyenhoan: trang truyện chính có dạng .1147/
+            # 2. Đặc thù truyenfullmoi, truyenhoan: trang truyện chính có dạng .1147/
             for a in soup.find_all('a', href=True):
                 if base_slug in a['href'] and a['href'] != url and any(c.isdigit() for c in a['href']):
                     target = urljoin(url, a['href'])
@@ -315,21 +355,16 @@ def resolve_first_chapter_url(url):
                             if r2.status_code == 200:
                                 soup2 = BeautifulSoup(r2.text, 'html.parser')
                                 for a2 in soup2.find_all('a', href=True):
-                                    if base_slug in a2['href'] and any(p in a2['href'].lower() for p in ['chuong-1.', 'chuong-1/', 'chuong-1-']):
-                                        return urljoin(target, a2['href'])
+                                    h2 = a2['href'].strip()
+                                    if re.search(r'[/-](?:chuong|chapter|c)[-_]?0*1(?:\.html|/|\?|$)', h2.lower()):
+                                        return urljoin(target, h2)
                         except Exception:
                             pass
 
-            # 4. Fallback: tìm link bất kỳ có chứa chuong-1, chuong-01 hoặc chapter-1
+            # 3. Fallback: tìm link bất kỳ có chứa chuong-1, chuong-01 hoặc chapter-1
             for a in soup.find_all('a', href=True):
-                href = a['href']
-                if any(p in href.lower() for p in ['/chuong-1.', '/chuong-1/', '/chuong-1-', '/chuong-01.', '/chuong-01/', '/chapter-1']):
-                    return urljoin(url, href)
-
-            # 5. Fallback 2: Lấy link chương đầu tiên xuất hiện trong danh sách chương
-            for a in soup.find_all('a', href=True):
-                href = a['href']
-                if 'chuong' in href.lower() and ('-1' in href.lower() or '1' in a.get_text().strip()):
+                href = a['href'].strip()
+                if re.search(r'[/-](?:chuong|chapter|c)[-_]?0*1(?:\.html|/|\?|$)', href.lower()):
                     return urljoin(url, href)
     except Exception as e:
         print(f"Lỗi resolve_first_chapter_url ({url}):", e)
@@ -338,6 +373,9 @@ def resolve_first_chapter_url(url):
 
 def parse_generic_chapter(url):
     try:
+        url = url.strip()
+        if 'truyenfullmoi.net' in url and ('/chuong-' in url or '/chapter-' in url) and not url.endswith('.html'):
+            url = re.sub(r'/+$', '', url) + '.html'
         r = requests.get(url, headers=HEADERS, timeout=12)
         if r.status_code != 200:
             return None
@@ -357,13 +395,21 @@ def parse_generic_chapter(url):
 
         # 2. Tiêu đề chương
         chap_title = ""
-        ch_el = soup.select_one('a.chapter-title, .chapter-title, .chapter-name, .rv-chapt-title, .rv-heading-chapter, .chapter-text, h2.chapter-title, .chr-title')
+        ch_el = soup.select_one('a.chapter-title, .chapter-title, .chapter-name, .rv-chapt-title, .rv-heading-chapter, h2.chapter-title, .chr-title')
         if ch_el and ch_el.get_text(strip=True):
             chap_title = ch_el.get_text(strip=True)
+        if not chap_title or ('chương' not in chap_title.lower() and 'chuong' not in chap_title.lower()):
+            for h in soup.find_all(['h1', 'h2', 'h3']):
+                t = h.get_text(strip=True)
+                if len(t) <= 90 and any(k in t.lower() for k in ['chương', 'chuong', 'chapter']):
+                    chap_title = t
+                    break
         if not chap_title:
             h1 = soup.find(['h1', 'h2'])
             if h1:
                 chap_title = h1.get_text(strip=True)
+        if not chap_title or len(chap_title) > 90 or (chap_title.lower().count('chương') > 2):
+            chap_title = "Chương 1"
 
         # 3. Tác giả
         author = ""
@@ -377,7 +423,7 @@ def parse_generic_chapter(url):
             '#vungdoc', '.vung-doc', '.vungdoc', '#chapter-content', '.chapter-c', 
             '.entry-content', '.reading-content', 'div.content-inner', 'div.content', 
             '#content', '.content-body', '#chapter-c', '.reading-detail', '.box-chap', 
-            '#bookContentBody', '.chap-content', '.txt-content', '.chapter-text', 
+            '#bookContentBody', '.chap-content', '.txt-content', 
             '#chr-content', '.chr-c', '.doc-content'
         ]:
             el = soup.select_one(sel)
@@ -510,7 +556,8 @@ def fetch_web_novel(url, max_chapters=50, progress_callback=None):
             "index": c_idx,
             "title": c_title,
             "paragraphs": chap.get('paragraphs', []),
-            "source_url": current_url
+            "source_url": current_url,
+            "next_url": chap.get('next_url')
         })
 
         next_url = chap.get('next_url')
@@ -623,6 +670,8 @@ def fetch_more_chapters(book_data, count=1):
 
     # 2. Trường hợp XTruyện hoặc Web Generic
     current_url = book_data.get("last_crawl_url")
+    if not current_url and existing_chapters:
+        current_url = existing_chapters[-1].get("next_url")
     if not current_url:
         return False, 0
 
@@ -642,7 +691,8 @@ def fetch_more_chapters(book_data, count=1):
             "index": len(existing_chapters),
             "title": c_title,
             "paragraphs": chap.get('paragraphs', []),
-            "source_url": current_url
+            "source_url": current_url,
+            "next_url": chap.get('next_url')
         }
         existing_chapters.append(new_ch)
         added_count += 1
@@ -723,6 +773,8 @@ def search_web_novels(query, limit=25):
             print("[Search] Lỗi truyenhoan:", e)
         return sub_res
 
+    q_words = [w for w in query.lower().split() if len(w) > 1]
+
     def search_vivutruyen():
         sub_res = []
         try:
@@ -730,13 +782,15 @@ def search_web_novels(query, limit=25):
             r = requests.get(url, headers=HEADERS, timeout=7)
             if r.status_code == 200:
                 soup = BeautifulSoup(r.text, 'html.parser')
-                for h in soup.find_all(['h2', 'h3', 'h4'])[:10]:
+                for h in soup.find_all(['h2', 'h3', 'h4'])[:15]:
                     a_el = h.find('a')
                     if a_el and a_el.get('href') and '/truyen/' in a_el['href']:
                         b_url = a_el['href'].strip()
                         if b_url.startswith('/'):
                             b_url = 'https://vivutruyen.com' + b_url
                         title_str = a_el.get_text(strip=True)
+                        if q_words and not any(w in title_str.lower() for w in q_words):
+                            continue
                         if title_str and not any(r['url'] == b_url for r in sub_res):
                             sub_res.append({
                                 "title": title_str,
@@ -757,13 +811,15 @@ def search_web_novels(query, limit=25):
             r = requests.get(url, headers=HEADERS, timeout=7)
             if r.status_code == 200:
                 soup = BeautifulSoup(r.text, 'html.parser')
-                for h in soup.find_all(['h2', 'h3', 'h4'])[:10]:
+                for h in soup.find_all(['h2', 'h3', 'h4'])[:15]:
                     a_el = h.find('a')
                     if a_el and a_el.get('href') and '/truyen/' in a_el['href']:
                         b_url = a_el['href'].strip()
                         if b_url.startswith('/'):
                             b_url = 'https://tamhoan.com' + b_url
                         title_str = a_el.get_text(strip=True)
+                        if q_words and not any(w in title_str.lower() for w in q_words):
+                            continue
                         if title_str and not any(r['url'] == b_url for r in sub_res):
                             sub_res.append({
                                 "title": title_str,

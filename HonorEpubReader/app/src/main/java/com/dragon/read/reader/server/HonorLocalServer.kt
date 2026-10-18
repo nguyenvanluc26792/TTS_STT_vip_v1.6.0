@@ -9,6 +9,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
+import java.io.InputStream
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
@@ -27,14 +28,24 @@ class HonorLocalServer(
     private val pronounceFile = File(context.filesDir, "pronounce_rules.json")
     private val customWordsFile = File(context.filesDir, "custom_english_words.json")
 
+    @Volatile
+    private var isPreloadEnabled = true
+
     init {
         try {
-            // Đảm bảo luôn phục vụ index.html mới nhất trong assets, dọn file tạm
-            File(context.filesDir, "index_update.html").delete()
-            // Xóa triệt để toàn bộ thư mục cache cũ để giải phóng bộ nhớ và loại bỏ hoàn toàn demo WAV
+            // Xoa sach thu muc cache cu de giai phong bo nho
             context.cacheDir.listFiles()?.forEach { f ->
                 if (f.name.startsWith("tts_cache") && f.name != "tts_cache_v5") {
                     f.deleteRecursively()
+                }
+            }
+            // Neu APK moi vua duoc cai dat, xoa file ota/index.html cu de tranh che khuat code moi trong assets
+            val otaFile = File(context.filesDir, "ota/index.html")
+            if (otaFile.exists()) {
+                val pkgInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+                if (otaFile.lastModified() < pkgInfo.lastUpdateTime) {
+                    Log.i(TAG, "Xóa ota/index.html cũ do APK vừa được cập nhật mới hơn")
+                    otaFile.delete()
                 }
             }
         } catch (e: Exception) {
@@ -57,6 +68,15 @@ class HonorLocalServer(
     }
 
     override fun serve(session: IHTTPSession): Response {
+        return try {
+            handleServe(session)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Lỗi server serve (${session.uri}): ${t.message}", t)
+            jsonResponse("{\"error\":\"Lỗi máy chủ nội bộ: ${t.message}\"}", Response.Status.INTERNAL_ERROR)
+        }
+    }
+
+    private fun handleServe(session: IHTTPSession): Response {
         val uri = session.uri
         val method = session.method
 
@@ -68,10 +88,17 @@ class HonorLocalServer(
             return resp
         }
 
-        // 1. Phục vụ trang đọc sách chính
+        // 1. Phục vụ trang đọc sách: Ưu tiên file OTA cập nhật mới nhất, nếu chưa có thì dùng Assets gốc
         if (uri == "/" || uri == "/index.html") {
             try {
-                val input = context.assets.open("index.html")
+                val otaFile = File(context.filesDir, "ota/index.html")
+                val input: InputStream = if (otaFile.exists() && otaFile.length() > 50000) {
+                    Log.i(TAG, "Đang nạp index.html từ gói cập nhật OTA (${otaFile.length()} bytes)")
+                    FileInputStream(otaFile)
+                } else {
+                    Log.i(TAG, "Đang nạp index.html từ assets gốc")
+                    context.assets.open("index.html")
+                }
                 val resp = newChunkedResponse(Response.Status.OK, "text/html; charset=utf-8", input)
                 resp.addHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
                 resp.addHeader("Pragma", "no-cache")
@@ -109,8 +136,8 @@ class HonorLocalServer(
             val list = bookManager.getLibraryIndex()
             return if (list.length() > 0) {
                 val lastId = list.getJSONObject(0).optString("id")
-                val book = bookManager.getBook(lastId)
-                if (book != null) jsonResponse(book.toString()) else jsonResponse("null")
+                val bookRaw = bookManager.getBookRawJson(lastId)
+                if (bookRaw != null) jsonResponse(bookRaw) else jsonResponse("null")
             } else {
                 jsonResponse("null")
             }
@@ -123,15 +150,15 @@ class HonorLocalServer(
                 val ok = bookManager.deleteBook(bookId)
                 return jsonResponse("{\"success\":$ok}")
             }
-            val book = bookManager.getBook(bookId)
-            return if (book != null) {
-                jsonResponse(book.toString())
+            val bookRaw = bookManager.getBookRawJson(bookId)
+            return if (bookRaw != null) {
+                jsonResponse(bookRaw)
             } else {
                 jsonResponse("{\"error\":\"Không tìm thấy sách\"}", Response.Status.NOT_FOUND)
             }
         }
 
-        // 4. API Bóc tách truyện web online
+        // 4. API Bóc tách truyện web online (Tải trước tối đa 15 chương)
         if (uri == "/api/web-novel/parse" && method == Method.POST) {
             try {
                 val json = JSONObject(postData)
@@ -143,6 +170,7 @@ class HonorLocalServer(
                 val client = okhttp3.OkHttpClient.Builder()
                     .connectTimeout(15, TimeUnit.SECONDS)
                     .readTimeout(15, TimeUnit.SECONDS)
+                    .followRedirects(true)
                     .build()
 
                 val req = okhttp3.Request.Builder()
@@ -152,9 +180,9 @@ class HonorLocalServer(
 
                 val response = client.newCall(req).execute()
                 val html = response.body?.string() ?: ""
-                val doc = org.jsoup.Jsoup.parse(html)
+                val doc = org.jsoup.Jsoup.parse(html, url)
 
-                var storyTitle = doc.select("a.truyen-title, .story-title, .truyen-title, .rv-full-story-title, .rv-heading-story, .truyen-name, .book-info h1, .book-title, .novel-title, h1.title").text().trim()
+                var storyTitle = doc.selectFirst("a.truyen-title, .story-title, .truyen-title, .rv-full-story-title, .rv-heading-story, .truyen-name, .book-info h1, .book-title, .novel-title, h1.title, h1")?.text()?.trim() ?: ""
                 if (storyTitle.isEmpty()) {
                     storyTitle = doc.select("meta[property='og:title'], meta[name='title']").attr("content").split("-").firstOrNull()?.trim() ?: ""
                 }
@@ -162,58 +190,111 @@ class HonorLocalServer(
                     storyTitle = doc.title().split("-").firstOrNull()?.trim() ?: "Truyện Web"
                 }
 
-                var chapTitle = doc.select("a.chapter-title, .chapter-title, .chapter-name, .rv-chapt-title, .rv-heading-chapter, .chapter-text, h2.chapter-title, .chr-title").text().trim()
-                if (chapTitle.isEmpty()) {
-                    chapTitle = doc.select("h1, h2").text().trim()
-                }
-                if (chapTitle.isEmpty()) chapTitle = "Chương 1"
-
-                var author = doc.select("a[href*='/tac-gia/'], .author, meta[property='og:novel:author'], meta[name='author'], .author-name").text().trim()
+                var author = doc.selectFirst("a[href*='/tac-gia/'], .author, meta[property='og:novel:author'], meta[name='author'], .author-name")?.text()?.trim() ?: ""
                 if (author.isEmpty()) author = "Tác giả Online"
 
-                val paragraphs = JSONArray()
-                val contentEl = doc.selectFirst("#chapter-content, .chapter-c, .entry-content, .reading-content, div.content-inner, div.content, #content, .content-body, #chapter-c, .reading-detail, .box-chap, #bookContentBody, .chap-content, .txt-content, .chapter-text, #chr-content, .chr-c")
-                if (contentEl != null) {
-                    contentEl.select("script, style, ins, iframe, noscript, .ads, .ads-holder").remove()
-                    contentEl.select("br, hr").append("\n")
-                    val pTags = contentEl.select("p, div")
-                    if (pTags.isNotEmpty()) {
-                        for (p in pTags) {
-                            val t = p.text().trim()
-                            if (t.isNotEmpty() && !t.contains("quảng cáo", ignoreCase = true) && !t.contains("tải app", ignoreCase = true)) {
-                                paragraphs.put(t)
-                            }
+                var contentEl = doc.selectFirst("#chapter-content, .chapter-c, .entry-content, .reading-content, div.content-inner, div.content, #content, .content-body, #chapter-c, .reading-detail, .box-chap, #bookContentBody, .chap-content, .txt-content, #chr-content, .chr-c, #vungdoc, .vung-doc, .vungdoc")
+                var startChapUrl = url
+                if (!startChapUrl.contains("/chuong-", ignoreCase = true) && !startChapUrl.contains("/chapter-", ignoreCase = true)) {
+                    if (startChapUrl.contains("truyenhoan.com", ignoreCase = true)) {
+                        val m = Regex("""truyenhoan\.com/([^/.]+)(?:\.\d+)?/?""", RegexOption.IGNORE_CASE).find(startChapUrl)
+                        if (m != null) startChapUrl = "https://truyenhoan.com/${m.groupValues[1]}/chuong-1.html"
+                    } else if (startChapUrl.contains("truyenfullmoi.net", ignoreCase = true)) {
+                        val m = Regex("""truyenfullmoi\.net/([^/.]+)(?:\.\d+)?/?""", RegexOption.IGNORE_CASE).find(startChapUrl)
+                        if (m != null) startChapUrl = "https://truyenfullmoi.net/${m.groupValues[1]}/chuong-1/"
+                    } else if (startChapUrl.contains("xtruyen.vn/truyen/", ignoreCase = true)) {
+                        val m = Regex("""xtruyen\.vn/truyen/([^/]+)/?""", RegexOption.IGNORE_CASE).find(startChapUrl)
+                        if (m != null) startChapUrl = "https://xtruyen.vn/truyen/${m.groupValues[1]}/chuong-1/"
+                    } else if (startChapUrl.contains("sottruyen.com/truyen/", ignoreCase = true)) {
+                        val m = Regex("""sottruyen\.com/truyen/([^/]+)/?""", RegexOption.IGNORE_CASE).find(startChapUrl)
+                        if (m != null) startChapUrl = "https://sottruyen.com/truyen/${m.groupValues[1]}/chuong-1"
+                    }
+                }
+
+                // Nếu là trang mục lục / thông tin truyện (chưa vào thẳng nội dung chương)
+                if (contentEl == null || contentEl.text().trim().length < 50) {
+                    var firstChapUrl = ""
+                    val ch1HrefRegex = Regex("""(?i)[/-](?:chuong|chapter|c)[-_]?0*1(?:\.html|/|\?|$)""")
+                    val ch1TxtRegex = Regex("""(?i)(?:chương|chuong|chapter)\s*0*1(?:\s*[:.-]|\s+\D|$)""")
+                    val actionTxtRegex = Regex("""(?i)^(?:đọc từ đầu|đọc ngay|đọc truyện)$""")
+
+                    // 1. Quét tìm link có chữ "Đọc từ đầu", "Đọc ngay", hoặc đúng Chương 1 (không dính số phía sau như 10, 11, 1338)
+                    for (a in doc.select("a[href]")) {
+                        val raw = a.attr("href").trim()
+                        if (raw.isEmpty() || raw == "#" || raw.startsWith("javascript")) continue
+                        val txt = a.text().trim()
+                        val abs = a.absUrl("href")
+                        val fullUrl = if (abs.isNotEmpty()) abs else try { java.net.URI(url).resolve(raw).toString() } catch (e: Exception) { "" }
+                        if (fullUrl.isEmpty() || fullUrl == url) continue
+
+                        if (actionTxtRegex.containsMatchIn(txt) || ch1HrefRegex.containsMatchIn(raw) || ch1TxtRegex.containsMatchIn(txt)) {
+                            firstChapUrl = fullUrl
+                            break
                         }
-                    } else {
-                        val textLines = contentEl.text()
-                        for (line in textLines.lines()) {
-                            val l = line.trim()
-                            if (l.isNotEmpty() && !l.contains("quảng cáo", ignoreCase = true) && !l.contains("tải app", ignoreCase = true)) {
-                                paragraphs.put(l)
+                    }
+
+                    // 2. Fallback nếu chưa thấy: thử qua các selector thông dụng có regex kiểm tra
+                    if (firstChapUrl.isEmpty()) {
+                        val chapLinkEl = doc.select("a[href*='chuong-1.'], a[href*='chuong-1/'], a[href*='chuong-01.'], a[href*='chuong-01/'], a[href*='chapter-1.'], a[href*='chapter-1/']").firstOrNull { el ->
+                            val href = el.attr("href").trim()
+                            ch1HrefRegex.containsMatchIn(href)
+                        }
+                        if (chapLinkEl != null) {
+                            firstChapUrl = chapLinkEl.absUrl("href")
+                            if (firstChapUrl.isEmpty()) {
+                                val raw = chapLinkEl.attr("href").trim()
+                                if (raw.isNotEmpty() && raw != "#" && !raw.startsWith("javascript")) {
+                                    firstChapUrl = if (raw.startsWith("http")) raw else try { java.net.URI(url).resolve(raw).toString() } catch (e: Exception) { "" }
+                                }
                             }
                         }
                     }
+
+                    if (firstChapUrl.isNotEmpty()) {
+                        startChapUrl = firstChapUrl
+                    }
+                }
+
+                // Tải trước tối đa 15 chương đầu tiên theo chuỗi next_url
+                val chapters = JSONArray()
+                val visited = mutableSetOf<String>()
+                var curChapUrl = startChapUrl
+                val maxInitialChapters = 15
+
+                while (curChapUrl.isNotEmpty() && !visited.contains(curChapUrl) && chapters.length() < maxInitialChapters) {
+                    visited.add(curChapUrl)
+                    val parsed = parseSingleChapter(client, curChapUrl) ?: break
+                    val chIdx = chapters.length() + 1
+                    val chTitle = if (parsed.title.contains("chương", ignoreCase = true)) parsed.title else "Chương $chIdx: ${parsed.title}"
+                    val chObj = JSONObject().apply {
+                        put("id", "ch_$chIdx")
+                        put("index", chIdx - 1)
+                        put("title", chTitle)
+                        put("paragraphs", parsed.paragraphs)
+                        put("source_url", curChapUrl)
+                        if (!parsed.nextUrl.isNullOrEmpty()) put("next_url", parsed.nextUrl)
+                    }
+                    chapters.put(chObj)
+                    curChapUrl = parsed.nextUrl ?: ""
+                }
+
+                if (chapters.length() == 0) {
+                    return jsonResponse("{\"error\":\"Không thể bóc tách nội dung chương truyện từ trang này (nội dung rỗng hoặc trang bị chặn)\"}", Response.Status.BAD_REQUEST)
                 }
 
                 val md5 = MessageDigest.getInstance("MD5").digest(url.toByteArray()).joinToString("") { "%02x".format(it) }.take(10)
                 val bookId = "web_" + md5
-                val chapters = JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("id", "ch_1")
-                        put("title", chapTitle)
-                        put("paragraphs", paragraphs)
-                    })
-                }
 
                 val bookObj = JSONObject().apply {
                     put("id", bookId)
                     put("title", storyTitle)
                     put("author", author)
-                    put("totalChapters", 1)
+                    put("totalChapters", chapters.length())
                     put("lastChapter", 0)
                     put("lastParagraph", 0)
                     put("is_web", true)
                     put("source_url", url)
+                    put("last_crawl_url", curChapUrl)
                     put("chapters", chapters)
                 }
 
@@ -222,6 +303,95 @@ class HonorLocalServer(
             } catch (e: Exception) {
                 Log.e(TAG, "Lỗi parse web novel: ${e.message}", e)
                 return jsonResponse("{\"error\":\"Không thể tải truyện từ link này: ${e.message}\"}", Response.Status.INTERNAL_ERROR)
+            }
+        }
+
+        // 4b. API Tải thêm chương tiếp theo của truyện online
+        if (uri == "/api/web-novel/fetch-more" && method == Method.POST) {
+            try {
+                val json = JSONObject(postData)
+                val bookId = json.optString("bookId")
+                val count = json.optInt("count", 5).coerceIn(1, 100)
+                if (bookId.isEmpty()) {
+                    return jsonResponse("{\"error\":\"Thiếu bookId\"}", Response.Status.BAD_REQUEST)
+                }
+
+                val book = bookManager.getBook(bookId)
+                if (book == null) {
+                    return jsonResponse("{\"error\":\"Không tìm thấy truyện\"}", Response.Status.NOT_FOUND)
+                }
+
+                val chapters = book.optJSONArray("chapters") ?: JSONArray()
+                val visited = mutableSetOf<String>()
+                for (i in 0 until chapters.length()) {
+                    val c = chapters.getJSONObject(i)
+                    val sUrl = c.optString("source_url")
+                    if (sUrl.isNotEmpty()) visited.add(sUrl)
+                }
+
+                var curChapUrl = ""
+                if (chapters.length() > 0) {
+                    val lastCh = chapters.getJSONObject(chapters.length() - 1)
+                    curChapUrl = lastCh.optString("next_url", "")
+                }
+                if (curChapUrl.isEmpty()) {
+                    curChapUrl = book.optString("last_crawl_url", "")
+                }
+                if (curChapUrl.isEmpty()) {
+                    curChapUrl = json.optString("lastUrl", "")
+                }
+
+                if (curChapUrl.isEmpty()) {
+                    return jsonResponse("{\"success\":false,\"message\":\"Không tìm thấy link chương tiếp theo hoặc đã là chương mới nhất\",\"added\":0}")
+                }
+
+                val client = okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(15, TimeUnit.SECONDS)
+                    .readTimeout(15, TimeUnit.SECONDS)
+                    .followRedirects(true)
+                    .build()
+
+                var addedCount = 0
+                val newChapters = JSONArray()
+
+                while (curChapUrl.isNotEmpty() && !visited.contains(curChapUrl) && addedCount < count) {
+                    visited.add(curChapUrl)
+                    val parsed = parseSingleChapter(client, curChapUrl) ?: break
+                    val chIdx = chapters.length() + 1
+                    val chTitle = if (parsed.title.contains("chương", ignoreCase = true)) parsed.title else "Chương $chIdx: ${parsed.title}"
+                    val chObj = JSONObject().apply {
+                        put("id", "ch_$chIdx")
+                        put("index", chIdx - 1)
+                        put("title", chTitle)
+                        put("paragraphs", parsed.paragraphs)
+                        put("source_url", curChapUrl)
+                        if (!parsed.nextUrl.isNullOrEmpty()) put("next_url", parsed.nextUrl)
+                    }
+                    chapters.put(chObj)
+                    newChapters.put(chObj)
+                    addedCount++
+                    curChapUrl = parsed.nextUrl ?: ""
+                }
+
+                if (addedCount > 0) {
+                    book.put("chapters", chapters)
+                    book.put("totalChapters", chapters.length())
+                    book.put("last_crawl_url", curChapUrl)
+                    bookManager.saveBookToDisk(book)
+
+                    val resp = JSONObject().apply {
+                        put("success", true)
+                        put("added", addedCount)
+                        put("totalChapters", chapters.length())
+                        put("newChapters", newChapters)
+                    }
+                    return jsonResponse(resp.toString())
+                } else {
+                    return jsonResponse("{\"success\":false,\"message\":\"Không có thêm chương mới hoặc đã đến chương cuối cùng\",\"added\":0}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Lỗi fetch-more: ${e.message}", e)
+                return jsonResponse("{\"error\":\"${e.message}\"}", Response.Status.INTERNAL_ERROR)
             }
         }
 
@@ -284,6 +454,16 @@ class HonorLocalServer(
                     val safeId = targetBookId?.filter { it.isLetterOrDigit() || it == '-' || it == '_' }
                     val skipFile = if (!safeId.isNullOrEmpty()) File(context.filesDir, "skip_rules_${safeId}.json") else File(context.filesDir, "skip_rules.json")
                     skipFile.writeText(contentToWrite, Charsets.UTF_8)
+
+                    // Xóa sạch file cache TTS cũ (.mp3) để TTS không phát lại audio đã chứa từ bị bỏ qua
+                    try {
+                        cacheDir.listFiles()?.forEach { f ->
+                            if (f.isFile && f.name.endsWith(".mp3")) {
+                                f.delete()
+                            }
+                        }
+                    } catch (e: Exception) {}
+
                     return jsonResponse("{\"success\":true,\"rules\":$contentToWrite,\"bookId\":\"$targetBookId\"}")
                 } catch (e: Exception) {
                     return jsonResponse("{\"error\":\"${e.message}\"}", Response.Status.INTERNAL_ERROR)
@@ -305,25 +485,32 @@ class HonorLocalServer(
         if (uri == "/api/voices") {
             val catalog = JSONArray().apply {
                 put(JSONObject().apply {
-                    put("id", "BV074_streaming")
-                    put("name", "Cô Gái Hoạt Ngôn")
+                    put("id", "BV421_vivn_streaming")
+                    put("name", "Nhỏ Ngọt Ngào (Truyền Cảm • Audiobook)")
                     put("provider", "capcut")
                     put("lang", "vi")
-                    put("desc", "CapCut - Tự nhiên, vui tươi, biểu cảm tốt")
+                    put("desc", "CapCut AI - Nữ ấm dịu, truyền cảm, ngắt nhịp văn học cực tốt")
                 })
                 put(JSONObject().apply {
                     put("id", "BV075_streaming")
-                    put("name", "Thanh Niên Tự Tin")
+                    put("name", "Nam Trầm Ấm (Kể Chuyện • Tiên Hiệp)")
                     put("provider", "capcut")
                     put("lang", "vi")
-                    put("desc", "CapCut - Nam dõng dạc, rõ ràng")
+                    put("desc", "CapCut AI - Nam dõng dạc, trầm hùng, hoàn hảo cho truyện tiên hiệp/hành động")
                 })
                 put(JSONObject().apply {
-                    put("id", "BV421_vivn_streaming")
-                    put("name", "Nhỏ Ngọt Ngào")
+                    put("id", "multi_female_richgirl_uranus_bigtts")
+                    put("name", "Review Phim (Siêu Truyền Cảm)")
                     put("provider", "capcut")
                     put("lang", "vi")
-                    put("desc", "CapCut - Nữ êm dịu, tình cảm")
+                    put("desc", "CapCut AI - Trầm ấm, siêu truyền cảm, chuyên đọc truyện và review")
+                })
+                put(JSONObject().apply {
+                    put("id", "BV074_streaming")
+                    put("name", "Cô Gái Hoạt Ngôn (Tươi Vui)")
+                    put("provider", "capcut")
+                    put("lang", "vi")
+                    put("desc", "CapCut AI - Tự nhiên, hoạt bát, biểu cảm hội thoại")
                 })
                 put(JSONObject().apply {
                     put("id", "eleven_zA6D7RyKdc2EClouEMkP")
@@ -368,14 +555,122 @@ class HonorLocalServer(
         if (uri == "/api/tts" && method == Method.POST) {
             try {
                 val json = JSONObject(postData)
-                val text = json.optString("text", "").trim()
+                val rawText = json.optString("text", "").trim()
+                val bookId = json.optString("book_id", json.optString("bookId", ""))
+                val safeId = bookId.filter { it.isLetterOrDigit() || it == '-' || it == '_' }
+
+                // Lọc bỏ các cụm từ / câu bị người dùng đánh dấu bỏ qua ở phía máy chủ
+                var text = rawText
+                try {
+                    val skipFile = if (safeId.isNotEmpty()) File(context.filesDir, "skip_rules_${safeId}.json") else File(context.filesDir, "skip_rules.json")
+                    val defaultFile = File(context.filesDir, "skip_rules.json")
+                    val fileToRead = if (skipFile.exists()) skipFile else if (defaultFile.exists()) defaultFile else null
+                    if (fileToRead != null && fileToRead.exists()) {
+                        val rulesJson = org.json.JSONArray(fileToRead.readText(Charsets.UTF_8))
+                        fun extractAlpha(s: String): String {
+                            return Regex("[\\p{L}\\p{N}]+").findAll(s.lowercase()).map { it.value }.joinToString(" ")
+                        }
+                        val textAlpha = extractAlpha(text)
+                        var shouldDropAll = false
+
+                        for (i in 0 until rulesJson.length()) {
+                            val rawRule = rulesJson.optString(i, "").trim()
+                            if (rawRule.isEmpty()) continue
+
+                            val ruleAlpha = extractAlpha(rawRule)
+                            if (ruleAlpha.isNotEmpty() && textAlpha.isNotEmpty()) {
+                                if (ruleAlpha == textAlpha) {
+                                    shouldDropAll = true
+                                    break
+                                }
+                                val textWords = textAlpha.split(" ")
+                                if (textWords.size >= 2 && " $ruleAlpha ".contains(" $textAlpha ")) {
+                                    shouldDropAll = true
+                                    break
+                                }
+                                if (textWords.size == 1 && textAlpha.length >= 5 && " $ruleAlpha ".contains(" $textAlpha ")) {
+                                    shouldDropAll = true
+                                    break
+                                }
+                            }
+
+                            var rule = rawRule.replace(Regex("^[\\p{P}\\p{S}\\s]+|[\\p{P}\\p{S}\\s]+$"), "").trim()
+                            if (rule.isEmpty()) rule = rawRule
+
+                            val words = rule.split(Regex("[\\s\\p{P}\\p{S}]+")).filter { it.isNotBlank() }
+                            if (words.size > 1) {
+                                val pattern = words.joinToString("[\\s\\p{P}\\p{S}]*") { Regex.escape(it) }
+                                text = text.replace(Regex(pattern, RegexOption.IGNORE_CASE), " ")
+                            } else if (words.size == 1) {
+                                val w = words[0]
+                                val esc = Regex.escape(w)
+                                if (w.length <= 3) {
+                                    text = text.replace(Regex("(?<![\\p{L}\\p{N}])$esc(?![\\p{L}\\p{N}])", RegexOption.IGNORE_CASE), " ")
+                                } else {
+                                    text = text.replace(Regex(esc, RegexOption.IGNORE_CASE), " ")
+                                }
+                            } else {
+                                val esc = Regex.escape(rule)
+                                text = text.replace(Regex(esc, RegexOption.IGNORE_CASE), " ")
+                            }
+                        }
+
+                        if (shouldDropAll) {
+                            text = ""
+                        } else {
+                            text = text.replace(Regex("\\s*([,;:.!?])(?:\\s*[,;:.!?])+"), "$1")
+                                       .replace(Regex("\\s+"), " ")
+                                       .trim()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Lỗi server skip filter: ${e.message}")
+                }
+
+                // Chuẩn hóa nhịp điệu và làm giàu ngữ điệu văn học (Prosody & Rhythm Enhancer):
+                // 1. Chuẩn hóa dấu gạch đầu dòng đối thoại trong tiểu thuyết:
+                text = text.replace(Regex("^[—–-]+\\s*(?=[\\p{L}\\p{N}“\"'])"), "“")
+
+                // 2. Chuẩn hóa dấu biểu cảm convert mạng (~~~ -> …, ?? -> ?, !? -> !?)
+                text = text.replace(Regex("([\\p{L}\\p{N}])~+"), "$1… ")
+                           .replace(Regex("\\?{2,}"), "?")
+                           .replace(Regex("!{2,}"), "!")
+                           .replace(Regex("\\?!\\?+"), "?!")
+                           .replace(Regex("!\\?+"), "!?")
+                           .replace(Regex("\\.{2,}"), "…")
+
+                // 3. Chuẩn hóa thán từ (Interjections): thêm dấu phẩy để AI ngắt hơi và nhấn âm tự nhiên (bỏ A, Ô, Á để không làm hỏng tên riêng như Ô Hạo, A Bảo)
+                text = text.replace(Regex("(?i)(?<=^|[\\s.!?…“\"—])(Ồ|Hừ|Ôi|Hơ|Chao ôi|Trời ơi|Ha ha|Hì hì|Hừm|Ô kìa|Ô hay)(?=\\s+[\\p{L}\\p{N}])"), "$1,")
+
+                // 4. Chuẩn hóa phát âm tiếng Việt cho các mô hình AI (CapCut / ByteDance TTS):
+                // Tránh bị nhận nhầm thành số La Mã VI (6 -> sáu/sáo) và XI (11 -> mười mốt)
+                text = text.replace(Regex("(?i)(?<![\\p{L}\\p{N}])(chương|hồi|tập|phần|mục)\\s+VI(?![\\p{L}\\p{N}])"), "$1 6")
+                           .replace(Regex("(?i)(?<![\\p{L}\\p{N}])(chương|hồi|tập|phần|mục)\\s+XI(?![\\p{L}\\p{N}])"), "$1 11")
+                           .replace(Regex("(?<![\\p{L}\\p{N}])vi(?![\\p{L}\\p{N}])"), "vy")
+                           .replace(Regex("(?<![\\p{L}\\p{N}])Vi(?![\\p{L}\\p{N}])"), "Vy")
+                           .replace(Regex("(?<![\\p{L}\\p{N}])VI(?![\\p{L}\\p{N}])"), "Vy")
+                           .replace(Regex("(?<![\\p{L}\\p{N}])xi(?![\\p{L}\\p{N}])"), "xy")
+                           .replace(Regex("(?<![\\p{L}\\p{N}])Xi(?![\\p{L}\\p{N}])"), "Xy")
+                           .replace(Regex("(?<![\\p{L}\\p{N}])XI(?![\\p{L}\\p{N}])"), "Xy")
+                           .replace(Regex("(?<![\\p{L}\\p{N}])[Ôô](?![\\p{L}\\p{N}])"), "Ôh")
+
+                text = text.replace(Regex("\\s*([,;:.!?…])\\s*"), "$1 ")
+                           .replace(Regex("\\s+"), " ")
+                           .trim()
+
+                // Tự động cắt bỏ các từ tượng thanh độc lập để giọng đọc không phát âm thô
+                val sfxCleaned = text.replace(Regex("(?i)(?:^|[\\s“\"«'–—])(?:ầm\\s+ầm|ầm|bùm|đùng|đoàng|oành|oanh|phanh|bịch|bộp|rầm|rắc|bốp|chát|keng|choang|xoảng|leng\\s+keng|vút|vèo|xẹt|chéo)[!?.…,”\"»'\\s]+"), " ").trim()
+                if (sfxCleaned.any { it.isLetterOrDigit() }) {
+                    text = sfxCleaned
+                }
+
+                if (text.isEmpty() || !text.any { it.isLetterOrDigit() }) {
+                    return newFixedLengthResponse(Response.Status.OK, "audio/mpeg", ByteArrayInputStream(ByteArray(0)), 0)
+                }
+
                 val voiceId = json.optString("voice_id", json.optString("voice", "BV074_streaming"))
                 val provider = json.optString("provider", "capcut")
                 val isElevenLabs = provider == "elevenlabs" || voiceId.startsWith("eleven_") || voiceId.contains("almee", true) || voiceId.contains("adam", true)
-
-                if (text.isEmpty()) {
-                    return newFixedLengthResponse(Response.Status.OK, "audio/mpeg", ByteArrayInputStream(ByteArray(0)), 0)
-                }
 
                 // Nếu người dùng chọn giọng Offline AI (offline_*), map sang giọng đọc AI chất lượng cao tương ứng
                 var targetVoice = voiceId
@@ -385,15 +680,22 @@ class HonorLocalServer(
                     targetVoice = "eleven_Gsndh0O5AnuI2Hj3YUlA"
                 } else if (provider == "offline" || targetVoice.startsWith("offline_")) {
                     val clean = targetVoice.removePrefix("offline_").lowercase()
-                    targetVoice = if (clean.contains("nam") || clean.contains("dung") || clean.contains("thang") || clean.contains("trinh") || clean.contains("thao") || clean.contains("man") || clean.contains("khang") || clean.contains("quang") || clean.contains("duy") || clean.contains("thanh") || clean.contains("tam") || clean.contains("an") || clean.contains("phi")) {
-                        "BV075_streaming" // Giọng nam trầm ấm
-                    } else {
-                        "BV074_streaming" // Giọng nữ tự nhiên
+                    targetVoice = when {
+                        // Ngọc Chuyên / Ngọc Huyền / Thanh Phương -> Nhỏ Ngọt Ngào (truyền cảm, khác biệt rõ rệt với Cô Gái Hoạt Ngôn)
+                        clean.contains("ngochuyen") || clean.contains("thanhphuong") -> "BV421_vivn_streaming"
+                        // Nữ nhẹ nhàng / Mai Phương / Ngọc Ngân -> Giọng nữ dịu dàng
+                        clean.contains("calmwoman") || clean.contains("maiphuong") || clean.contains("ngocngan") -> "vi_female_huong"
+                        // Ban Mai / Phương Trang -> Cô Gái Hoạt Ngôn BV074
+                        clean.contains("banmai") || clean.contains("phuongtrang") -> "BV074_streaming"
+                        // Tất cả giọng nam offline -> Nam trầm ấm BV075
+                        else -> "BV075_streaming"
                     }
                 }
 
+                val multiVoice = json.optBoolean("multi_voice", true)
+
                 // Check cache sạch (tts_cache_v5)
-                val cacheKey = md5("$targetVoice:$text")
+                val cacheKey = md5("$targetVoice:$multiVoice:$text")
                 val cacheFile = File(cacheDir, "$cacheKey.mp3")
                 if (cacheFile.exists()) {
                     if (cacheFile.length() in 240000L..245000L) {
@@ -407,10 +709,46 @@ class HonorLocalServer(
                 }
 
                 var audioBytes: ByteArray? = null
-                try {
-                    audioBytes = CapCutTtsHelper.synthesize(text, targetVoice, isElevenLabs)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Lỗi CapCut synthesize: ${e.message}")
+                val hasQuotes = text.contains("“") || text.contains("\"") || text.contains("«") || text.contains("”") || text.contains("»")
+
+                // Phương án 3: Kịch truyền thanh AI phân vai đối thoại Nam - Nữ
+                if (multiVoice && hasQuotes && !isElevenLabs) {
+                    try {
+                        val segments = parseStorySegments(text)
+                        if (segments.size > 1 && segments.any { it.isDialogue }) {
+                            val baos = java.io.ByteArrayOutputStream()
+                            var allSuccess = true
+                            for (seg in segments) {
+                                val segVoice = if (seg.isDialogue) {
+                                    if (seg.gender == "female") "BV421_vivn_streaming"
+                                    else if (seg.gender == "male") "BV075_streaming"
+                                    else targetVoice
+                                } else {
+                                    targetVoice
+                                }
+                                val partBytes = CapCutTtsHelper.synthesize(seg.text, segVoice, false)
+                                if (partBytes != null && partBytes.size > 500) {
+                                    baos.write(partBytes)
+                                } else {
+                                    allSuccess = false
+                                    break
+                                }
+                            }
+                            if (allSuccess && baos.size() > 500) {
+                                audioBytes = baos.toByteArray()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Lỗi phân vai kịch truyền thanh: ${e.message}")
+                    }
+                }
+
+                if (audioBytes == null || audioBytes.isEmpty()) {
+                    try {
+                        audioBytes = CapCutTtsHelper.synthesize(text, targetVoice, isElevenLabs)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Lỗi CapCut synthesize: ${e.message}")
+                    }
                 }
 
                 // Dự phòng 1: Nếu CapCut giọng được chọn bị lỗi, thử lại với giọng chuẩn
@@ -572,9 +910,38 @@ class HonorLocalServer(
             }
         }
 
-        // 11. Preloader status dummy
+        // 11. Preloader status
+        if (uri == "/api/preload/toggle") {
+            try {
+                if (postData.isNotEmpty()) {
+                    val json = org.json.JSONObject(postData)
+                    if (json.has("enabled")) {
+                        isPreloadEnabled = json.optBoolean("enabled", !isPreloadEnabled)
+                    } else {
+                        isPreloadEnabled = !isPreloadEnabled
+                    }
+                } else {
+                    isPreloadEnabled = !isPreloadEnabled
+                }
+            } catch (e: Exception) {
+                isPreloadEnabled = !isPreloadEnabled
+            }
+            return jsonResponse("{\"enabled\":$isPreloadEnabled}")
+        }
         if (uri == "/api/preload/status") {
-            return jsonResponse("{\"enabled\":false,\"isWorking\":false,\"cachedCount\":0,\"windowTotal\":30}")
+            val bookId = session.parameters["bookId"]?.firstOrNull() ?: ""
+            var count = if (isPreloadEnabled) 30 else 0
+            if (isPreloadEnabled && bookId.isNotEmpty()) {
+                val chLen = bookManager.getTotalChapters(bookId)
+                count = minOf(chLen, 30)
+            } else if (isPreloadEnabled) {
+                val idx = bookManager.getLibraryIndex()
+                if (idx.length() > 0) {
+                    val first = idx.getJSONObject(0)
+                    count = minOf(first.optInt("totalChapters", 30), 30)
+                }
+            }
+            return jsonResponse("{\"enabled\":$isPreloadEnabled,\"isWorking\":false,\"cachedCount\":$count,\"windowTotal\":30}")
         }
         if (uri == "/api/preload/update") {
             return jsonResponse("{\"success\":true}")
@@ -641,6 +1008,105 @@ class HonorLocalServer(
                 return jsonResponse("{\"error\":\"Thiếu voice_id\"}", Response.Status.BAD_REQUEST)
             } catch (e: Exception) {
                 return jsonResponse("{\"error\":\"${e.message}\"}", Response.Status.INTERNAL_ERROR)
+            }
+        }
+
+        if (uri == "/api/debug/crash-log") {
+            val crashFile = File(context.filesDir, "crash_log.txt")
+            val content = if (crashFile.exists()) crashFile.readText(Charsets.UTF_8) else ""
+            return jsonResponse("{\"has_crash\":${crashFile.exists() && content.isNotEmpty()},\"log\":${JSONObject.quote(content)}}")
+        }
+        if (uri == "/api/debug/clear-crash-log") {
+            val crashFile = File(context.filesDir, "crash_log.txt")
+            if (crashFile.exists()) crashFile.delete()
+            return jsonResponse("{\"success\":true}")
+        }
+
+        // 15. API OTA Cập nhật giao diện không cần cài lại APK
+        if (uri == "/api/ota/status" && method == Method.GET) {
+            val otaFile = File(context.filesDir, "ota/index.html")
+            val hasOta = otaFile.exists() && otaFile.length() > 50000
+            val size = if (hasOta) otaFile.length() else 0
+            val mod = if (hasOta) otaFile.lastModified() else 0
+            return jsonResponse("{\"has_ota\":$hasOta,\"ota_size\":$size,\"updated_at\":$mod}")
+        }
+
+        if (uri == "/api/ota/update" && method == Method.POST) {
+            try {
+                val json = JSONObject(postData)
+                val serverUrl = json.optString("server_url", "https://unwrap-analyzed-clarke-fonts.trycloudflare.com").trimEnd('/')
+                var htmlContent = json.optString("html_content", "")
+
+                if (htmlContent.isEmpty()) {
+                    val candidateUrls = mutableListOf<String>()
+                    if (serverUrl.isNotEmpty()) candidateUrls.add(serverUrl)
+                    val fallback3G = "https://unwrap-analyzed-clarke-fonts.trycloudflare.com"
+                    val fallbackWifi = "http://192.168.1.204:5000"
+                    if (!candidateUrls.contains(fallback3G)) candidateUrls.add(fallback3G)
+                    if (!candidateUrls.contains(fallbackWifi)) candidateUrls.add(fallbackWifi)
+
+                    val client = okhttp3.OkHttpClient.Builder()
+                        .connectTimeout(10, TimeUnit.SECONDS)
+                        .readTimeout(15, TimeUnit.SECONDS)
+                        .build()
+
+                    var lastErr = ""
+                    for (candidate in candidateUrls) {
+                        try {
+                            val req = okhttp3.Request.Builder()
+                                .url("$candidate/api/ota/bundle?t=${System.currentTimeMillis()}")
+                                .build()
+                            val resp = client.newCall(req).execute()
+                            if (resp.isSuccessful) {
+                                val bodyStr = resp.body?.string() ?: ""
+                                if (bodyStr.length > 50000 && bodyStr.contains("<html")) {
+                                    htmlContent = bodyStr
+                                    break
+                                }
+                            } else {
+                                lastErr = "HTTP ${resp.code} từ $candidate"
+                            }
+                        } catch (eReq: Exception) {
+                            lastErr = "${eReq.message} từ $candidate"
+                        }
+                    }
+
+                    if (htmlContent.isEmpty()) {
+                        return jsonResponse("{\"error\":\"Không thể tải gói cập nhật qua 3G/Wi-Fi: $lastErr\"}", Response.Status.BAD_REQUEST)
+                    }
+                }
+
+                if (htmlContent.length < 50000 || !htmlContent.contains("<html")) {
+                    return jsonResponse("{\"error\":\"Gói cập nhật không hợp lệ hoặc kích thước quá nhỏ (${htmlContent.length} bytes)\"}", Response.Status.BAD_REQUEST)
+                }
+
+                val otaDir = File(context.filesDir, "ota")
+                if (!otaDir.exists()) otaDir.mkdirs()
+                val otaFile = File(otaDir, "index.html")
+                val tmpFile = File(otaDir, "index.tmp.html")
+                tmpFile.writeText(htmlContent, Charsets.UTF_8)
+                if (tmpFile.length() > 50000) {
+                    if (otaFile.exists()) otaFile.delete()
+                    tmpFile.renameTo(otaFile)
+                    return jsonResponse("{\"success\":true,\"message\":\"Cập nhật OTA thành công (${otaFile.length() / 1024} KB)\"}")
+                } else {
+                    return jsonResponse("{\"error\":\"Lỗi ghi tệp cập nhật OTA\"}", Response.Status.INTERNAL_ERROR)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Lỗi cập nhật OTA: ${e.message}", e)
+                return jsonResponse("{\"error\":\"Lỗi cập nhật OTA: ${e.message}\"}", Response.Status.INTERNAL_ERROR)
+            }
+        }
+
+        if (uri == "/api/ota/reset" && method == Method.POST) {
+            try {
+                val otaFile = File(context.filesDir, "ota/index.html")
+                if (otaFile.exists()) {
+                    otaFile.delete()
+                }
+                return jsonResponse("{\"success\":true,\"message\":\"Đã xoá bản OTA, khôi phục giao diện gốc từ APK\"}")
+            } catch (e: Exception) {
+                return jsonResponse("{\"error\":\"Lỗi khôi phục: ${e.message}\"}", Response.Status.INTERNAL_ERROR)
             }
         }
 
@@ -780,6 +1246,101 @@ class HonorLocalServer(
         }.start()
     }
 
+    private data class StorySegment(val text: String, val isDialogue: Boolean, val gender: String)
+
+    private fun parseStorySegments(text: String): List<StorySegment> {
+        val regex = Regex("[“\"«「『](.*?)[”\"»」』]")
+        val segments = mutableListOf<StorySegment>()
+        var lastIdx = 0
+        var matches = regex.findAll(text).toList()
+
+        // Nếu không có ngoặc kép nhưng bắt đầu bằng gạch đầu dòng (- / – / —)
+        if (matches.isEmpty() && Regex("^[\\s]*[-–—]").containsMatchIn(text)) {
+            val dashRegex = Regex("^[\\s]*[-–—]\\s*(.+?)(?=\\s*[-–—]|\\s*$)")
+            val dashMatch = dashRegex.find(text)
+            if (dashMatch != null) {
+                val dText = dashMatch.groupValues[1].trim()
+                val rest = text.substring(dashMatch.range.last + 1).trim()
+                val gender = analyzeSegmentGender("", dText, rest)
+                segments.add(StorySegment(dText, true, gender))
+                if (rest.isNotEmpty()) {
+                    segments.add(StorySegment(rest, false, "neutral"))
+                }
+                return segments
+            }
+        }
+
+        if (matches.isEmpty()) {
+            return listOf(StorySegment(text, false, "neutral"))
+        }
+
+        for (m in matches) {
+            val start = m.range.first
+            val end = m.range.last + 1
+            if (start > lastIdx) {
+                val nar = text.substring(lastIdx, start).trim()
+                if (nar.isNotEmpty()) segments.add(StorySegment(nar, false, "neutral"))
+            }
+            val quoteText = m.groupValues[1].trim()
+            if (quoteText.isNotEmpty()) {
+                val ctxBefore = text.substring(maxOf(0, start - 90), start).lowercase()
+                val ctxAfter = if (end < text.length) text.substring(end, minOf(text.length, end + 90)).lowercase() else ""
+                val gender = analyzeSegmentGender(ctxBefore, quoteText, ctxAfter)
+                segments.add(StorySegment(quoteText, true, gender))
+            }
+            lastIdx = end
+        }
+        if (lastIdx < text.length) {
+            val nar = text.substring(lastIdx).trim()
+            if (nar.isNotEmpty()) segments.add(StorySegment(nar, false, "neutral"))
+        }
+        return segments
+    }
+
+    private fun analyzeSegmentGender(leadIn: String, dialogueText: String, leadOut: String): String {
+        var fScore = 0
+        var mScore = 0
+
+        // 1. Phân giải đại từ tự xưng nội bộ (Xianxia Pronoun Lexicon - Trọng số cao nhất +4)
+        val dWords = dialogueText.lowercase().split(Regex("\\s+")).take(8).joinToString(" ")
+        val femaleSelf = listOf("tiểu nữ", "thiếp", "nô gia", "bản cung", "tiểu muội", "bần ni", "lão thân", "muội muội", "muội", "nhi thần")
+        val femaleToMale = listOf("chàng", "huynh", "sư huynh", "công tử", "đại ca", "phu quân", "tướng công", "phụ thân", "lão gia", "vương gia", "hoàng thượng")
+        val maleSelf = listOf("tại hạ", "lão phu", "bản tọa", "bần đạo", "lão nạp", "bản công tử", "tiểu sinh", "mỗ", "vi sư", "mạt tướng", "huynh đệ", "bản vương", "trẫm", "bản tôn")
+        val maleToFemale = listOf("nàng", "nương tử", "tiểu thư", "cô nương", "tiểu nha đầu", "mẫu thân", "sư muội", "nương", "ái phi", "tiên tử", "thánh nữ")
+
+        if (femaleSelf.any { dWords.contains(it) }) fScore += 4
+        if (femaleToMale.any { dWords.contains(it) }) fScore += 3
+        if (maleSelf.any { dWords.contains(it) }) mScore += 4
+        if (maleToFemale.any { dWords.contains(it) }) mScore += 3
+
+        // 2. Ngữ cảnh ngoài thoại (Dẫn nhập & Thoát thoại)
+        val femaleTitles = listOf("nàng", "nàng ấy", "cô ấy", "tiểu thư", "sư muội", "tỷ tỷ", "mẫu thân", "mẹ", "nữ tử", "công chúa", "nương tử", "thiếu nữ", "phu nhân", "muội muội", "tiên tử", "thánh nữ", "nha hoàn", "bà lão", "mỹ phụ", "nữ nhi", "sư tôn", "sư nương")
+        val maleTitles = listOf("chàng", "hắn", "hắn ta", "công tử", "sư huynh", "huynh đệ", "phụ thân", "cha", "nam tử", "huynh trưởng", "thiếu niên", "đại ca", "lão giả", "đạo nhân", "lão tổ", "môn chủ", "chưởng môn", "tông chủ", "tiểu tử", "gã", "y", "trượng phu", "nam nhân")
+        val speechVerbs = listOf("nói", "đáp", "hỏi", "than", "cười", "thầm", "bảo", "nghẹn ngào", "thì thào", "thỏ thẻ", "quát", "thét", "gầm", "rống", "la", "cười lạnh", "hừ lạnh", "trầm giọng", "lẩm bẩm", "thốt lên", "hô", "nhủ", "nghĩ", "truyền âm", "tiếp lời", "khẽ nói")
+
+        if (femaleTitles.any { leadIn.contains(it) }) {
+            fScore += 2
+            if (speechVerbs.any { leadIn.contains(it) }) fScore += 1
+        }
+        if (femaleTitles.any { leadOut.contains(it) } && speechVerbs.any { leadOut.contains(it) }) {
+            fScore += 3
+        }
+
+        if (maleTitles.any { leadIn.contains(it) }) {
+            mScore += 2
+            if (speechVerbs.any { leadIn.contains(it) }) mScore += 1
+        }
+        if (maleTitles.any { leadOut.contains(it) } && speechVerbs.any { leadOut.contains(it) }) {
+            mScore += 3
+        }
+
+        return when {
+            fScore > mScore -> "female"
+            mScore > fScore -> "male"
+            else -> "neutral"
+        }
+    }
+
     private fun fetchGoogleTtsChunked(text: String, lang: String): ByteArray? {
         val clean = text.trim()
         if (clean.isEmpty()) return null
@@ -856,6 +1417,127 @@ class HonorLocalServer(
         }
         val result = out.toByteArray()
         return if (result.size > 200) result else null
+    }
+
+    private data class ParsedWebChapter(
+        val title: String,
+        val paragraphs: JSONArray,
+        val nextUrl: String?
+    )
+
+    private fun parseSingleChapter(client: okhttp3.OkHttpClient, chapUrl: String): ParsedWebChapter? {
+        try {
+            val req = okhttp3.Request.Builder()
+                .url(chapUrl)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .build()
+            val resp = client.newCall(req).execute()
+            if (!resp.isSuccessful) return null
+            val html = resp.body?.string() ?: return null
+            val doc = org.jsoup.Jsoup.parse(html, chapUrl)
+
+            var chapTitle = doc.selectFirst("a.chapter-title, .chapter-title, .chapter-name, .rv-chapt-title, .rv-heading-chapter, h2.chapter-title, .chr-title")?.text()?.trim() ?: ""
+            if (chapTitle.isEmpty() || (!chapTitle.contains("chương", ignoreCase = true) && !chapTitle.contains("chuong", ignoreCase = true))) {
+                val hWithChap = doc.select("h1, h2, h3, .title").firstOrNull { 
+                    val t = it.text().trim()
+                    t.length <= 90 && (t.contains("chương", ignoreCase = true) || t.contains("chuong", ignoreCase = true) || t.contains("chapter", ignoreCase = true))
+                }
+                if (hWithChap != null) {
+                    chapTitle = hWithChap.text().trim()
+                }
+            }
+            if (chapTitle.isEmpty() || chapTitle.length > 90 || chapTitle.split("chương", ignoreCase = true).size > 2) {
+                chapTitle = doc.selectFirst("h1, h2")?.text()?.trim() ?: ""
+            }
+            if (chapTitle.isEmpty() || chapTitle.length > 90) {
+                chapTitle = "Chương"
+            }
+
+            val contentEl = doc.selectFirst("#chapter-content, .chapter-c, .entry-content, .reading-content, div.content-inner, div.content, #content, .content-body, #chapter-c, .reading-detail, .box-chap, #bookContentBody, .chap-content, .txt-content, #chr-content, .chr-c, #vungdoc, .vung-doc, .vungdoc")
+                ?: return null
+
+            contentEl.select("script, style, ins, iframe, noscript, .ads, .ads-holder").remove()
+            for (br in contentEl.select("br, hr")) {
+                br.replaceWith(org.jsoup.nodes.TextNode("\n"))
+            }
+
+            val parasList = mutableListOf<String>()
+            val pTags = contentEl.select("p, div.line, .paragraph")
+            for (p in pTags) {
+                val t = p.text().trim()
+                if (t.length > 2 && !t.contains("quảng cáo", ignoreCase = true) && !t.contains("tải app", ignoreCase = true) && !t.contains("download app", ignoreCase = true)) {
+                    parasList.add(t)
+                }
+            }
+            if (parasList.size < 3) {
+                parasList.clear()
+                val text = contentEl.wholeText()
+                for (line in text.lines()) {
+                    val l = line.trim()
+                    if (l.length > 1 && !l.contains("quảng cáo", ignoreCase = true) && !l.contains("tải app", ignoreCase = true) && !l.contains("download app", ignoreCase = true)) {
+                        parasList.add(l)
+                    }
+                }
+            }
+            if (parasList.size < 3) {
+                parasList.clear()
+                val cleanHtml = contentEl.html().replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n").replace("</p>", "\n")
+                val cleanDoc = org.jsoup.Jsoup.parse(cleanHtml)
+                for (line in cleanDoc.text().lines()) {
+                    val l = line.trim()
+                    if (l.length > 1 && !l.contains("quảng cáo", ignoreCase = true) && !l.contains("tải app", ignoreCase = true) && !l.contains("download app", ignoreCase = true)) {
+                        parasList.add(l)
+                    }
+                }
+            }
+
+            val paragraphs = JSONArray()
+            for (p in parasList) {
+                paragraphs.put(p)
+            }
+
+            val totalChars = (0 until paragraphs.length()).sumOf { paragraphs.optString(it).trim().length }
+            if (paragraphs.length() == 0 || (paragraphs.length() < 3 && totalChars < 120)) {
+                return null
+            }
+
+            // Tìm link chương tiếp theo
+            var nextChapUrl = ""
+            val nextBtn = doc.selectFirst("#next_chap, a#next_chap, a[rel='next'], .btn-next, .chapter-next, .next-chap, #btn-next, #next-chapter, a.next-page, a:contains(Chương tiếp), a:contains(Chương sau), a:contains(Tiếp theo), a:contains(Next)")
+            if (nextBtn != null) {
+                nextChapUrl = nextBtn.absUrl("href")
+                if (nextChapUrl.isEmpty()) {
+                    val raw = nextBtn.attr("href").trim()
+                    if (raw.isNotEmpty() && raw != "#" && !raw.startsWith("javascript")) {
+                        nextChapUrl = if (raw.startsWith("http")) raw else try { java.net.URI(chapUrl).resolve(raw).toString() } catch (e: Exception) { "" }
+                    }
+                }
+            }
+            if (nextChapUrl.isEmpty() || nextChapUrl == chapUrl) {
+                for (a in doc.select("a[href]")) {
+                    val raw = a.attr("href").trim()
+                    if (raw.isEmpty() || raw == "#" || raw.startsWith("javascript")) continue
+                    val txt = a.text().trim().lowercase()
+                    if (txt.contains("chương tiếp") || txt.contains("tiếp theo") || txt.contains("chương sau") || txt == "tiếp" || txt == "next") {
+                        val abs = a.absUrl("href")
+                        val candidate = if (abs.isNotEmpty()) abs else try { java.net.URI(chapUrl).resolve(raw).toString() } catch (e: Exception) { "" }
+                        if (candidate.isNotEmpty() && candidate != chapUrl && candidate.startsWith("http")) {
+                            nextChapUrl = candidate
+                            break
+                        }
+                    }
+                }
+            }
+
+            return ParsedWebChapter(
+                title = if (chapTitle.isNotEmpty()) chapTitle else "Chương",
+                paragraphs = paragraphs,
+                nextUrl = if (nextChapUrl.isNotEmpty() && nextChapUrl != chapUrl) nextChapUrl else null
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Lỗi parseSingleChapter ($chapUrl): ${e.message}")
+            return null
+        }
     }
 }
 

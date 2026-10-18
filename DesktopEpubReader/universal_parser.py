@@ -143,6 +143,66 @@ def group_paragraphs_into_chapters(all_paragraphs, default_title="Chương", chu
 # CÁC BỘ PHÂN TÍCH TỪNG ĐỊNH DẠNG TÀI LIỆU
 # =========================================================================
 
+def sort_chapters_if_scrambled(chapters):
+    if not chapters or len(chapters) < 4:
+        return chapters
+
+    chap_re = re.compile(r'(?:chương|hồi|tiết|quyển|bài|tập|phần|chapter|chap)\s*(\d+)', re.IGNORECASE)
+
+    numbered_info = []
+    for idx, ch in enumerate(chapters):
+        title = ch.get("title", "").strip()
+        paras = ch.get("paragraphs", [])
+        m = chap_re.search(title)
+        if paras:
+            for p in paras[:5]:
+                p_clean = p.strip()
+                p_m = chap_re.search(p_clean)
+                if p_m and len(p_clean) <= 95:
+                    p_num = int(p_m.group(1))
+                    cur_num = int(m.group(1)) if m else None
+                    if cur_num is None or (p_num != cur_num and len(title) < 15):
+                        title = p_clean
+                        ch["title"] = title
+                        m = p_m
+                    break
+        ch_num = int(m.group(1)) if m else None
+        numbered_info.append((idx, ch_num, ch))
+
+    valid_nums = [(idx, num) for idx, num, ch in numbered_info if num is not None]
+    if len(valid_nums) < len(chapters) * 0.4:
+        return chapters
+
+    inversions = 0
+    for i in range(len(valid_nums) - 1):
+        if valid_nums[i][1] > valid_nums[i + 1][1]:
+            inversions += 1
+
+    if inversions < 2:
+        return chapters
+
+    front_matter = []
+    numbered_matter = []
+    end_matter = []
+    seen_first_numbered = False
+
+    for idx, num, ch in numbered_info:
+        if num is None:
+            if not seen_first_numbered:
+                front_matter.append(ch)
+            else:
+                end_matter.append(ch)
+        else:
+            seen_first_numbered = True
+            numbered_matter.append((num, idx, ch))
+
+    numbered_matter.sort(key=lambda x: x[0])
+    sorted_chapters = front_matter + [item[2] for item in numbered_matter] + end_matter
+    for i, ch in enumerate(sorted_chapters):
+        ch["index"] = i
+    return sorted_chapters
+
+
 def parse_epub_file(filepath, filename=""):
     if not epub:
         raise ImportError("Thư viện EbookLib chưa được cài đặt")
@@ -154,23 +214,81 @@ def parse_epub_file(filepath, filename=""):
     creator_meta = book.get_metadata('DC', 'creator')
     author_str = creator_meta[0][0] if creator_meta else "Tác giả chưa rõ"
 
+    # Trích xuất TOC để map file sang tiêu đề chương chuẩn
+    toc_map = {}
+    def extract_toc(toc_list):
+        for entry in toc_list:
+            if isinstance(entry, (tuple, list)):
+                if len(entry) >= 2:
+                    section = entry[0]
+                    children = entry[1]
+                    if hasattr(section, 'title') and hasattr(section, 'href'):
+                        href = section.href.split('#')[0]
+                        if href and href not in toc_map:
+                            toc_map[href] = section.title
+                    extract_toc(children)
+            elif hasattr(entry, 'title') and hasattr(entry, 'href'):
+                href = entry.href.split('#')[0]
+                if href and href not in toc_map:
+                    toc_map[href] = entry.title
+    try:
+        extract_toc(book.toc)
+    except Exception:
+        pass
+
+    # Thu thập tài liệu theo thứ tự spine (Reading order chuẩn quốc tế của EPUB)
+    doc_items = []
+    seen_ids = set()
+    if book.spine:
+        for spine_entry in book.spine:
+            item_id = spine_entry[0] if isinstance(spine_entry, (tuple, list)) else spine_entry
+            if not item_id or item_id in seen_ids:
+                continue
+            item = book.get_item_with_id(item_id)
+            if item and item.get_type() == ebooklib.ITEM_DOCUMENT:
+                doc_items.append(item)
+                seen_ids.add(item_id)
+
+    # Nếu spine rỗng hoặc không có item, fallback lấy tất cả và sắp xếp tự nhiên
+    if not doc_items:
+        all_docs = [it for it in book.get_items() if it.get_type() == ebooklib.ITEM_DOCUMENT]
+        def natural_sort_key(it):
+            name = it.get_name() or ''
+            return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', name)]
+        doc_items = sorted(all_docs, key=natural_sort_key)
+
     chapters = []
     c_idx = 1
-    for item in book.get_items():
-        if item.get_type() == ebooklib.ITEM_DOCUMENT:
-            content = item.get_content().decode('utf-8', errors='ignore')
-            lines = clean_html(content)
-            if lines:
-                paras = split_paragraphs(lines)
-                if paras:
-                    c_title = paras[0] if len(paras[0]) < 80 else f"Chương {c_idx}"
-                    chapters.append({
-                        "index": c_idx - 1,
-                        "title": c_title,
-                        "paragraphs": paras
-                    })
-                    c_idx += 1
+    chapter_pattern = re.compile(r'^(?:chương|hồi|tiết|quyển|bài|tập|phần|volume|chapter)\s*\d+', re.IGNORECASE)
 
+    for item in doc_items:
+        content = item.get_content().decode('utf-8', errors='ignore')
+        lines = clean_html(content)
+        if lines:
+            paras = split_paragraphs(lines)
+            if paras:
+                item_name = item.get_name() or ""
+                c_title = toc_map.get(item_name, "")
+                if not c_title and '/' in item_name:
+                    c_title = toc_map.get(item_name.split('/')[-1], "")
+
+                if not c_title:
+                    for p in paras[:5]:
+                        if len(p) <= 90 and chapter_pattern.match(p.strip()):
+                            c_title = p.strip()
+                            break
+
+                if not c_title:
+                    c_title = paras[0] if len(paras[0]) < 80 else f"Chương {c_idx}"
+
+                chapters.append({
+                    "index": c_idx - 1,
+                    "title": c_title,
+                    "paragraphs": paras
+                })
+                c_idx += 1
+
+    chapters = sort_chapters_if_scrambled(chapters)
     return title_str, author_str, chapters
 
 

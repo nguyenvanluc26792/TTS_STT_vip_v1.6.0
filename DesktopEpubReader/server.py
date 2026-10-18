@@ -20,7 +20,7 @@ if sys.platform == "win32":
         pass
 
 import requests
-from flask import Flask, request, jsonify, send_file, render_template
+from flask import Flask, request, jsonify, send_file, render_template, render_template_string
 import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup
@@ -66,32 +66,32 @@ else:
 VOICE_CATALOG = [
     # CapCut TTS
     {
-        "id": "BV074_streaming",
-        "name": "Cô Gái Hoạt Ngôn",
+        "id": "BV421_vivn_streaming",
+        "name": "Nhỏ Ngọt Ngào (Truyền Cảm • Audiobook)",
         "provider": "capcut",
         "lang": "vi",
-        "desc": "CapCut - Tự nhiên, vui tươi, biểu cảm tốt"
-    },
-    {
-        "id": "multi_female_richgirl_uranus_bigtts",
-        "name": "Review Phim New",
-        "provider": "capcut",
-        "lang": "vi",
-        "desc": "CapCut - Trầm ấm, siêu truyền cảm, chuyên đọc truyện"
+        "desc": "CapCut AI - Nữ ấm dịu, truyền cảm, ngắt nhịp văn học cực tốt"
     },
     {
         "id": "BV075_streaming",
-        "name": "Thanh Niên Tự Tin",
+        "name": "Nam Trầm Ấm (Kể Chuyện • Tiên Hiệp)",
         "provider": "capcut",
         "lang": "vi",
-        "desc": "CapCut - Nam dõng dạc, rõ ràng"
+        "desc": "CapCut AI - Nam dõng dạc, trầm hùng, hoàn hảo cho truyện tiên hiệp/hành động"
     },
     {
-        "id": "BV421_vivn_streaming",
-        "name": "Nhỏ Ngọt Ngào",
+        "id": "multi_female_richgirl_uranus_bigtts",
+        "name": "Review Phim (Siêu Truyền Cảm)",
         "provider": "capcut",
         "lang": "vi",
-        "desc": "CapCut - Nữ êm dịu, tình cảm"
+        "desc": "CapCut AI - Trầm ấm, siêu truyền cảm, chuyên đọc truyện và review"
+    },
+    {
+        "id": "BV074_streaming",
+        "name": "Cô Gái Hoạt Ngôn (Tươi Vui)",
+        "provider": "capcut",
+        "lang": "vi",
+        "desc": "CapCut AI - Tự nhiên, hoạt bát, biểu cảm hội thoại"
     },
     {
         "id": "vi_female_huong",
@@ -210,11 +210,179 @@ def download_app():
         return send_file(apk_path, as_attachment=True, download_name="LReader.apk", mimetype="application/vnd.android.package-archive")
     return "Tệp APK chưa sẵn sàng. Vui lòng kiểm tra lại!", 404
 
+@app.route("/api/ota/bundle")
+@app.route("/api/ota/index.html")
+def get_ota_bundle():
+    bundle_path = BASE_DIR / "templates" / "index.html"
+    if bundle_path.exists():
+        return send_file(bundle_path, mimetype="text/html; charset=utf-8")
+    return "Bundle not found", 404
+
+@app.route("/api/ota/version")
+def get_ota_version():
+    bundle_path = BASE_DIR / "templates" / "index.html"
+    if bundle_path.exists():
+        stat = bundle_path.stat()
+        return jsonify({
+            "success": True,
+            "version": "v1.6.32",
+            "version_code": 192,
+            "size": stat.st_size,
+            "updated_at": int(stat.st_mtime),
+            "changelog": [
+                "🛡️ Sửa lỗi đọc tên riêng: Bảo toàn nguyên vẹn tên Ô Hạo (không còn bị đọc thành 'Ông Hạo')",
+                "🎯 Bảo vệ danh xưng Mã Binh, Binh biến: Loại bỏ 'binh' khỏi bộ lọc SFX để không nuốt chữ của tên nhân vật",
+                "⚡ Dialogue Masking & Foley SFX Engine: Tiếp tục hoạt động chuẩn xác, sống động"
+            ]
+        })
+    return jsonify({"success": False}), 404
+
+@app.route("/ota")
+@app.route("/ota-3g")
+def ota_helper_page():
+    return render_template_string("""<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Cập nhật Honor Reader OTA qua 3G</title>
+  <style>
+    * { box-sizing: border-box; margin:0; padding:0; }
+    body {
+      background: #0b0f19;
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px 16px;
+    }
+    .card {
+      background: #1e293b;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 20px;
+      padding: 24px 20px;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border-radius: 99px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+    h2 { font-size: 1.25rem; margin-bottom: 8px; color: #fff; }
+    p { font-size: 0.84rem; color: #94a3b8; line-height: 1.5; margin-bottom: 20px; }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 13px 16px;
+      border-radius: 14px;
+      font-size: 0.92rem;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      border: none;
+      margin-bottom: 12px;
+      transition: all 0.2s;
+    }
+    .btn-ota {
+      background: linear-gradient(135deg, #ef4444, #f97316);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(239, 68, 68, 0.4);
+    }
+    .btn-apk {
+      background: #334155;
+      color: #cbd5e1;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    #status {
+      margin-top: 14px;
+      font-size: 0.82rem;
+      padding: 10px;
+      border-radius: 10px;
+      background: rgba(0,0,0,0.3);
+      display: none;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">⚡ OTA UPDATE 3G / 4G</div>
+    <h2>Cập Nhật Honor Reader</h2>
+    <p>Cập nhật giao diện mới, sửa lỗi bỏ qua từ chọn, nút đệm mới, giới hạn 30 chương đệm mượt mà.</p>
+
+    <button id="btnOta" class="btn btn-ota" onclick="do3gOtaUpdate()">
+      ⚡ CẬP NHẬT APP QUA 3G NGAY (1 GIÂY)
+    </button>
+    <a href="/download-app" class="btn btn-apk">
+      📥 Tải APK Mới Nhất (60MB)
+    </a>
+
+    <div id="status"></div>
+  </div>
+
+  <script>
+    async function do3gOtaUpdate() {
+      const btn = document.getElementById('btnOta');
+      const st = document.getElementById('status');
+      btn.disabled = true;
+      btn.innerText = '⏳ Đang tải gói cập nhật...';
+      st.style.display = 'block';
+      st.style.color = '#38bdf8';
+      st.innerText = 'Đang tải mã nguồn mới nhất từ máy chủ đám mây...';
+
+      try {
+        const bundleRes = await fetch('/api/ota/bundle?t=' + Date.now());
+        if (!bundleRes.ok) throw new Error('Không thể tải gói bundle từ máy chủ (HTTP ' + bundleRes.status + ')');
+        const html = await bundleRes.text();
+        if (!html || html.length < 50000) throw new Error('Gói cập nhật không đầy đủ (' + html.length + ' bytes)');
+
+        st.innerText = 'Đang nạp cập nhật vào app trên điện thoại...';
+
+        const pushRes = await fetch('http://127.0.0.1:8765/api/ota/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ html_content: html })
+        });
+
+        if (!pushRes.ok) throw new Error('App chưa bật hoặc không nhận phản hồi (HTTP ' + pushRes.status + ')');
+        const d = await pushRes.json();
+        if (d.success) {
+          st.style.color = '#4ade80';
+          st.innerHTML = '🎉 <b>CẬP NHẬT THÀNH CÔNG!</b><br>Mở lại app Honor Reader trên điện thoại để trải nghiệm ngay.';
+          btn.innerText = '✅ ĐÃ CẬP NHẬT XONG';
+        } else {
+          throw new Error(d.error || 'Lỗi cập nhật');
+        }
+      } catch (err) {
+        st.style.color = '#f87171';
+        st.innerHTML = '❌ ' + err.message + '<br><small style="color:#94a3b8;">Mẹo: Đảm bảo app Honor Reader đang mở trên điện thoại, hoặc bạn có thể bấm "Tải APK Mới Nhất" ở trên để cài đè.</small>';
+        btn.disabled = false;
+        btn.innerText = '⚡ Thử Lại';
+      }
+    }
+  </script>
+</body>
+</html>""")
+
 @app.after_request
 def add_header(response):
     response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, PUT, DELETE, HEAD'
+    response.headers['Access-Control-Allow-Headers'] = '*'
     return response
 
 BOOKS_DIR = BASE_DIR / "saved_books"
@@ -323,6 +491,26 @@ def normalize_for_skip(text):
     import re
     return re.sub(r'\s+', ' ', text.strip().lower())
 
+def filter_skipped_phrases(text, rules=None, book_id=None):
+    if not text:
+        return ""
+    if rules is None:
+        rules = get_skip_rules(book_id)
+    if not rules:
+        return text
+    import re
+    result = text
+    sorted_rules = sorted([str(r).strip() for r in rules if r and str(r).strip()], key=len, reverse=True)
+    for r in sorted_rules:
+        try:
+            esc = re.escape(r)
+            result = re.sub(rf'(?i){esc}', ' ', result)
+        except Exception:
+            pass
+    result = re.sub(r',\s*,+', ',', result)
+    result = re.sub(r'\s+', ' ', result).strip()
+    return result
+
 def is_text_skipped(text, rules=None, book_id=None):
     if not text:
         return True
@@ -333,6 +521,15 @@ def is_text_skipped(text, rules=None, book_id=None):
         rules = get_skip_rules(book_id)
     if not rules:
         return False
+    norm_text = normalize_for_skip(text)
+    for r in rules:
+        if not r: continue
+        if norm_text == normalize_for_skip(r):
+            return True
+    filtered = filter_skipped_phrases(text, rules)
+    if not re.search(r'\w', filtered, re.UNICODE):
+        return True
+    return False
     norm_text = normalize_for_skip(text)
     for r in rules:
         if not r: continue
@@ -445,6 +642,36 @@ def apply_pronunciation_rules(text, rules=None):
     except Exception as e:
         print("[apply_pronunciation_rules custom words error]:", e)
 
+    # Chuẩn hóa nhịp điệu và làm giàu ngữ điệu văn học (Prosody & Rhythm Enhancer):
+    # 1. Chuẩn hóa dấu gạch đầu dòng đối thoại trong tiểu thuyết:
+    result = re.sub(r'^[—–\-]+\s*(?=[\w\u00C0-\u1EF9\u201C\u201D"\'`])', '“', result)
+
+    # 2. Chuẩn hóa dấu biểu cảm convert mạng (~~~ -> …, ?? -> ?, !? -> !?)
+    result = re.sub(r'([\w\u00C0-\u1EF9])~+', r'\1… ', result)
+    result = re.sub(r'\?{2,}', '?', result)
+    result = re.sub(r'!{2,}', '!', result)
+    result = re.sub(r'\?![\?!]+', '?!', result)
+    result = re.sub(r'!\?[\?!]+', '!?', result)
+    result = re.sub(r'\.{2,}', '…', result)
+
+    # 3. Chuẩn hóa thán từ (Interjections): thêm dấu phẩy để AI ngắt hơi và nhấn âm tự nhiên (bỏ A, Ô, Á để không làm hỏng tên riêng như Ô Hạo, A Bảo)
+    result = re.sub(r'(?i)(?<=^|[\s.!?…\u201C\u201D"\'—–\-])(Ồ|Hừ|Ôi|Hơ|Chao ôi|Trời ơi|Ha ha|Hì hì|Hừm|Ô kìa|Ô hay)(?=\s+[\w\u00C0-\u1EF9])', r'\1,', result)
+
+    # 4. Chuẩn hóa phát âm tiếng Việt cho CapCut / ByteDance TTS:
+    # Tránh bị nhận nhầm thành số La Mã VI (6 -> sáu/sáo) và XI (11 -> mười mốt)
+    result = re.sub(r'(?i)(chương|hồi|tập|phần|mục)\s+VI\b', r'\1 6', result)
+    result = re.sub(r'(?i)(chương|hồi|tập|phần|mục)\s+XI\b', r'\1 11', result)
+    result = re.sub(r'(?<![\w\u00C0-\u1EF9])vi(?![\w\u00C0-\u1EF9])', 'vy', result)
+    result = re.sub(r'(?<![\w\u00C0-\u1EF9])Vi(?![\w\u00C0-\u1EF9])', 'Vy', result)
+    result = re.sub(r'(?<![\w\u00C0-\u1EF9])VI(?![\w\u00C0-\u1EF9])', 'Vy', result)
+    result = re.sub(r'(?<![\w\u00C0-\u1EF9])xi(?![\w\u00C0-\u1EF9])', 'xy', result)
+    result = re.sub(r'(?<![\w\u00C0-\u1EF9])Xi(?![\w\u00C0-\u1EF9])', 'Xy', result)
+    result = re.sub(r'(?<![\w\u00C0-\u1EF9])XI(?![\w\u00C0-\u1EF9])', 'Xy', result)
+    result = re.sub(r'(?<![\w\u00C0-\u1EF9])[Ôô](?![\w\u00C0-\u1EF9])', 'Ôh', result)
+
+    result = re.sub(r'\s*([,;:.!?…])\s*', r'\1 ', result)
+    result = re.sub(r'\s+', ' ', result).strip()
+
     return result
 
 @app.route("/api/pronunciation-rules", methods=["GET"])
@@ -473,7 +700,13 @@ def get_single_book(book_id):
         return jsonify({"error": "Không tìm thấy truyện"}), 404
     try:
         with open(book_file, "r", encoding="utf-8") as f:
-            return jsonify(json.load(f))
+            book_data = json.load(f)
+            try:
+                from universal_parser import sort_chapters_if_scrambled
+                book_data["chapters"] = sort_chapters_if_scrambled(book_data.get("chapters", []))
+            except Exception:
+                pass
+            return jsonify(book_data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -573,7 +806,7 @@ def api_parse_web_novel():
 
     try:
         from web_crawler import fetch_web_novel
-        story_data = fetch_web_novel(url, max_chapters=1)
+        story_data = fetch_web_novel(url, max_chapters=5)
         if not story_data or not story_data.get("chapters"):
             return jsonify({"error": "Không thể tải nội dung truyện từ đường link này. Vui lòng kiểm tra lại URL hoặc đảm bảo trang truyện mở công khai."}), 400
 
@@ -647,16 +880,19 @@ def api_parse_web_novel():
 def api_search_web_novels():
     if request.method == "POST":
         req = request.get_json(force=True, silent=True) or {}
-        q = req.get("query", "").strip()
+        q = req.get("query", req.get("keyword", "")).strip()
     else:
-        q = request.args.get("query", "").strip()
+        q = request.args.get("query", request.args.get("keyword", "")).strip()
 
     if not q:
-        return jsonify({"results": []})
+        return jsonify({"success": True, "results": [], "count": 0})
 
     try:
         from web_crawler import search_web_novels
         results = search_web_novels(q, limit=20)
+        for it in results:
+            if "site" not in it:
+                it["site"] = it.get("source") or it.get("domain") or "Truyện Web"
         return jsonify({"success": True, "results": results, "count": len(results)})
     except Exception as e:
         print("Lỗi search_web_novels:", e)
@@ -667,17 +903,54 @@ def api_search_web_novels():
 def api_fetch_more_chapters():
     req = request.get_json(force=True, silent=True) or {}
     book_id = req.get("bookId")
-    count = int(req.get("count", 1))
+    count = int(req.get("count", 5))
+    last_url = req.get("lastUrl")
     if not book_id:
         return jsonify({"error": "Thiếu bookId"}), 400
 
     book_file = BOOKS_DIR / f"{book_id}.json"
     if not book_file.exists():
+        if last_url:
+            from web_crawler import parse_generic_chapter, parse_xtruyen_chapter
+            new_chapters = []
+            cur_url = last_url
+            for _ in range(count):
+                if not cur_url:
+                    break
+                if 'xtruyen.vn' in cur_url:
+                    chap = parse_xtruyen_chapter(cur_url)
+                else:
+                    chap = parse_generic_chapter(cur_url)
+
+                if not chap or not chap.get('paragraphs'):
+                    break
+                c_title = chap.get('chapter_title') or f"Chương {len(new_chapters) + 1}"
+                new_ch = {
+                    "index": len(new_chapters),
+                    "title": c_title,
+                    "paragraphs": chap.get('paragraphs', []),
+                    "source_url": cur_url,
+                    "next_url": chap.get('next_url')
+                }
+                new_chapters.append(new_ch)
+                nxt = chap.get('next_url')
+                if not nxt or nxt == cur_url:
+                    break
+                cur_url = nxt
+            if new_chapters:
+                return jsonify({
+                    "success": True,
+                    "added": len(new_chapters),
+                    "newChapters": new_chapters
+                })
         return jsonify({"error": "Không tìm thấy truyện"}), 404
 
     try:
         with open(book_file, "r", encoding="utf-8") as f:
             book_data = json.load(f)
+
+        if last_url:
+            book_data["last_crawl_url"] = last_url
 
         from web_crawler import fetch_more_chapters
         success, added = fetch_more_chapters(book_data, count=count)
@@ -1128,7 +1401,12 @@ def get_tts():
         if not text:
             return send_file(io.BytesIO(get_silent_audio()), mimetype=default_mime)
 
-        spoken_text = apply_pronunciation_rules(text)
+        book_id = req.get("book_id") or req.get("bookId")
+        filtered_text = filter_skipped_phrases(text, book_id=book_id)
+        if not filtered_text or not re.search(r'\w', filtered_text, re.UNICODE):
+            return send_file(io.BytesIO(get_silent_audio()), mimetype=default_mime)
+
+        spoken_text = apply_pronunciation_rules(filtered_text)
         spoken_text = bilingual.convert_symbols_to_spoken_text(spoken_text)
         words_ver = bilingual.get_custom_words_version()
         cache_key = hashlib.md5(f"{provider}:{voice_id}:{speed}:{bilingual_mode}:{words_ver}:{spoken_text}".encode('utf-8')).hexdigest()
@@ -1294,10 +1572,10 @@ class ChapterPreloader:
 
                 # Tự động nạp thêm chương từ web nếu còn dưới 30 chương phía trước
                 if book_data.get("is_web"):
-                    remaining_ahead = total_chapters - start_ch
+                    remaining_ahead = total_chapters - 1 - start_ch
                     if remaining_ahead < win_size:
                         needed = win_size - remaining_ahead
-                        to_fetch = min(needed, 15)
+                        to_fetch = min(needed, 5)
                         try:
                             from web_crawler import fetch_more_chapters
                             succ, added = fetch_more_chapters(book_data, count=to_fetch)
@@ -1334,8 +1612,9 @@ class ChapterPreloader:
                         txt = p.strip()
                         if not txt or is_text_skipped(txt, skip_rules, book_id):
                             continue
+                        txt = filter_skipped_phrases(txt, skip_rules, book_id)
                         clean_text = re.sub(r'[\u4e00-\u9fff]+', '', txt).strip()
-                        if not clean_text:
+                        if not clean_text or not re.search(r'\w', clean_text, re.UNICODE):
                             continue
                         if not self._is_para_cached(txt, voice_id, provider, speed):
                             missing_paras.append((p_idx, txt))
@@ -1424,14 +1703,21 @@ def get_preload_status():
 
 @app.route("/api/preload/toggle", methods=["POST"])
 def toggle_preload():
-    new_state = preloader.toggle()
+    req = request.get_json(force=True, silent=True) or {}
+    desired = req.get("enabled")
+    if desired is not None:
+        with preloader.lock:
+            preloader.enabled = bool(desired)
+            new_state = preloader.enabled
+    else:
+        new_state = preloader.toggle()
     return jsonify({"enabled": new_state})
 
 @app.route("/api/web-novel/preload-batch", methods=["POST"])
 def api_preload_batch():
     req = request.get_json(force=True, silent=True) or {}
     book_id = req.get("bookId")
-    count = int(req.get("count", 50))
+    count = int(req.get("count", 30))
     if not book_id:
         return jsonify({"error": "Thiếu bookId"}), 400
 

@@ -23,6 +23,7 @@
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
         android:hardwareAccelerated="true"
+        android:largeHeap="true"
         android:windowSoftInputMode="adjustResize"
         android:theme="@style/Theme.HonorEpubReader">
 
