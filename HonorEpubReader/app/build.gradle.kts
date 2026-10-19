@@ -11,8 +11,8 @@ android {
         applicationId = "com.dragon.read"
         minSdk = 26
         targetSdk = 34
-        versionCode = 827303
-        versionName = "8.2.7.303"
+        versionCode = 827308
+        versionName = "8.2.7.308"
         ndk {
             abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a"))
         }

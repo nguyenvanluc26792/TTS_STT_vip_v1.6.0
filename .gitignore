@@ -25,3 +25,7 @@ build/
 *_debug.apk
 app-debug.apk
 HonorReader_v*.apk
+DesktopEpubReader/apply_template_fixes.py
+DesktopEpubReader/fix_*.py
+DesktopEpubReader/update_honor_server.py
+DesktopEpubReader/measure_pauses.py

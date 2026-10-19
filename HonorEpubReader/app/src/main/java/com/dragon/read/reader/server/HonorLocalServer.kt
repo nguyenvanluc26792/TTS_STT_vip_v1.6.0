@@ -5,12 +5,15 @@ import android.util.Log
 import fi.iki.elonen.NanoHTTPD
 import org.json.JSONArray
 import org.json.JSONObject
+import com.dragon.read.reader.ui.ReaderMediaService
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
 import java.security.MessageDigest
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 
 class HonorLocalServer(
@@ -24,18 +27,33 @@ class HonorLocalServer(
 
     private val bookManager = NativeBookManager(context)
     private val dictEngine = NativeDictionaryEngine(context)
-    private val cacheDir = File(context.cacheDir, "tts_cache_v5").apply { mkdirs() }
+    private val cacheDir = File(context.cacheDir, "tts_cache_v6").apply { mkdirs() }
     private val pronounceFile = File(context.filesDir, "pronounce_rules.json")
     private val customWordsFile = File(context.filesDir, "custom_english_words.json")
 
     @Volatile
+    var isAudioPlaying: Boolean = false
+    @Volatile
     private var isPreloadEnabled = true
+    val preloader by lazy { ChapterAudioPreloader() }
+
+    fun getSilentMp3(): ByteArray {
+        val frame = byteArrayOf(
+            0xFF.toByte(), 0xFB.toByte(), 0x90.toByte(), 0x64.toByte(),
+            0x00, 0x00, 0x00, 0x00
+        )
+        val baos = ByteArrayOutputStream()
+        for (i in 0 until 50) {
+            baos.write(frame)
+        }
+        return baos.toByteArray()
+    }
 
     init {
         try {
             // Xoa sach thu muc cache cu de giai phong bo nho
             context.cacheDir.listFiles()?.forEach { f ->
-                if (f.name.startsWith("tts_cache") && f.name != "tts_cache_v5") {
+                if (f.name.startsWith("tts_cache") && f.name != "tts_cache_v6") {
                     f.deleteRecursively()
                 }
             }
@@ -86,6 +104,12 @@ class HonorLocalServer(
             resp.addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             resp.addHeader("Access-Control-Allow-Headers", "Content-Type")
             return resp
+        }
+
+        if (uri == "/download-app" || uri == "/LReader.apk") {
+            val redirectResp = newFixedLengthResponse(Response.Status.REDIRECT, "text/plain", "Redirecting to APK download...")
+            redirectResp.addHeader("Location", "https://rehab-survey-clusters-joins.trycloudflare.com/download-app")
+            return redirectResp
         }
 
         // 1. Phục vụ trang đọc sách: Ưu tiên file OTA cập nhật mới nhất, nếu chưa có thì dùng Assets gốc
@@ -321,68 +345,12 @@ class HonorLocalServer(
                     return jsonResponse("{\"error\":\"Không tìm thấy truyện\"}", Response.Status.NOT_FOUND)
                 }
 
-                val chapters = book.optJSONArray("chapters") ?: JSONArray()
-                val visited = mutableSetOf<String>()
-                for (i in 0 until chapters.length()) {
-                    val c = chapters.getJSONObject(i)
-                    val sUrl = c.optString("source_url")
-                    if (sUrl.isNotEmpty()) visited.add(sUrl)
-                }
-
-                var curChapUrl = ""
-                if (chapters.length() > 0) {
-                    val lastCh = chapters.getJSONObject(chapters.length() - 1)
-                    curChapUrl = lastCh.optString("next_url", "")
-                }
-                if (curChapUrl.isEmpty()) {
-                    curChapUrl = book.optString("last_crawl_url", "")
-                }
-                if (curChapUrl.isEmpty()) {
-                    curChapUrl = json.optString("lastUrl", "")
-                }
-
-                if (curChapUrl.isEmpty()) {
-                    return jsonResponse("{\"success\":false,\"message\":\"Không tìm thấy link chương tiếp theo hoặc đã là chương mới nhất\",\"added\":0}")
-                }
-
-                val client = okhttp3.OkHttpClient.Builder()
-                    .connectTimeout(15, TimeUnit.SECONDS)
-                    .readTimeout(15, TimeUnit.SECONDS)
-                    .followRedirects(true)
-                    .build()
-
-                var addedCount = 0
-                val newChapters = JSONArray()
-
-                while (curChapUrl.isNotEmpty() && !visited.contains(curChapUrl) && addedCount < count) {
-                    visited.add(curChapUrl)
-                    val parsed = parseSingleChapter(client, curChapUrl) ?: break
-                    val chIdx = chapters.length() + 1
-                    val chTitle = if (parsed.title.contains("chương", ignoreCase = true)) parsed.title else "Chương $chIdx: ${parsed.title}"
-                    val chObj = JSONObject().apply {
-                        put("id", "ch_$chIdx")
-                        put("index", chIdx - 1)
-                        put("title", chTitle)
-                        put("paragraphs", parsed.paragraphs)
-                        put("source_url", curChapUrl)
-                        if (!parsed.nextUrl.isNullOrEmpty()) put("next_url", parsed.nextUrl)
-                    }
-                    chapters.put(chObj)
-                    newChapters.put(chObj)
-                    addedCount++
-                    curChapUrl = parsed.nextUrl ?: ""
-                }
-
+                val (addedCount, newChapters) = fetchMoreChaptersNative(book, count, json.optString("lastUrl", ""))
                 if (addedCount > 0) {
-                    book.put("chapters", chapters)
-                    book.put("totalChapters", chapters.length())
-                    book.put("last_crawl_url", curChapUrl)
-                    bookManager.saveBookToDisk(book)
-
                     val resp = JSONObject().apply {
                         put("success", true)
                         put("added", addedCount)
-                        put("totalChapters", chapters.length())
+                        put("totalChapters", book.optJSONArray("chapters")?.length() ?: 0)
                         put("newChapters", newChapters)
                     }
                     return jsonResponse(resp.toString())
@@ -551,7 +519,7 @@ class HonorLocalServer(
             return jsonResponse(catalog.toString())
         }
 
-        // 7. API Sinh Giọng Đọc TTS
+        // 7. API Sinh Giọng Đọc TTSọc TTS
         if (uri == "/api/tts" && method == Method.POST) {
             try {
                 val json = JSONObject(postData)
@@ -627,58 +595,32 @@ class HonorLocalServer(
                     Log.w(TAG, "Lỗi server skip filter: ${e.message}")
                 }
 
-                // Chuẩn hóa nhịp điệu và làm giàu ngữ điệu văn học (Prosody & Rhythm Enhancer):
-                // 1. Chuẩn hóa dấu gạch đầu dòng đối thoại trong tiểu thuyết:
-                text = text.replace(Regex("^[—–-]+\\s*(?=[\\p{L}\\p{N}“\"'])"), "“")
-
-                // 2. Chuẩn hóa dấu biểu cảm convert mạng (~~~ -> …, ?? -> ?, !? -> !?)
-                text = text.replace(Regex("([\\p{L}\\p{N}])~+"), "$1… ")
-                           .replace(Regex("\\?{2,}"), "?")
-                           .replace(Regex("!{2,}"), "!")
-                           .replace(Regex("\\?!\\?+"), "?!")
-                           .replace(Regex("!\\?+"), "!?")
-                           .replace(Regex("\\.{2,}"), "…")
-
-                // 3. Chuẩn hóa thán từ (Interjections): thêm dấu phẩy để AI ngắt hơi và nhấn âm tự nhiên (bỏ A, Ô, Á để không làm hỏng tên riêng như Ô Hạo, A Bảo)
-                text = text.replace(Regex("(?i)(?<=^|[\\s.!?…“\"—])(Ồ|Hừ|Ôi|Hơ|Chao ôi|Trời ơi|Ha ha|Hì hì|Hừm|Ô kìa|Ô hay)(?=\\s+[\\p{L}\\p{N}])"), "$1,")
-
-                // 4. Chuẩn hóa phát âm tiếng Việt cho các mô hình AI (CapCut / ByteDance TTS):
-                // Tránh bị nhận nhầm thành số La Mã VI (6 -> sáu/sáo) và XI (11 -> mười mốt)
-                text = text.replace(Regex("(?i)(?<![\\p{L}\\p{N}])(chương|hồi|tập|phần|mục)\\s+VI(?![\\p{L}\\p{N}])"), "$1 6")
-                           .replace(Regex("(?i)(?<![\\p{L}\\p{N}])(chương|hồi|tập|phần|mục)\\s+XI(?![\\p{L}\\p{N}])"), "$1 11")
-                           .replace(Regex("(?<![\\p{L}\\p{N}])vi(?![\\p{L}\\p{N}])"), "vy")
-                           .replace(Regex("(?<![\\p{L}\\p{N}])Vi(?![\\p{L}\\p{N}])"), "Vy")
-                           .replace(Regex("(?<![\\p{L}\\p{N}])VI(?![\\p{L}\\p{N}])"), "Vy")
-                           .replace(Regex("(?<![\\p{L}\\p{N}])xi(?![\\p{L}\\p{N}])"), "xy")
-                           .replace(Regex("(?<![\\p{L}\\p{N}])Xi(?![\\p{L}\\p{N}])"), "Xy")
-                           .replace(Regex("(?<![\\p{L}\\p{N}])XI(?![\\p{L}\\p{N}])"), "Xy")
-                           .replace(Regex("(?<![\\p{L}\\p{N}])[Ôô](?![\\p{L}\\p{N}])"), "Ôh")
-
-                text = text.replace(Regex("\\s*([,;:.!?…])\\s*"), "$1 ")
-                           .replace(Regex("\\s+"), " ")
-                           .trim()
+                text = normalizeSpokenText(text)
 
                 // Nhận diện và cắt bỏ từ tượng thanh (Foley SFX Engine)
-                val sfxExplosion = Regex("(?i)(?:^|[\\s“\"«'–—])(?:oanh\\s+long(?:\\s+long)?|oành(?:\\s+oành)?|oanh|ầm(?:\\s+ầm){1,2}|ầm\\s+vang|ầm|đùng\\s+đoàng|đùng(?:\\s+đùng)?|đoàng|bùm(?:\\s+bùm)?|nổ\\s+tung)(?:\\s+một\\s+tiếng)?(?=[!?.…,”\"»'–—\\s]|$)")
-                val sfxImpact = Regex("(?i)(?:^|[\\s“\"«'–—])(?:rầm(?:\\s+rầm)?|bịch(?:\\s+bịch)?|huỵch|bộp(?:\\s+bộp)?|bốp(?:\\s+bốp)?|chát|rắc(?:\\s+rắc)?|bành)(?:\\s+một\\s+tiếng)?(?=[!?.…,”\"»'–—\\s]|$)")
-                val sfxClash = Regex("(?i)(?:^|[\\s“\"«'–—])(?:leng\\s+keng|keng(?:\\s+keng)?|choang(?:\\s+choang)?|xoảng(?:\\s+xoảng)?|xủng\\s+xoảng|boong|coong)(?:\\s+một\\s+tiếng)?(?=[!?.…,”\"»'–—\\s]|$)")
-                val sfxWhoosh = Regex("(?i)(?:^|[\\s“\"«'–—])(?:vun\\s+vút|vút(?:\\s+vút)?|vèo(?:\\s+vèo)?|xẹt(?:\\s+xẹt)?|xoẹt(?:\\s+xoẹt)?|chéo|vù(?:\\s+vù)?|phù)(?:\\s+một\\s+tiếng)?(?=[!?.…,”\"»'–—\\s]|$)")
+                val sfxWordsRaw = "(?:oanh\\s+long(?:\\s+long)?|oành(?:\\s+oành)?|oanh\\s+tạc|oanh\\s+kích|oanh\\s+ầm|xuy(?:\\s+xuy){1,2}|xuy(?=[!?.…~–—]|(?:\\s+một\\s+tiếng))|ầm(?:\\s+ầm){1,2}|ầm\\s+vang|ầm\\s+ào|đùng\\s+đoàng|đùng(?:\\s+đùng)?|đoàng(?:\\s+đoàng)?|bùm(?:\\s+bùm)?|nổ\\s+tung|rầm(?:\\s+rầm)?|bịch(?:\\s+bịch)?|huỵch(?:\\s+huỵch)?|bộp(?:\\s+bộp)?|bốp(?:\\s+bốp)?|chát(?:\\s+chát)?(?![a-zA-Z0-9à-ỹÀ-Ỹ\\s]*(?:chúa|ngắt))|rắc(?:\\s+rắc)?|bành\\s+bành|phanh(?:\\s+phanh)?|leng\\s+keng|keng(?:\\s+keng)?|choang(?:\\s+choang)?|xoảng(?:\\s+xoảng)?|xủng\\s+xoảng|boong(?:\\s+boong)?|coong(?:\\s+coong)?|vun\\s+vút|vút(?:\\s+vút)?|vèo(?:\\s+vèo)?|xẹt(?:\\s+xẹt)?|xoẹt(?:\\s+xoẹt)?|chéo(?:\\s+chéo)?|vù(?:\\s+vù)?|phù(?:\\s+phù)?(?![a-zA-Z0-9à-ỹÀ-Ỹ\\s]*(?:hợp|thủy|hộ|du|hiệu|chú)))"
+                val sfxRegex = Regex("(?i)(?<![\\p{L}\\p{N}])$sfxWordsRaw(?:\\s+một\\s+tiếng)?(?![\\p{L}\\p{N}])")
+                val sfxMatches = sfxRegex.findAll(text).toList()
 
-                val detectedSfxType = when {
-                    sfxExplosion.containsMatchIn(text) -> "explosion"
-                    sfxImpact.containsMatchIn(text) -> "impact"
-                    sfxClash.containsMatchIn(text) -> "clash"
-                    sfxWhoosh.containsMatchIn(text) -> "whoosh"
-                    else -> null
-                }
+                val detectedSfxType = if (sfxMatches.isNotEmpty()) {
+                    val first = sfxMatches[0].value.lowercase()
+                    when {
+                        Regex("keng|choang|xoảng|boong|coong").containsMatchIn(first) -> "clash"
+                        Regex("vút|vèo|xẹt|xoẹt|chéo|vù|phù|xuy").containsMatchIn(first) -> "whoosh"
+                        Regex("rầm|bịch|huỵch|bộp|bốp|chát|rắc|bành|phanh").containsMatchIn(first) -> "impact"
+                        else -> "explosion"
+                    }
+                } else null
 
-                val pruneAllSfx = Regex("(?i)(?:^|[\\s“\"«'–—])(?:oanh\\s+long(?:\\s+long)?|oành(?:\\s+oành)?|oanh|ầm(?:\\s+ầm){1,2}|ầm\\s+vang|ầm|đùng\\s+đoàng|đùng(?:\\s+đùng)?|đoàng|bùm(?:\\s+bùm)?|nổ\\s+tung|rầm(?:\\s+rầm)?|bịch(?:\\s+bịch)?|huỵch|bộp(?:\\s+bộp)?|bốp(?:\\s+bốp)?|chát|rắc(?:\\s+rắc)?|bành|leng\\s+keng|keng(?:\\s+keng)?|choang(?:\\s+choang)?|xoảng(?:\\s+xoảng)?|xủng\\s+xoảng|boong|coong|vun\\s+vút|vút(?:\\s+vút)?|vèo(?:\\s+vèo)?|xẹt(?:\\s+xẹt)?|xoẹt(?:\\s+xoẹt)?|chéo|vù(?:\\s+vù)?|phù)(?:\\s+một\\s+tiếng)?[!?.…,”\"»'–—\\s]*")
-                val sfxCleaned = text.replace(pruneAllSfx, " ").trim()
+                val sfxCleaned = text.replace(sfxRegex, " ")
+                    .replace(Regex("[\\s,;:!?…–—]+"), " ")
+                    .trim()
+
                 if (sfxCleaned.any { it.isLetterOrDigit() }) {
                     text = sfxCleaned
                 } else if (detectedSfxType != null) {
-                    // Câu thuần túy là từ tượng thanh (ví dụ: "Oanh long!", "Ầm ầm ầm!", "Keng!", "Vút!")
-                    val wavBytes = SfxAudioGenerator.generateWav(detectedSfxType)
+                    // Câu thuần túy là từ tượng thanh (ví dụ: "Oanh long!", "Ầm ầm ầm!", "Keng!", "Vút!", "Phanh! Phanh! Phanh!")
+                    val wavBytes = SfxAudioGenerator.generateWav(detectedSfxType, sfxMatches.size)
                     val resp = newFixedLengthResponse(Response.Status.OK, "audio/wav", ByteArrayInputStream(wavBytes), wavBytes.size.toLong())
                     resp.addHeader("Cache-Control", "no-cache, no-store, must-revalidate")
                     return resp
@@ -693,6 +635,7 @@ class HonorLocalServer(
                 val isElevenLabs = provider == "elevenlabs" || voiceId.startsWith("eleven_") || voiceId.contains("almee", true) || voiceId.contains("adam", true)
 
                 // Nếu người dùng chọn giọng Offline AI (offline_*), map sang giọng đọc AI chất lượng cao tương ứng
+                // Tách biệt hoàn toàn: Ban Mai dùng Review Phim, Ngọc Chuyên dùng Nhỏ Ngọt Ngào, Online chuẩn dùng Cô Gái Hoạt Ngôn
                 var targetVoice = voiceId
                 if (targetVoice == "adam-my" || targetVoice == "adam-us") {
                     targetVoice = "eleven_IRHApOXLvnW57QJPQH2P"
@@ -701,21 +644,32 @@ class HonorLocalServer(
                 } else if (provider == "offline" || targetVoice.startsWith("offline_")) {
                     val clean = targetVoice.removePrefix("offline_").lowercase()
                     targetVoice = when {
-                        // Ngọc Chuyên / Ngọc Huyền / Thanh Phương -> Nhỏ Ngọt Ngào (truyền cảm, khác biệt rõ rệt với Cô Gái Hoạt Ngôn)
+                        // Ngọc Chuyên / Ngọc Huyền / Thanh Phương -> Nhỏ Ngọt Ngào BV421 (ấm áp, tình cảm)
                         clean.contains("ngochuyen") || clean.contains("thanhphuong") -> "BV421_vivn_streaming"
-                        // Nữ nhẹ nhàng / Mai Phương / Ngọc Ngân -> Giọng nữ dịu dàng
+                        // Ban Mai / Phương Trang -> Review Phim siêu truyền cảm (khác biệt 100% với Cô Gái Hoạt Ngôn BV074)
+                        clean.contains("banmai") || clean.contains("phuongtrang") -> "multi_female_richgirl_uranus_bigtts"
+                        // Nữ nhẹ nhàng / Mai Phương / Ngọc Ngân -> Giọng nữ dịu dàng Hương
                         clean.contains("calmwoman") || clean.contains("maiphuong") || clean.contains("ngocngan") -> "vi_female_huong"
-                        // Ban Mai / Phương Trang -> Cô Gái Hoạt Ngôn BV074
-                        clean.contains("banmai") || clean.contains("phuongtrang") -> "BV074_streaming"
                         // Tất cả giọng nam offline -> Nam trầm ấm BV075
                         else -> "BV075_streaming"
                     }
                 }
 
                 val multiVoice = json.optBoolean("multi_voice", true)
+                val emotion = json.optString("emotion", "normal")
+                if (emotion == "cold" && !text.endsWith("!") && !text.endsWith("?")) {
+                    text = text.trimEnd(' ', ',', ';', '…', '-', '–', '—') + "!"
+                }
 
-                // Check cache sạch (tts_cache_v5)
-                val cacheKey = md5("$targetVoice:$multiVoice:$text")
+                // Tinh chỉnh nhịp ngắt nghỉ dấu phẩy (Comma Prosody & Breath Enhancer):
+                // Bổ sung nhịp ngắt hơi biểu cảm sâu lắng (~300ms) giữa các vế câu ngăn cách bởi dấu phẩy
+                text = text.replace(Regex("(?<!\\d),\\s*(?!——)"), ", —— ")
+
+                // Check cache sạch: đồng bộ khóa cache với Preloader và Web UI
+                val baseVoiceId = json.optString("base_voice_id", json.optString("voice_id", targetVoice)).let {
+                    if (it.isEmpty() || it == "default") "BV074_streaming" else it
+                }
+                val cacheKey = md5("$baseVoiceId:$multiVoice:$emotion:$text")
                 val cacheFile = File(cacheDir, "$cacheKey.mp3")
                 if (cacheFile.exists()) {
                     if (cacheFile.length() in 240000L..245000L) {
@@ -728,81 +682,7 @@ class HonorLocalServer(
                     }
                 }
 
-                var audioBytes: ByteArray? = null
-                val hasQuotes = text.contains("“") || text.contains("\"") || text.contains("«") || text.contains("”") || text.contains("»")
-
-                // Phương án 3: Kịch truyền thanh AI phân vai đối thoại Nam - Nữ
-                if (multiVoice && hasQuotes && !isElevenLabs) {
-                    try {
-                        val segments = parseStorySegments(text)
-                        if (segments.size > 1 && segments.any { it.isDialogue }) {
-                            val baos = java.io.ByteArrayOutputStream()
-                            var allSuccess = true
-                            for (seg in segments) {
-                                val segVoice = if (seg.isDialogue) {
-                                    if (seg.gender == "female") "BV421_vivn_streaming"
-                                    else if (seg.gender == "male") "BV075_streaming"
-                                    else targetVoice
-                                } else {
-                                    targetVoice
-                                }
-                                val partBytes = CapCutTtsHelper.synthesize(seg.text, segVoice, false)
-                                if (partBytes != null && partBytes.size > 500) {
-                                    baos.write(partBytes)
-                                } else {
-                                    allSuccess = false
-                                    break
-                                }
-                            }
-                            if (allSuccess && baos.size() > 500) {
-                                audioBytes = baos.toByteArray()
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Lỗi phân vai kịch truyền thanh: ${e.message}")
-                    }
-                }
-
-                if (audioBytes == null || audioBytes.isEmpty()) {
-                    try {
-                        audioBytes = CapCutTtsHelper.synthesize(text, targetVoice, isElevenLabs)
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Lỗi CapCut synthesize: ${e.message}")
-                    }
-                }
-
-                // Dự phòng 1: Nếu CapCut giọng được chọn bị lỗi, thử lại với giọng chuẩn
-                if (audioBytes == null || audioBytes.isEmpty()) {
-                    if (isElevenLabs) {
-                        try {
-                            // Dự phòng nhanh cho ElevenLabs: giọng nam Mỹ en_us_006 của CapCut
-                            audioBytes = CapCutTtsHelper.synthesize(text, "en_us_006", false)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Lỗi CapCut fallback en_us_006: ${e.message}")
-                        }
-                    } else if (targetVoice != "BV074_streaming") {
-                        try {
-                            audioBytes = CapCutTtsHelper.synthesize(text, "BV074_streaming", false)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Lỗi CapCut fallback BV074: ${e.message}")
-                        }
-                    }
-                }
-
-                // Kiểm tra loại trừ file demo wav 242KB nếu vô tình bị lẫn
-                if (audioBytes != null && audioBytes.size in 240000..245000) {
-                    audioBytes = null
-                }
-
-                // Dự phòng 2: Google TTS trực tiếp với cơ chế chia nhỏ câu (<100 ký tự) đảm bảo 100% không bao giờ lỗi
-                if (audioBytes == null || audioBytes.isEmpty()) {
-                    try {
-                        val lang = if (targetVoice.contains("en", true) || targetVoice.contains("Jenny", true) || targetVoice.contains("Adam", true) || targetVoice.contains("IRHApOXLvnW57QJPQH2P", true) || targetVoice.contains("Gsndh0O5AnuI2Hj3YUlA", true)) "en" else "vi"
-                        audioBytes = fetchGoogleTtsChunked(text, lang)
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Lỗi Google TTS chunked fallback: ${e.message}")
-                    }
-                }
+                val audioBytes = synthesizeAudioUnified(text, targetVoice, multiVoice, isElevenLabs)
 
                 return if (audioBytes != null && audioBytes.isNotEmpty()) {
                     try { cacheFile.writeBytes(audioBytes) } catch (e: Exception) {}
@@ -930,40 +810,51 @@ class HonorLocalServer(
             }
         }
 
-        // 11. Preloader status
+                // 11. Preloader status
         if (uri == "/api/preload/toggle") {
-            try {
-                if (postData.isNotEmpty()) {
-                    val json = org.json.JSONObject(postData)
-                    if (json.has("enabled")) {
-                        isPreloadEnabled = json.optBoolean("enabled", !isPreloadEnabled)
+            if (method == Method.POST && postData.isNotEmpty()) {
+                try {
+                    val j = JSONObject(postData)
+                    if (j.has("enabled")) {
+                        preloader.isEnabled = j.getBoolean("enabled")
                     } else {
-                        isPreloadEnabled = !isPreloadEnabled
+                        preloader.isEnabled = !preloader.isEnabled
                     }
-                } else {
-                    isPreloadEnabled = !isPreloadEnabled
+                } catch (e: Exception) {
+                    preloader.isEnabled = !preloader.isEnabled
                 }
-            } catch (e: Exception) {
-                isPreloadEnabled = !isPreloadEnabled
+            } else {
+                preloader.isEnabled = !preloader.isEnabled
             }
-            return jsonResponse("{\"enabled\":$isPreloadEnabled}")
+            return jsonResponse("{\"enabled\":${preloader.isEnabled}}")
         }
         if (uri == "/api/preload/status") {
             val bookId = session.parameters["bookId"]?.firstOrNull() ?: ""
-            var count = if (isPreloadEnabled) 30 else 0
-            if (isPreloadEnabled && bookId.isNotEmpty()) {
-                val chLen = bookManager.getTotalChapters(bookId)
-                count = minOf(chLen, 30)
-            } else if (isPreloadEnabled) {
-                val idx = bookManager.getLibraryIndex()
-                if (idx.length() > 0) {
-                    val first = idx.getJSONObject(0)
-                    count = minOf(first.optInt("totalChapters", 30), 30)
-                }
+            if (bookId.isNotEmpty() && preloader.currentBookId.isNullOrEmpty()) {
+                preloader.update(bookId, 0)
             }
-            return jsonResponse("{\"enabled\":$isPreloadEnabled,\"isWorking\":false,\"cachedCount\":$count,\"windowTotal\":30}")
+            val wCh = if (preloader.workingChapter != null) "${preloader.workingChapter}" else "null"
+            return jsonResponse("{\"enabled\":${preloader.isEnabled},\"isWorking\":${preloader.isWorking},\"cachedCount\":${preloader.cachedCount},\"windowTotal\":${preloader.windowTotal},\"workingChapter\":$wCh,\"workingPara\":${preloader.workingPara},\"totalWorkingParas\":${preloader.totalWorkingParas},\"totalBookChapters\":${preloader.totalBookChapters},\"bookId\":\"${preloader.currentBookId ?: ""}\"}")
         }
         if (uri == "/api/preload/update") {
+            try {
+                if (postData.isNotEmpty()) {
+                    val json = JSONObject(postData)
+                    val bookId = json.optString("bookId", json.optString("book_id", ""))
+                    val chIdx = json.optInt("chapterIdx", json.optInt("chapterIndex", json.optInt("chapter", 0)))
+                    val vId = json.optString("voiceId", json.optString("voice_id", "BV074_streaming"))
+                    val tVoice = if (vId.isEmpty() || vId == "default") "BV074_streaming" else vId
+                    val mVoice = json.optBoolean("multiVoice", json.optBoolean("multi_voice", true))
+                    val emo = json.optString("emotion", "normal")
+                    val e11 = json.optBoolean("isElevenLabs", false)
+                    val winSize = json.optInt("windowSize", 30)
+                    if (bookId.isNotEmpty()) {
+                        preloader.update(bookId, chIdx, vId, tVoice, mVoice, emo, e11, winSize)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Lỗi update preloader: ${e.message}")
+            }
             return jsonResponse("{\"success\":true}")
         }
         if (uri == "/api/bilingual-mode") {
@@ -1272,21 +1163,25 @@ class HonorLocalServer(
         val regex = Regex("[“\"«「『](.*?)[”\"»」』]")
         val segments = mutableListOf<StorySegment>()
         var lastIdx = 0
-        var matches = regex.findAll(text).toList()
+        val matches = regex.findAll(text).toList()
 
         // Nếu không có ngoặc kép nhưng bắt đầu bằng gạch đầu dòng (- / – / —)
-        if (matches.isEmpty() && Regex("^[\\s]*[-–—]").containsMatchIn(text)) {
-            val dashRegex = Regex("^[\\s]*[-–—]\\s*(.+?)(?=\\s*[-–—]|\\s*$)")
+        if (matches.isEmpty() && Regex("^[\\s]*[\\-–—]").containsMatchIn(text)) {
+            val dashRegex = Regex("^[\\s]*[\\-–—]\\s*(.+?[!?.…])(?:[\\s\\-–—,:]+([A-ZÀ-Ỹa-zà-ỹ].*))?$", RegexOption.DOT_MATCHES_ALL)
             val dashMatch = dashRegex.find(text)
             if (dashMatch != null) {
                 val dText = dashMatch.groupValues[1].trim()
-                val rest = text.substring(dashMatch.range.last + 1).trim()
+                val rest = dashMatch.groupValues[2].trim()
                 val gender = analyzeSegmentGender("", dText, rest)
                 segments.add(StorySegment(dText, true, gender))
                 if (rest.isNotEmpty()) {
                     segments.add(StorySegment(rest, false, "neutral"))
                 }
                 return segments
+            } else {
+                val dText = text.replace(Regex("^[\\s]*[\\-–—]\\s*"), "").trim()
+                val gender = analyzeSegmentGender("", dText, "")
+                return listOf(StorySegment(dText, true, gender))
             }
         }
 
@@ -1318,47 +1213,238 @@ class HonorLocalServer(
     }
 
     private fun analyzeSegmentGender(leadIn: String, dialogueText: String, leadOut: String): String {
-        var fScore = 0
-        var mScore = 0
+        val femaleTitlesRegex = "(?:nàng|cô|cô ấy|cô gái|ả|thị|bà|tiểu thư|cô nương|tiểu nha đầu|sư muội|sư tỷ|tỷ tỷ|muội muội|tiên tử|thánh nữ|mẫu thân|mẹ|nữ tử|công chúa|nương tử|thiếu nữ|phu nhân|nha hoàn|bà lão|mỹ phụ|nữ nhi|sư nương)"
+        val maleTitlesRegex = "(?:hắn|chàng|y|gã|anh|anh ấy|ông|công tử|sư huynh|sư đệ|huynh đệ|phụ thân|cha|nam tử|huynh trưởng|thiếu niên|đại ca|lão giả|đạo nhân|lão tổ|môn chủ|chưởng môn|tông chủ|tiểu tử|trượng phu|nam nhân|lão quái|lão ma|thiếu gia)"
+        val speechVerbsRegex = "(?:lên\\s+tiếng|nói|hỏi|đáp|cười|thì\\s+thào|thỏ\\s+thẻ|than|lẩm\\s+bẩm|thốt\\s+lên|bảo|quát|thét|gầm|rống|la|hô|trầm\\s+giọng|khẽ\\s+nói|khẽ\\s+thở\\s+dài|thở\\s+dài|nhủ|nghĩ|nghĩ\\s+thầm|thầm\\s+nghĩ|trong\\s+(?:lòng|nội\\s+tâm))"
 
-        // 1. Phân giải đại từ tự xưng nội bộ (Xianxia Pronoun Lexicon - Trọng số cao nhất +4)
+        val femaleNames = setOf(
+            "tuyết", "liên", "như", "yến", "nhược", "mộng", "tiên", "linh", "cầm",
+            "nghiên", "thiến", "điệp", "mai", "lan", "cúc", "trúc", "hương", "vy", "my", "thảo",
+            "uyên", "uyển", "diễm", "trâm", "quỳnh", "châu", "tú", "phượng",
+            "thục", "huyên", "thiền", "nga", "loan", "kiều", "hân", "thùy", "trang",
+            "hằng", "huyền", "nhạn", "khuê", "oanh", "bích", "thúy", "nhã"
+        )
+        val maleNames = setOf(
+            "phong", "viêm", "hàn", "phàm", "hạo", "kiệt", "dũng", "cường", "tuấn",
+            "khang", "thắng", "vĩnh", "đức", "tráng", "mãnh", "thạch", "trần", "bá",
+            "lâm", "quang", "hoàng", "bảo", "huy", "minh", "sơn", "long", "thiên",
+            "trung", "hiếu", "nghĩa", "trí", "trọng", "hùng", "ngạo", "cương"
+        )
+
+        // 1. Khớp LeadOut
+        if (leadOut.isNotEmpty()) {
+            val fSubjObj = Regex("^[\\s\\-–—,:]*$femaleTitlesRegex\\s+(?:nhìn|hướng|quay sang|đối|với)\\s+$maleTitlesRegex\\s*$speechVerbsRegex", RegexOption.IGNORE_CASE)
+            val mSubjObj = Regex("^[\\s\\-–—,:]*$maleTitlesRegex\\s+(?:nhìn|hướng|quay sang|đối|với)\\s+$femaleTitlesRegex\\s*$speechVerbsRegex", RegexOption.IGNORE_CASE)
+            if (fSubjObj.containsMatchIn(leadOut)) return "female"
+            if (mSubjObj.containsMatchIn(leadOut)) return "male"
+
+            val fTag = Regex("^[\\s\\-–—,:]*$femaleTitlesRegex\\s+(?:[a-zà-ỹ\\s]*?)$speechVerbsRegex", RegexOption.IGNORE_CASE)
+            val mTag = Regex("^[\\s\\-–—,:]*$maleTitlesRegex\\s+(?:[a-zà-ỹ\\s]*?)$speechVerbsRegex", RegexOption.IGNORE_CASE)
+            val fMatch = fTag.containsMatchIn(leadOut)
+            val mMatch = mTag.containsMatchIn(leadOut)
+            if (fMatch && !mMatch) return "female"
+            if (mMatch && !fMatch) return "male"
+
+            val nameMatch = Regex("^[\\s\\-–—,:]*([A-ZÀ-Ỹ][a-zà-ỹ]+(?:\\s+[A-ZÀ-Ỹ][a-zà-ỹ]+)*)(?:\\s+(.*?))?\\s*$speechVerbsRegex").find(leadOut)
+            if (nameMatch != null) {
+                val givenName = nameMatch.groupValues[1].trim().lowercase().split(Regex("\\s+")).lastOrNull() ?: ""
+                if (femaleNames.contains(givenName)) return "female"
+                if (maleNames.contains(givenName)) return "male"
+            }
+        }
+
+        // 2. Khớp LeadIn
+        if (leadIn.isNotEmpty()) {
+            val fInSubjObj = Regex("$femaleTitlesRegex\\s+(?:nhìn|hướng|quay sang|đối|với)\\s+$maleTitlesRegex\\s*$speechVerbsRegex[:]\\s*$", RegexOption.IGNORE_CASE)
+            val mInSubjObj = Regex("$maleTitlesRegex\\s+(?:nhìn|hướng|quay sang|đối|với)\\s+$femaleTitlesRegex\\s*$speechVerbsRegex[:]\\s*$", RegexOption.IGNORE_CASE)
+            if (fInSubjObj.containsMatchIn(leadIn)) return "female"
+            if (mInSubjObj.containsMatchIn(leadIn)) return "male"
+
+            val fInTag = Regex("$femaleTitlesRegex\\s+(?:[a-zà-ỹ\\s]*?)$speechVerbsRegex[:]\\s*$", RegexOption.IGNORE_CASE)
+            val mInTag = Regex("$maleTitlesRegex\\s+(?:[a-zà-ỹ\\s]*?)$speechVerbsRegex[:]\\s*$", RegexOption.IGNORE_CASE)
+            val fMatch = fInTag.containsMatchIn(leadIn)
+            val mMatch = mInTag.containsMatchIn(leadIn)
+            if (fMatch && !mMatch) return "female"
+            if (mMatch && !fMatch) return "male"
+
+            val inNameMatch = Regex("([A-ZÀ-Ỹ][a-zà-ỹ]+(?:\\s+[A-ZÀ-Ỹ][a-zà-ỹ]+)*)\\s+(?:.*?)\\s*$speechVerbsRegex[:]\\s*$").find(leadIn)
+            if (inNameMatch != null) {
+                val givenName = inNameMatch.groupValues[1].trim().lowercase().split(Regex("\\s+")).lastOrNull() ?: ""
+                if (femaleNames.contains(givenName)) return "female"
+                if (maleNames.contains(givenName)) return "male"
+            }
+        }
+
+        // 3. Đại từ tự xưng trong thoại
         val dWords = dialogueText.lowercase().split(Regex("\\s+")).take(8).joinToString(" ")
-        val femaleSelf = listOf("tiểu nữ", "thiếp", "nô gia", "bản cung", "tiểu muội", "bần ni", "lão thân", "muội muội", "muội", "nhi thần")
-        val femaleToMale = listOf("chàng", "huynh", "sư huynh", "công tử", "đại ca", "phu quân", "tướng công", "phụ thân", "lão gia", "vương gia", "hoàng thượng")
-        val maleSelf = listOf("tại hạ", "lão phu", "bản tọa", "bần đạo", "lão nạp", "bản công tử", "tiểu sinh", "mỗ", "vi sư", "mạt tướng", "huynh đệ", "bản vương", "trẫm", "bản tôn")
-        val maleToFemale = listOf("nàng", "nương tử", "tiểu thư", "cô nương", "tiểu nha đầu", "mẫu thân", "sư muội", "nương", "ái phi", "tiên tử", "thánh nữ")
+        val femaleSelf = listOf("tiểu nữ", "thiếp", "thiếp thân", "nô gia", "nô tỳ", "bản cung", "tiểu muội", "bần ni", "lão thân", "bản cô nương")
+        val maleSelf = listOf("tại hạ", "lão phu", "bản tọa", "bổn tọa", "bần đạo", "lão nạp", "bản công tử", "tiểu sinh", "mỗ", "vi sư", "mạt tướng", "bản vương", "bổn vương", "trẫm", "bản tôn", "bổn tôn", "tiểu tử", "vi huynh", "lão hủ")
+        val femaleToMale = listOf("phu quân", "tướng công", "chàng à", "chàng ơi", "sư huynh của muội")
+        val maleToFemale = listOf("nương tử", "tiểu thư", "cô nương", "tiểu nha đầu", "ái phi", "nàng ơi", "sư muội của ta")
 
-        if (femaleSelf.any { dWords.contains(it) }) fScore += 4
-        if (femaleToMale.any { dWords.contains(it) }) fScore += 3
-        if (maleSelf.any { dWords.contains(it) }) mScore += 4
-        if (maleToFemale.any { dWords.contains(it) }) mScore += 3
+        if (femaleSelf.any { dWords.contains(it) } || femaleToMale.any { dWords.contains(it) }) return "female"
+        if (maleSelf.any { dWords.contains(it) } || maleToFemale.any { dWords.contains(it) }) return "male"
 
-        // 2. Ngữ cảnh ngoài thoại (Dẫn nhập & Thoát thoại)
-        val femaleTitles = listOf("nàng", "nàng ấy", "cô ấy", "tiểu thư", "sư muội", "tỷ tỷ", "mẫu thân", "mẹ", "nữ tử", "công chúa", "nương tử", "thiếu nữ", "phu nhân", "muội muội", "tiên tử", "thánh nữ", "nha hoàn", "bà lão", "mỹ phụ", "nữ nhi", "sư tôn", "sư nương")
-        val maleTitles = listOf("chàng", "hắn", "hắn ta", "công tử", "sư huynh", "huynh đệ", "phụ thân", "cha", "nam tử", "huynh trưởng", "thiếu niên", "đại ca", "lão giả", "đạo nhân", "lão tổ", "môn chủ", "chưởng môn", "tông chủ", "tiểu tử", "gã", "y", "trượng phu", "nam nhân")
-        val speechVerbs = listOf("nói", "đáp", "hỏi", "than", "cười", "thầm", "bảo", "nghẹn ngào", "thì thào", "thỏ thẻ", "quát", "thét", "gầm", "rống", "la", "cười lạnh", "hừ lạnh", "trầm giọng", "lẩm bẩm", "thốt lên", "hô", "nhủ", "nghĩ", "truyền âm", "tiếp lời", "khẽ nói")
+        return "neutral"
+    }
 
-        if (femaleTitles.any { leadIn.contains(it) }) {
-            fScore += 2
-            if (speechVerbs.any { leadIn.contains(it) }) fScore += 1
-        }
-        if (femaleTitles.any { leadOut.contains(it) } && speechVerbs.any { leadOut.contains(it) }) {
-            fScore += 3
+    private fun synthesizeAudioUnified(
+        text: String,
+        targetVoice: String,
+        multiVoice: Boolean,
+        isElevenLabs: Boolean
+    ): ByteArray? {
+        var audioBytes: ByteArray? = null
+        val hasQuotes = text.contains("“") || text.contains("\"") || text.contains("«") || text.contains("”") || text.contains("»")
+
+        // Phương án 3: Kịch truyền thanh AI phân vai đối thoại Nam - Nữ
+        if (multiVoice && hasQuotes && !isElevenLabs) {
+            try {
+                val segments = parseStorySegments(text)
+                if (segments.size > 1 && segments.any { it.isDialogue }) {
+                    val baos = java.io.ByteArrayOutputStream()
+                    var allSuccess = true
+                    for (seg in segments) {
+                        val segVoice = if (seg.isDialogue) {
+                            if (seg.gender == "female") {
+                                if (targetVoice.contains("BV421") || targetVoice.contains("huong")) "multi_female_richgirl_uranus_bigtts"
+                                else "BV421_vivn_streaming"
+                            } else if (seg.gender == "male") {
+                                if (targetVoice.contains("BV075")) "BV074_streaming"
+                                else "BV075_streaming"
+                            } else targetVoice
+                        } else {
+                            targetVoice
+                        }
+                        val partBytes = CapCutTtsHelper.synthesize(seg.text, segVoice, false)
+                        if (partBytes != null && partBytes.size > 500) {
+                            baos.write(partBytes)
+                        } else {
+                            allSuccess = false
+                            break
+                        }
+                    }
+                    if (allSuccess && baos.size() > 500) {
+                        audioBytes = baos.toByteArray()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Lỗi phân vai kịch truyền thanh: ${e.message}")
+            }
         }
 
-        if (maleTitles.any { leadIn.contains(it) }) {
-            mScore += 2
-            if (speechVerbs.any { leadIn.contains(it) }) mScore += 1
-        }
-        if (maleTitles.any { leadOut.contains(it) } && speechVerbs.any { leadOut.contains(it) }) {
-            mScore += 3
+        if (audioBytes == null || audioBytes.isEmpty()) {
+            try {
+                audioBytes = CapCutTtsHelper.synthesize(text, targetVoice, isElevenLabs)
+            } catch (e: Exception) {
+                Log.w(TAG, "Lỗi CapCut synthesize: ${e.message}")
+            }
         }
 
-        return when {
-            fScore > mScore -> "female"
-            mScore > fScore -> "male"
-            else -> "neutral"
+        // Dự phòng 1: Nếu CapCut giọng được chọn bị lỗi, thử lại với giọng chuẩn
+        if (audioBytes == null || audioBytes.isEmpty()) {
+            if (isElevenLabs) {
+                try {
+                    audioBytes = CapCutTtsHelper.synthesize(text, "en_us_006", false)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Lỗi CapCut fallback en_us_006: ${e.message}")
+                }
+            } else if (targetVoice != "BV074_streaming") {
+                try {
+                    audioBytes = CapCutTtsHelper.synthesize(text, "BV074_streaming", false)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Lỗi CapCut fallback BV074: ${e.message}")
+                }
+            }
         }
+
+        // Kiểm tra loại trừ file demo wav 242KB nếu vô tình bị lẫn
+        if (audioBytes != null && audioBytes.size in 240000..245000) {
+            audioBytes = null
+        }
+
+        // Dự phòng 2: Google TTS trực tiếp với cơ chế chia nhỏ câu (<100 ký tự)
+        if (audioBytes == null || audioBytes.isEmpty()) {
+            try {
+                val lang = if (targetVoice.contains("en", true) || targetVoice.contains("Jenny", true) || targetVoice.contains("Adam", true) || targetVoice.contains("IRHApOXLvnW57QJPQH2P", true) || targetVoice.contains("Gsndh0O5AnuI2Hj3YUlA", true)) "en" else "vi"
+                audioBytes = fetchGoogleTtsChunked(text, lang)
+            } catch (e: Exception) {
+                Log.w(TAG, "Lỗi Google TTS chunked fallback: ${e.message}")
+            }
+        }
+        return audioBytes
+    }
+
+    fun splitIntoSentences(rawText: String): List<String> {
+        if (rawText.isBlank()) return emptyList()
+        var text = rawText.trim().replace(Regex("\\.{3,}"), "…")
+        if (text.isBlank()) return emptyList()
+
+        // Tránh ngắt câu tên miền
+        text = text.replace(Regex("\\.\\s*([a-zA-Z]{2,6})\\b"), "\uE000$1")
+
+        // DIALOGUE MASKING: Bảo vệ toàn bộ dấu kết câu bên trong ngoặc kép
+        val quoteRegex = Regex("([“\"«「『][^”\"»」』]+[”\"»」』])")
+        text = quoteRegex.replace(text) { m ->
+            m.value
+                .replace(".", "\uE001")
+                .replace("!", "\uE002")
+                .replace("?", "\uE003")
+                .replace("…", "\uE004")
+        }
+
+        val sentRegex = Regex("([^.!?…\\n]+(?:[.!?…]+[\"\'”’»)]*|[\\n]+|$))")
+        val matches = sentRegex.findAll(text).map { it.value.trim() }.filter { it.isNotEmpty() }.toList()
+        if (matches.isEmpty()) {
+            return listOf(
+                text.replace("\uE000", ".")
+                    .replace("\uE001", ".")
+                    .replace("\uE002", "!")
+                    .replace("\uE003", "?")
+                    .replace("\uE004", "…")
+            )
+        }
+
+        val result = mutableListOf<String>()
+        var buffer = ""
+
+        for (m in matches) {
+            var part = m.replace("\uE000", ".")
+                .replace("\uE001", ".")
+                .replace("\uE002", "!")
+                .replace("\uE003", "?")
+                .replace("\uE004", "…")
+                .trim()
+            if (part.isEmpty()) continue
+
+            if (part.matches(Regex("^\\d+\\.$")) || part.matches(Regex("^\\$\\d+\\.$"))) {
+                buffer = if (buffer.isEmpty()) part else "$buffer $part"
+                continue
+            }
+
+            if (buffer.isNotEmpty()) {
+                part = "$buffer $part"
+                buffer = ""
+            }
+
+            if (part.length > 220) {
+                val subParts = part.split(Regex("(?<=[,;:—])\\s+"))
+                var subBuf = ""
+                for (s in subParts) {
+                    if (subBuf.length + s.length > 160 && subBuf.length > 30) {
+                        result.add(subBuf.trim())
+                        subBuf = s
+                    } else {
+                        subBuf = if (subBuf.isEmpty()) s else "$subBuf $s"
+                    }
+                }
+                if (subBuf.isNotBlank()) result.add(subBuf.trim())
+            } else {
+                result.add(part)
+            }
+        }
+        if (buffer.isNotBlank()) result.add(buffer.trim())
+        return result
     }
 
     private fun fetchGoogleTtsChunked(text: String, lang: String): ByteArray? {
@@ -1559,6 +1645,448 @@ class HonorLocalServer(
             return null
         }
     }
+
+    fun fetchMoreChaptersNative(book: JSONObject, count: Int, lastUrlParam: String = ""): Pair<Int, JSONArray> {
+        val newChapters = JSONArray()
+        try {
+            val chapters = book.optJSONArray("chapters") ?: JSONArray()
+            val visited = mutableSetOf<String>()
+            for (i in 0 until chapters.length()) {
+                val c = chapters.getJSONObject(i)
+                val sUrl = c.optString("source_url")
+                if (sUrl.isNotEmpty()) visited.add(sUrl)
+            }
+
+            var curChapUrl = ""
+            if (chapters.length() > 0) {
+                val lastCh = chapters.getJSONObject(chapters.length() - 1)
+                curChapUrl = lastCh.optString("next_url", "")
+            }
+            if (curChapUrl.isEmpty()) {
+                curChapUrl = book.optString("last_crawl_url", "")
+            }
+            if (curChapUrl.isEmpty()) {
+                curChapUrl = lastUrlParam
+            }
+
+            if (curChapUrl.isEmpty()) return Pair(0, newChapters)
+
+            val client = okhttp3.OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .followRedirects(true)
+                .build()
+
+            var addedCount = 0
+            while (curChapUrl.isNotEmpty() && !visited.contains(curChapUrl) && addedCount < count) {
+                visited.add(curChapUrl)
+                val parsed = parseSingleChapter(client, curChapUrl) ?: break
+                val chIdx = chapters.length() + 1
+                val chTitle = if (parsed.title.contains("chương", ignoreCase = true)) parsed.title else "Chương $chIdx: ${parsed.title}"
+                val chObj = JSONObject().apply {
+                    put("id", "ch_$chIdx")
+                    put("index", chIdx - 1)
+                    put("title", chTitle)
+                    put("paragraphs", parsed.paragraphs)
+                    put("source_url", curChapUrl)
+                    if (!parsed.nextUrl.isNullOrEmpty()) put("next_url", parsed.nextUrl)
+                }
+                chapters.put(chObj)
+                newChapters.put(chObj)
+                addedCount++
+                curChapUrl = parsed.nextUrl ?: ""
+            }
+
+            if (addedCount > 0) {
+                book.put("chapters", chapters)
+                book.put("totalChapters", chapters.length())
+                book.put("last_crawl_url", curChapUrl)
+                bookManager.saveBookToDisk(book)
+            }
+            return Pair(addedCount, newChapters)
+        } catch (e: Exception) {
+            Log.e(TAG, "Lỗi fetchMoreChaptersNative: ${e.message}")
+            return Pair(0, newChapters)
+        }
+    }
+
+// =====================================================================
+    // BỘ ĐỆM TẢI TRƯỚC ÂM THANH CHẠY NỀN LIÊN TỤC 30 CHƯƠNG (WAKELOCK)
+    // Giữ CPU chạy tải trước cho đến khi đủ đệm 30 chương ngay cả khi tắt màn hình
+    // =====================================================================
+    fun normalizeSpokenText(raw: String): String {
+        var text = raw
+        text = text.replace(Regex("^[—–-]+\\s*(?=[\\p{L}\\p{N}“\"'])"), "“")
+        text = text.replace(Regex("([\\p{L}\\p{N}])~+"), "$1… ")
+                   .replace(Regex("\\?{2,}"), "?")
+                   .replace(Regex("!{2,}"), "!")
+                   .replace(Regex("\\?!\\?+"), "?!")
+                   .replace(Regex("!\\?+"), "!?")
+                   .replace(Regex("\\.{2,}"), "…")
+
+        text = text.replace(Regex("(?i)(?<=^|[\\s.!?…“\"—])(Ồ|Hừ|Ôi|Hơ|Chao ôi|Trời ơi|Ha ha|Hì hì|Hừm|Ô kìa|Ô hay)(?=\\s+[\\p{L}\\p{N}])"), "$1,")
+
+        text = text.replace(Regex("(?i)(?<![\\p{L}\\p{N}])(chương|hồi|tập|phần|mục)\\s+VI(?![\\p{L}\\p{N}])"), "$1 6")
+                   .replace(Regex("(?i)(?<![\\p{L}\\p{N}])(chương|hồi|tập|phần|mục)\\s+XI(?![\\p{L}\\p{N}])"), "$1 11")
+                   .replace(Regex("(?<![\\p{L}\\p{N}])vi(?![\\p{L}\\p{N}])"), "vy")
+                   .replace(Regex("(?<![\\p{L}\\p{N}])Vi(?![\\p{L}\\p{N}])"), "Vy")
+                   .replace(Regex("(?<![\\p{L}\\p{N}])VI(?![\\p{L}\\p{N}])"), "Vy")
+                   .replace(Regex("(?<![\\p{L}\\p{N}])xi(?![\\p{L}\\p{N}])"), "xy")
+                   .replace(Regex("(?<![\\p{L}\\p{N}])Xi(?![\\p{L}\\p{N}])"), "Xy")
+                   .replace(Regex("(?<![\\p{L}\\p{N}])XI(?![\\p{L}\\p{N}])"), "Xy")
+                   .replace(Regex("(?<![\\p{L}\\p{N}])[Ôô](?![\\p{L}\\p{N}])"), "Ôh")
+                   .replace(Regex("(?<![\\p{L}\\p{N}])A(?![\\p{L}\\p{N}])"), "Ah")
+                   .replace(Regex("(?<![\\p{L}\\p{N}])a(?![\\p{L}\\p{N}])"), "ah")
+
+        text = text.replace(Regex("\\s*([;:.!?…])\\s*"), "$1 ")
+                   .replace(Regex("(?<!\\d),\\s*(?!——)"), ", —— ")
+                   .replace(Regex("[^\\S\\r\\n]{3,}"), "  ")
+                   .trim()
+        return text
+    }
+
+
+    inner class ChapterAudioPreloader {
+        private val lock = Any()
+        var isEnabled = true
+        var currentBookId: String? = null
+        var currentChapter: Int = 0
+        var windowSize: Int = 30
+        var voiceId: String = "BV074_streaming"
+        var targetVoice: String = "BV074_streaming"
+        var multiVoice: Boolean = true
+        var emotion: String = "normal"
+        var isElevenLabs: Boolean = false
+
+        var isWorking: Boolean = false
+        var cachedCount: Int = 0
+        var windowTotal: Int = 0
+        var workingChapter: Int? = null
+        var workingPara: Int = 0
+        var totalWorkingParas: Int = 0
+        var totalBookChapters: Int = 0
+
+        private var wakeLock: android.os.PowerManager.WakeLock? = null
+        private var workerThread: Thread? = null
+        private val pool = Executors.newFixedThreadPool(3)
+        @Volatile private var isRunning = true
+
+        init {
+            try {
+                val pm = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+                wakeLock = pm?.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "HonorReader:AudioPreloaderWakeLock")
+            } catch (e: Exception) {
+                Log.w(TAG, "Không thể khởi tạo WakeLock cho Preloader: ${e.message}")
+            }
+            startWorker()
+        }
+
+        fun update(bId: String, chIdx: Int, vId: String? = null, tVoice: String? = null, mVoice: Boolean? = null, emo: String? = null, e11: Boolean? = null, winSize: Int? = null) {
+            synchronized(lock) {
+                currentBookId = bId
+                currentChapter = chIdx
+                if (!vId.isNullOrEmpty()) voiceId = vId
+                if (!tVoice.isNullOrEmpty()) targetVoice = tVoice
+                if (mVoice != null) multiVoice = mVoice
+                if (emo != null) emotion = emo
+                if (e11 != null) isElevenLabs = e11
+                if (winSize != null) windowSize = minOf(winSize, 30)
+                (lock as java.lang.Object).notifyAll()
+            }
+        }
+
+        fun stop() {
+            isRunning = false
+            synchronized(lock) {
+                (lock as java.lang.Object).notifyAll()
+            }
+            try { pool.shutdownNow() } catch (e: Exception) {}
+            releaseWakeLock()
+        }
+
+        private fun acquireWakeLock() {
+            try {
+                if (wakeLock?.isHeld == false) {
+                    wakeLock?.acquire(30 * 60 * 1000L) // 30 phút tối đa cho phiên tải đệm 30 chương
+                }
+            } catch (e: Exception) {}
+        }
+
+        private fun releaseWakeLock() {
+            try {
+                if (wakeLock?.isHeld == true) {
+                    wakeLock?.release()
+                }
+            } catch (e: Exception) {}
+        }
+
+        private fun startWorker() {
+            workerThread = Thread({
+                while (isRunning) {
+                    var bId: String? = null
+                    var startCh = 0
+                    var win = 30
+                    var vId = "BV074_streaming"
+                    var tVoice = "BV074_streaming"
+                    var mVoice = true
+                    var emo = "normal"
+                    var e11 = false
+
+                    synchronized(lock) {
+                        while (isRunning && (!isEnabled || currentBookId.isNullOrEmpty())) {
+                            isWorking = false
+                            workingChapter = null
+                            workingPara = 0
+                            releaseWakeLock()
+                            try {
+                                (lock as java.lang.Object).wait(2000)
+                            } catch (e: InterruptedException) { break }
+                        }
+                        if (!isRunning) return@Thread
+                        bId = currentBookId
+                        startCh = currentChapter
+                        win = windowSize
+                        vId = voiceId
+                        tVoice = targetVoice
+                        mVoice = multiVoice
+                        emo = emotion
+                        e11 = isElevenLabs
+                    }
+
+                    if (bId.isNullOrEmpty()) continue
+
+                    val book = bookManager.getBook(bId!!)
+                    if (book == null) {
+                        Thread.sleep(1000)
+                        continue
+                    }
+
+                    // Tự động tải thêm chương từ web nếu còn dưới 30 chương phía trước
+                    if (book.optBoolean("is_web", false)) {
+                        val currentTotal = book.optJSONArray("chapters")?.length() ?: 0
+                        val remainingAhead = currentTotal - 1 - startCh
+                        if (remainingAhead < win) {
+                            val needed = win - remainingAhead
+                            val toFetch = minOf(needed, 5)
+                            try {
+                                val (added, _) = fetchMoreChaptersNative(book, toFetch)
+                                if (added > 0) {
+                                    Log.i(TAG, "[Preloader] Tự động nạp thêm $added chương web mới. Tổng: ${book.optJSONArray("chapters")?.length()}")
+                                }
+                            } catch (e: Exception) {
+                                Log.w(TAG, "[Preloader] Lỗi nạp thêm chương web: ${e.message}")
+                            }
+                        }
+                    }
+
+                    val chapters = book.optJSONArray("chapters")
+                    if (chapters == null || chapters.length() == 0) {
+                        Thread.sleep(1000)
+                        continue
+                    }
+
+                    val totalCh = chapters.length()
+                    synchronized(lock) {
+                        totalBookChapters = totalCh
+                    }
+                    val endCh = minOf(startCh + win, totalCh)
+                    val winTotal = maxOf(0, endCh - startCh)
+
+                    synchronized(lock) {
+                        windowTotal = winTotal
+                    }
+
+                    val bookTitle = book.optString("title", "LReader")
+                    var fullyCachedChapters = 0
+                    var hasMissingAudio = false
+
+                    for (chIdx in startCh until endCh) {
+                        synchronized(lock) {
+                            if (!isRunning || !isEnabled || currentBookId != bId || currentChapter != startCh) {
+                                break
+                            }
+                        }
+
+                        val chObj = chapters.optJSONObject(chIdx) ?: continue
+                        val paras = chObj.optJSONArray("paragraphs") ?: continue
+
+                        val sentenceList = mutableListOf<String>()
+                        for (p in 0 until paras.length()) {
+                            val pText = paras.optString(p, "").trim()
+                            if (pText.isEmpty()) continue
+                            val sentences = splitIntoSentences(pText)
+                            if (sentences.isEmpty()) sentenceList.add(pText) else sentenceList.addAll(sentences)
+                        }
+
+                        if (sentenceList.isEmpty()) {
+                            fullyCachedChapters++
+                            synchronized(lock) { cachedCount = fullyCachedChapters }
+                            continue
+                        }
+
+                        synchronized(lock) {
+                            workingChapter = chIdx
+                            totalWorkingParas = sentenceList.size
+                            workingPara = 0
+                        }
+
+                        // Kiểm tra câu nào còn thiếu audio
+                        data class MissingSent(val index: Int, val text: String, val cacheFile: File)
+                        val missingList = mutableListOf<MissingSent>()
+                        var alreadyCachedCount = 0
+
+                        for ((sIdx, rawSent) in sentenceList.withIndex()) {
+                            var text = normalizeSpokenText(rawSent)
+                            if (emo == "cold" && !text.endsWith("!") && !text.endsWith("?")) {
+                                text = text.trimEnd(' ', ',', ';', '…', '-', '–', '—') + "!"
+                            }
+                            text = text.replace(Regex("(?<!\\d),\\s*(?!——)"), ", —— ")
+
+                            val cacheKey = md5("$vId:$mVoice:$emo:$text")
+                            val cFile = File(cacheDir, "$cacheKey.mp3")
+                            if (cFile.exists() && cFile.length() > 500) {
+                                alreadyCachedCount++
+                            } else {
+                                missingList.add(MissingSent(sIdx, text, cFile))
+                            }
+                        }
+
+                        synchronized(lock) {
+                            workingPara = alreadyCachedCount
+                        }
+
+                        if (missingList.isEmpty()) {
+                            fullyCachedChapters++
+                            synchronized(lock) {
+                                cachedCount = fullyCachedChapters
+                            }
+                            continue
+                        }
+
+                        // Có câu cần tải audio -> Bật Foreground Service & WakeLock
+                        hasMissingAudio = true
+                        synchronized(lock) {
+                            isWorking = true
+                        }
+                        acquireWakeLock()
+
+                        // Giữ ứng dụng chạy ngầm liên tục không bao giờ bị Android tắt
+                        try {
+                            ReaderMediaService.startOrUpdate(
+                                context,
+                                bookTitle,
+                                "⚡ Đang tải đệm Ch.${chIdx + 1} ($workingPara/$totalWorkingParas câu) • $fullyCachedChapters/$winTotal chương",
+                                isAudioPlaying,
+                                bookTitle
+                            )
+                        } catch (e: Exception) {}
+
+                        // Tải song song tối đa 3 câu cùng lúc để tăng tốc độ gấp 3 lần
+                        val futures = mutableListOf<Future<*>>()
+                        var stopMissing = false
+                        for (item in missingList) {
+                            synchronized(lock) {
+                                if (!isRunning || !isEnabled || currentBookId != bId || currentChapter != startCh) {
+                                    stopMissing = true
+                                }
+                            }
+                            if (stopMissing) break
+
+                            val f = pool.submit {
+                                try {
+                                    val aBytes = synthesizeAudioUnified(item.text, tVoice, mVoice, e11)
+                                    if (aBytes != null && aBytes.size > 500) {
+                                        item.cacheFile.writeBytes(aBytes)
+                                    } else {
+                                        try {
+                                            item.cacheFile.writeBytes(getSilentMp3())
+                                        } catch (e: Exception) {}
+                                    }
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "Preload error sentence: ${e.message}")
+                                } finally {
+                                    synchronized(lock) {
+                                        workingPara++
+                                    }
+                                }
+                            }
+                            futures.add(f)
+                            if (futures.size >= 3) {
+                                for (fut in futures) {
+                                    try { fut.get(15, TimeUnit.SECONDS) } catch (e: Exception) {}
+                                }
+                                futures.clear()
+                                try {
+                                    ReaderMediaService.startOrUpdate(
+                                        context,
+                                        bookTitle,
+                                        "⚡ Đang tải đệm Ch.${chIdx + 1} ($workingPara/$totalWorkingParas câu) • $fullyCachedChapters/$winTotal chương",
+                                        isAudioPlaying,
+                                        bookTitle
+                                    )
+                                } catch (e: Exception) {}
+                            }
+                        }
+
+                        for (fut in futures) {
+                            try { fut.get(15, TimeUnit.SECONDS) } catch (e: Exception) {}
+                        }
+
+                        // Kiểm tra lại toàn bộ câu của chương
+                        var chSuccess = true
+                        for (rawSent in sentenceList) {
+                            var text = normalizeSpokenText(rawSent)
+                            if (emo == "cold" && !text.endsWith("!") && !text.endsWith("?")) {
+                                text = text.trimEnd(' ', ',', ';', '…', '-', '–', '—') + "!"
+                            }
+                            text = text.replace(Regex("(?<!\\d),\\s*(?!——)"), ", —— ")
+                            val cacheKey = md5("$vId:$mVoice:$emo:$text")
+                            val cFile = File(cacheDir, "$cacheKey.mp3")
+                            if (!cFile.exists() || cFile.length() < 300) {
+                                chSuccess = false
+                                break
+                            }
+                        }
+
+                        if (chSuccess) {
+                            fullyCachedChapters++
+                        }
+                        synchronized(lock) {
+                            cachedCount = fullyCachedChapters
+                        }
+                        Thread.sleep(50)
+                    }
+
+                    if (!hasMissingAudio) {
+                        synchronized(lock) {
+                            isWorking = false
+                            cachedCount = windowTotal
+                            workingChapter = null
+                            workingPara = 0
+                        }
+                        releaseWakeLock()
+                        try {
+                            if (isAudioPlaying) {
+                                ReaderMediaService.startOrUpdate(context, bookTitle, "🎧 Đã đệm đủ 30 chương", true, bookTitle)
+                            } else {
+                                ReaderMediaService.stop(context)
+                            }
+                        } catch (e: Exception) {}
+                        Thread.sleep(2000)
+                    }
+                }
+            }, "ChapterAudioPreloaderThread")
+            workerThread?.isDaemon = true
+            workerThread?.start()
+        }
+    }
+
+    override fun stop() {
+        try {
+            preloader.stop()
+        } catch (e: Exception) {}
+        super.stop()
+    }
 }
 
 /**
@@ -1567,16 +2095,22 @@ class HonorLocalServer(
  * cho các hiệu ứng nổ sấm sét, quyền cước, đao kiếm va chạm, kiếm khí xé gió.
  */
 object SfxAudioGenerator {
-    fun generateWav(type: String): ByteArray {
+    fun generateWav(type: String, count: Int = 1): ByteArray {
         val sampleRate = 22050
         val dur = when (type) {
             "explosion" -> 0.85
-            "clash" -> 0.55
-            "whoosh" -> 0.35
+            "clash" -> 0.50
+            "whoosh" -> 0.28
             else -> 0.40 // impact
         }
+        val gapSec = when (type) {
+            "explosion" -> 0.15
+            "clash" -> 0.10
+            "whoosh" -> 0.08
+            else -> 0.10
+        }
         val numSamples = (sampleRate * dur).toInt()
-        val pcm = ShortArray(numSamples)
+        val oneChunk = ShortArray(numSamples)
         val random = java.util.Random()
 
         when (type) {
@@ -1589,7 +2123,7 @@ object SfxAudioGenerator {
                     val noise = (random.nextDouble() * 2.0 - 1.0) * Math.exp(-t * 4.5)
                     val sample = (sub * 0.65 + noise * 0.35) * 0.95
                     val clamped = sample.coerceIn(-1.0, 1.0)
-                    pcm[i] = (clamped * 32767.0).toInt().toShort()
+                    oneChunk[i] = (clamped * 32767.0).toInt().toShort()
                 }
             }
             "clash" -> {
@@ -1601,7 +2135,7 @@ object SfxAudioGenerator {
                     val click = (random.nextDouble() * 2.0 - 1.0) * Math.exp(-t * 70.0)
                     val sample = (b1 * 0.35 + b2 * 0.3 + b3 * 0.2 + click * 0.15) * 0.9
                     val clamped = sample.coerceIn(-1.0, 1.0)
-                    pcm[i] = (clamped * 32767.0).toInt().toShort()
+                    oneChunk[i] = (clamped * 32767.0).toInt().toShort()
                 }
             }
             "whoosh" -> {
@@ -1612,7 +2146,7 @@ object SfxAudioGenerator {
                     val carrier = Math.sin(2.0 * Math.PI * (600.0 + 1400.0 * Math.sin(Math.PI * t / dur)) * t)
                     val sample = (noise * 0.4 + carrier * 0.6) * env * 0.9
                     val clamped = sample.coerceIn(-1.0, 1.0)
-                    pcm[i] = (clamped * 32767.0).toInt().toShort()
+                    oneChunk[i] = (clamped * 32767.0).toInt().toShort()
                 }
             }
             else -> { // impact
@@ -1624,9 +2158,27 @@ object SfxAudioGenerator {
                     val noise = (random.nextDouble() * 2.0 - 1.0) * Math.exp(-t * 25.0)
                     val sample = (sub * 0.75 + noise * 0.25) * 0.95
                     val clamped = sample.coerceIn(-1.0, 1.0)
-                    pcm[i] = (clamped * 32767.0).toInt().toShort()
+                    oneChunk[i] = (clamped * 32767.0).toInt().toShort()
                 }
             }
+        }
+
+        val repeatCount = count.coerceIn(1, 4)
+        val pcm = if (repeatCount <= 1) {
+            oneChunk
+        } else {
+            val gapSamples = (sampleRate * gapSec).toInt()
+            val totalSamples = numSamples * repeatCount + gapSamples * (repeatCount - 1)
+            val combined = ShortArray(totalSamples)
+            var destPos = 0
+            for (r in 0 until repeatCount) {
+                System.arraycopy(oneChunk, 0, combined, destPos, numSamples)
+                destPos += numSamples
+                if (r < repeatCount - 1) {
+                    destPos += gapSamples
+                }
+            }
+            combined
         }
 
         val totalAudioLen = pcm.size * 2
@@ -1671,5 +2223,3 @@ object SfxAudioGenerator {
         return out
     }
 }
-
-

@@ -3277,6 +3277,25 @@ body.zen-mode #nrFabAdd {
       color: #64748b;
     }
 
+    .honor-top-audio-buffer {
+      font-size: 11px;
+      line-height: 1;
+      color: #38bdf8;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      cursor: pointer !important;
+      pointer-events: auto !important;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      margin-right: 8px;
+    }
+    body.honor-light-mode .honor-top-audio-buffer {
+      color: #0284c7;
+    }
+
     #honorTopBookTitle,
     .honor-status-title,
     #honorTopChapterTitle,
@@ -4229,7 +4248,7 @@ body.zen-mode #nrFabAdd {
       <button class="btn btn-popover-item" onclick="triggerAppReload(); closeMobileMenu();" style="grid-column: span 2; background: linear-gradient(135deg, #0284c7, #2563eb); color: #fff; font-weight: 700; border: none; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);">
         🔄 Tải Lại / Làm Mới Trang (Reload)
       </button>
-      <a href="/download-app" class="btn btn-popover-item" style="grid-column: span 2; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #10b981, #059669); color: #fff; font-weight: 600; border-radius: 8px; padding: 6px 12px;">
+      <a href="/download-app" onclick="if (typeof downloadFullApk === 'function') { event.preventDefault(); downloadFullApk(); }" class="btn btn-popover-item" style="grid-column: span 2; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #10b981, #059669); color: #fff; font-weight: 600; border-radius: 8px; padding: 6px 12px;">
         📲 Cài Đặt App LReader
       </a>
     </div>
@@ -4638,6 +4657,34 @@ body.zen-mode #nrFabAdd {
     </div>
   </div>
 
+  <!-- Modal Sổ Tay Nhân Vật (Dynamic Character Registry & AI Multi-Voice) -->
+  <div id="nrCharRegistryModalOverlay" class="modal-overlay" onclick="closeCharacterRegistryModal(event)">
+    <div class="library-modal" onclick="event.stopPropagation()" style="max-width: 580px; max-height: 85vh; display: flex; flex-direction: column;">
+      <div class="modal-header">
+        <span style="display:flex; align-items:center; gap:8px;">📖 Sổ Tay Nhân Vật (Kịch Truyền Thanh AI)</span>
+        <button class="btn" style="padding: 4px 8px;" onclick="closeCharacterRegistryModal()">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 16px; overflow-y: auto; flex: 1;">
+        <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 12px; line-height: 1.5;">
+          Hệ thống AI tự động phân tích và ghi nhớ giới tính nhân vật theo cuốn truyện. Bạn có thể bấm để chuyển đổi giới tính thủ công (Nam ↔ Nữ) bất kỳ lúc nào nếu muốn.
+        </p>
+
+        <div style="display: flex; gap: 8px; margin-bottom: 14px;">
+          <input type="text" id="nrCharSearchInput" placeholder="Tìm kiếm nhân vật trong truyện..." oninput="filterCharacterRegistryList()" style="flex: 1; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.82rem; outline: none;">
+          <button class="btn" onclick="clearCurrentBookCharacterRegistry()" style="font-size: 0.76rem; color: #ef4444; border-color: rgba(239,68,68,0.3); padding: 8px 12px; white-space: nowrap;">🗑️ Xóa bộ nhớ</button>
+        </div>
+
+        <div id="nrCharListContainer" style="display: flex; flex-direction: column; gap: 8px; min-height: 120px;">
+          <span style="font-size:0.78rem; color:var(--text-muted); font-style:italic; padding:12px; text-align:center;">Đang tải danh sách nhân vật...</span>
+        </div>
+      </div>
+      <div style="padding: 10px 16px; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+        <span id="nrCharTotalCount" style="font-size: 0.78rem; color: var(--text-muted);">0 nhân vật</span>
+        <button class="btn btn-primary" onclick="closeCharacterRegistryModal()" style="padding: 6px 16px; font-size: 0.82rem;">Xong</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal Hẹn Giờ Tắt (Sleep Timer) -->
   <div id="sleepTimerModalOverlay" class="modal-overlay" onclick="closeSleepTimerModal(event)">
     <div class="modal" onclick="event.stopPropagation()" style="max-width: 400px;">
@@ -4988,12 +5035,12 @@ body.zen-mode #nrFabAdd {
         <!-- CẬP NHẬT ỨNG DỤNG OTA SIÊU TỐC (~370KB) -->
         <div class="nr-card-title" style="color:var(--nr-accent); font-weight:700; display:flex; justify-content:space-between; align-items:center;">
           <span>⚡ Cập nhật ứng dụng OTA</span>
-          <span id="nrOtaBadge" style="font-size:0.75rem; padding:2px 8px; border-radius:99px; background:rgba(56,189,248,0.18); color:#38bdf8; font-weight:700;">v1.6.33</span>
+          <span id="nrOtaBadge" style="font-size:0.75rem; padding:2px 8px; border-radius:99px; background:rgba(56,189,248,0.18); color:#38bdf8; font-weight:700;">v1.6.50</span>
         </div>
         <div class="nr-card" style="border: 1.5px solid rgba(56, 189, 248, 0.35); background: linear-gradient(135deg, rgba(56, 189, 248, 0.08), rgba(249, 115, 22, 0.04)); border-radius: 18px; padding: 12px 16px; margin-bottom: 14px;">
           <div style="font-size:0.78rem; color:#b0b2c4; line-height:1.45; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
             <span>Phiên bản hiện tại trên máy:</span>
-            <b id="nrCurrentVerDisplay" style="color:#38bdf8; font-size:0.84rem; background:rgba(56,189,248,0.15); padding:2px 8px; border-radius:6px;">v1.6.33</b>
+            <b id="nrCurrentVerDisplay" style="color:#38bdf8; font-size:0.84rem; background:rgba(56,189,248,0.15); padding:2px 8px; border-radius:6px;">v1.6.50</b>
           </div>
 
           <div style="margin-bottom:10px; background:rgba(0,0,0,0.25); padding:8px 10px; border-radius:10px; border:1px solid rgba(255,255,255,0.08);">
@@ -5103,6 +5150,13 @@ body.zen-mode #nrFabAdd {
             </div>
             <span id="nrMultiVoiceStatus" class="nr-badge" style="background:#10b981; color:#fff; font-size:0.72rem; padding:3px 8px; border-radius:12px; font-weight:600;">ĐANG BẬT</span>
           </div>
+          <div class="nr-link-row" style="cursor:pointer;" onclick="openCharacterRegistryModal()">
+            <div style="display:flex; flex-direction:column; gap:2px; flex:1;">
+              <span style="font-weight:600;">📖 Sổ tay Nhân vật (AI Phân vai)</span>
+              <span id="nrCharRegistrySub" style="font-size:0.75rem; color:#888;">Quản lý danh sách nhân vật, giới tính &amp; độ tin cậy của truyện</span>
+            </div>
+            <span id="nrCharCountBadge" class="nr-badge" style="background:rgba(56,189,248,0.18); color:#38bdf8; font-size:0.72rem; padding:3px 8px; border-radius:12px; font-weight:600;">0 nhân vật</span>
+          </div>
           <div class="nr-link-row" style="cursor:pointer;" onclick="toggleSfxSetting()">
             <div style="display:flex; flex-direction:column; gap:2px; flex:1;">
               <span style="font-weight:600;">🔊 Âm thanh điện ảnh SFX (Tiên Hiệp)</span>
@@ -5192,8 +5246,9 @@ body.zen-mode #nrFabAdd {
 
       <!-- HEADER TRẠNG THÁI TRÊN CÙNG (CỐ ĐỊNH, DỊU NHẸ CHUẨN HONOR) -->
       <div id="honorReaderTopStatus" class="honor-status-top" onclick="toggleHonorOverlay()">
-        <span id="honorTopChapterBadge" class="honor-status-top-left" onclick="event.stopPropagation(); toggleChapterDrawer();" title="Bấm để mở danh sách chương">C1 • 0/30</span>
+        <span id="honorTopChapterBadge" class="honor-status-top-left" onclick="event.stopPropagation(); toggleChapterDrawer();" title="Bấm để mở danh sách chương">C1 • 📖 30/30</span>
         <div id="honorTopBatteryWrap" class="honor-status-top-right">
+          <span id="honorTopAudioBufferWrap" class="honor-top-audio-buffer" onclick="event.stopPropagation(); if (typeof togglePreloader === 'function') togglePreloader();" title="Bấm để bật/tắt đệm trước âm thanh">🔊 0/30</span>
           <span id="honorTopBatteryPercent">--%</span>
           <span id="honorTopBatteryIcon" class="honor-battery-icon"><span id="honorTopBatteryLevel" style="width: 80%;"></span></span>
         </div>
@@ -5550,18 +5605,19 @@ body.zen-mode #nrFabAdd {
           if (titleEl) titleEl.textContent = bTitle;
           if (quickChEl) quickChEl.textContent = 'Đọc truyện';
 
-          // Hiển thị số trang đệm
-          let bufferStr = 'Đệm: 0/30';
+          // Hiển thị số chương đệm
+          let bufferStr = 'Đệm: Sẵn sàng';
           const st = window.latestPreloadStatus;
-          const totalChapters = (bookData && Array.isArray(bookData.chapters)) ? bookData.chapters.length : 0;
-          const curIdx = currentChapterIndex || 0;
-          const remainingAhead = Math.max(0, totalChapters - curIdx);
-          const textBufferCount = Math.min(30, remainingAhead > 0 ? remainingAhead : totalChapters);
+          const isPreloadEnabled = (st && st.enabled !== undefined) ? !!st.enabled : (localStorage.getItem('reader_preload_enabled') !== '0');
 
-          if (st && (st.isWorking || (st.cachedCount && st.cachedCount > 0))) {
-            bufferStr = `Đệm: ${st.cachedCount}/${st.windowTotal || 30}`;
+          if (!isPreloadEnabled) {
+            bufferStr = 'Đệm: Tắt';
+          } else if (st && st.isWorking) {
+            bufferStr = `Đang đệm: ${st.cachedCount || 0}/${st.windowTotal || 30} ch`;
+          } else if (st && st.cachedCount > 0) {
+            bufferStr = `Đệm sẵn: ${st.cachedCount}/30 ch`;
           } else {
-            bufferStr = `Đệm: ${textBufferCount}/30`;
+            bufferStr = `Đệm sẵn 30 ch`;
           }
           if (bufferEl) bufferEl.textContent = bufferStr;
           if (dotEl) dotEl.style.display = 'inline';
@@ -6147,6 +6203,27 @@ body.zen-mode #nrFabAdd {
       const next = !current;
       localStorage.setItem('reader_multi_voice', next ? '1' : '0');
       updateMultiVoiceUI();
+
+      // Xóa toàn bộ bộ đệm âm thanh để áp dụng cơ chế phân vai mới ngay lập tức
+      if (typeof paragraphAudioCache !== 'undefined') paragraphAudioCache.clear();
+      if (typeof paragraphPrefetchInFlight !== 'undefined') paragraphPrefetchInFlight.clear();
+
+      if (isPlaying && typeof currentSentenceIndex === 'number' && currentSentenceIndex >= 0) {
+        currentPlaybackSessionId++;
+        if (audio) {
+          audio.pause();
+          audio.onended = null;
+          cleanupCurrentAudioUrl();
+        }
+        if (window.HonorBridge && window.HonorBridge.stopNativeSpeak) {
+          try { window.HonorBridge.stopNativeSpeak(); } catch (_) {}
+        }
+        if ('speechSynthesis' in window) {
+          try { window.speechSynthesis.cancel(); } catch (_) {}
+        }
+        playParagraph(currentSentenceIndex);
+      }
+
       if (typeof showToast === 'function') {
         showToast(next ? '🎭 Đã bật Kịch truyền thanh AI (Phân vai Nam - Nữ & Diễn cảm)' : 'Đã tắt Kịch truyền thanh');
       }
@@ -7093,9 +7170,10 @@ body.zen-mode #nrFabAdd {
                .replace(/(?<![\p{L}\p{N}])[Ôô](?![\p{L}\p{N}])/gu, 'Ôh');
 
       // Dọn dẹp dấu câu trơ trọi, biểu tượng và khoảng trắng dư thừa
-      res = res.replace(/\s*([,;:.!?…])\s*/g, '$1 ')
+      res = res.replace(/\s*([;:.!?…])\s*/g, '$1 ')
+               .replace(/(?<=[^\W\d_]),\s*(?=[^\W\d_“"«])/gu, ', — ') // Chuẩn hóa nhịp nghỉ thở sâu lắng giữa các vế câu (~300ms)
                .replace(/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/gu, '')
-               .replace(/\s+/g, ' ')
+               .replace(/[^\S\r\n]{3,}/g, '  ')
                .trim();
 
       return res;
@@ -7865,6 +7943,49 @@ body.zen-mode #nrFabAdd {
       speakWithReaderEngine(text);
     }
 
+    async function copyTextToClipboard(text) {
+      if (!text) return false;
+      // 1. Android Native Bridge
+      try {
+        if (window.HonorBridge && typeof window.HonorBridge.copyToClipboard === 'function') {
+          window.HonorBridge.copyToClipboard(text);
+          return true;
+        }
+      } catch (e) {
+        console.warn('HonorBridge copy failed:', e);
+      }
+
+      // 2. navigator.clipboard API
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(text);
+          return true;
+        }
+      } catch (e) {
+        console.warn('navigator.clipboard failed:', e);
+      }
+
+      // 3. Fallback textarea + document.execCommand('copy')
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.top = '-9999px';
+        textArea.style.left = '-9999px';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        if (successful) return true;
+      } catch (e) {
+        console.warn('execCommand copy failed:', e);
+      }
+
+      return false;
+    }
+
     function copySelectedText() {
       let text = currentSelectedText;
       if (!text) {
@@ -7872,28 +7993,45 @@ body.zen-mode #nrFabAdd {
         if (sel) text = sel.toString().trim();
       }
       if (!text) return;
-      navigator.clipboard.writeText(text).then(() => {
-        showToast('📋 Đã sao chép văn bản đã chọn!');
-      }).catch(() => {
-        showToast('📋 Đã sao chép!');
+      copyTextToClipboard(text).then(() => {
+        showToast(`📋 Đã sao chép: "${text.length > 25 ? text.substring(0, 25) + '...' : text}"`);
       });
       dismissSelectionToolbar();
     }
 
     function openContextMenuFromSelection() {
-      if (!currentSelectedParaEl) {
-        const sel = window.getSelection();
-        if (sel && sel.anchorNode) {
-          const p = (sel.anchorNode.nodeType === Node.TEXT_NODE ? sel.anchorNode.parentElement : sel.anchorNode).closest('.paragraph-item');
-          if (p) currentSelectedParaEl = p;
+      let targetSentenceIdx = -1;
+      let targetText = '';
+      let targetParaIdx = 0;
+      let rect = null;
+
+      const sel = window.getSelection();
+      if (sel && sel.anchorNode) {
+        const sEl = (sel.anchorNode.nodeType === Node.TEXT_NODE ? sel.anchorNode.parentElement : sel.anchorNode).closest('.sentence-item');
+        if (sEl && sEl.dataset && sEl.dataset.index) {
+          targetSentenceIdx = parseInt(sEl.dataset.index);
+          rect = sEl.getBoundingClientRect();
+          if (typeof allSentences !== 'undefined' && allSentences && allSentences[targetSentenceIdx]) {
+            targetText = allSentences[targetSentenceIdx];
+          }
+        }
+        const pEl = (sel.anchorNode.nodeType === Node.TEXT_NODE ? sel.anchorNode.parentElement : sel.anchorNode).closest('.paragraph-item');
+        if (pEl && pEl.dataset && pEl.dataset.index) {
+          targetParaIdx = parseInt(pEl.dataset.index);
+          if (!targetText) targetText = pEl.textContent;
+          if (!rect) rect = pEl.getBoundingClientRect();
         }
       }
-      if (!currentSelectedParaEl) return;
-      const pIdx = parseInt(currentSelectedParaEl.dataset.index);
-      const text = currentSelectedParaEl.textContent;
-      const rect = currentSelectedParaEl.getBoundingClientRect();
+      if (!targetText && currentSelectedParaEl) {
+        targetParaIdx = parseInt(currentSelectedParaEl.dataset.index) || 0;
+        targetText = currentSelectedParaEl.textContent;
+        rect = currentSelectedParaEl.getBoundingClientRect();
+      }
+      if (!targetText) return;
       dismissSelectionToolbar();
-      showContextMenu(rect.left + 20, rect.top + 20, text, pIdx, true);
+      const x = rect ? rect.left + 20 : window.innerWidth / 2;
+      const y = rect ? rect.top + 20 : window.innerHeight / 2;
+      showContextMenu(x, y, targetText, targetParaIdx, true, targetSentenceIdx);
     }
 
     // =====================================================================
@@ -8614,6 +8752,7 @@ body.zen-mode #nrFabAdd {
     // =====================================================================
     let contextMenuTargetText = null;
     let contextMenuTargetIndex = -1;
+    let contextMenuTargetSentenceIndex = -1;
     let contextMenuSelectedWord = '';
     let lastContextMenuOpenTime = 0;
 
@@ -8622,11 +8761,12 @@ body.zen-mode #nrFabAdd {
       if (menu) menu.style.display = 'none';
       contextMenuTargetText = null;
       contextMenuTargetIndex = -1;
+      contextMenuTargetSentenceIndex = -1;
       contextMenuSelectedWord = '';
       lastDismissTime = Date.now();
     }
 
-    function showContextMenu(clientX, clientY, text, pIdx, isExplicitLongPress = false) {
+    function showContextMenu(clientX, clientY, text, pIdx, isExplicitLongPress = false, sIdx = -1) {
       // 1. Tuyệt đối không mở nếu modal dịch hoặc popup khác đang mở
       const transModal = document.getElementById('translateModalOverlay');
       if (transModal && transModal.classList.contains('open')) {
@@ -8644,6 +8784,7 @@ body.zen-mode #nrFabAdd {
 
       contextMenuTargetText = text || '';
       contextMenuTargetIndex = (typeof pIdx === 'number') ? pIdx : -1;
+      contextMenuTargetSentenceIndex = (typeof sIdx === 'number' && sIdx >= 0) ? sIdx : ((typeof pIdx === 'number') ? pIdx : -1);
 
       // 3. Nhận diện từ hoặc chuỗi đang được bôi đen / chọn
       const sel = window.getSelection();
@@ -8867,13 +9008,18 @@ body.zen-mode #nrFabAdd {
           openBilingualModal();
         }
       } else if (action === 'play') {
-        jumpToParagraph(idx);
+        const targetIdx = (typeof contextMenuTargetSentenceIndex === 'number' && contextMenuTargetSentenceIndex >= 0)
+                          ? contextMenuTargetSentenceIndex
+                          : idx;
+        if (typeof playFromSentence === 'function') {
+          playFromSentence(targetIdx);
+        } else {
+          jumpToParagraph(targetIdx);
+        }
       } else if (action === 'copy') {
         const copyContent = targetW || text;
-        navigator.clipboard.writeText(copyContent).then(() => {
-          showToast(`📋 Đã sao chép: "${copyContent.length > 20 ? copyContent.substring(0, 20) + '...' : copyContent}"`);
-        }).catch(() => {
-          showToast('📋 Đã sao chép!');
+        copyTextToClipboard(copyContent).then(() => {
+          showToast(`📋 Đã sao chép: "${copyContent.length > 25 ? copyContent.substring(0, 25) + '...' : copyContent}"`);
         });
       } else if (action === 'translate') {
         openTranslateModal(targetW || text);
@@ -9933,6 +10079,28 @@ body.zen-mode #nrFabAdd {
       }
       localStorage.setItem('reader_saved_voice', val);
       syncVoiceUIElements(val);
+
+      // Xóa toàn bộ bộ đệm âm thanh khi đổi giọng đọc để câu tiếp theo không bị dính giọng cũ
+      if (typeof paragraphAudioCache !== 'undefined') paragraphAudioCache.clear();
+      if (typeof paragraphPrefetchInFlight !== 'undefined') paragraphPrefetchInFlight.clear();
+
+      // Nếu đang phát âm thanh, dừng ngay và phát lại câu hiện tại với giọng mới để người nghe cảm nhận đổi giọng tức thì
+      if (isPlaying && typeof currentSentenceIndex === 'number' && currentSentenceIndex >= 0) {
+        currentPlaybackSessionId++;
+        if (audio) {
+          audio.pause();
+          audio.onended = null;
+          cleanupCurrentAudioUrl();
+        }
+        if (window.HonorBridge && window.HonorBridge.stopNativeSpeak) {
+          try { window.HonorBridge.stopNativeSpeak(); } catch (_) {}
+        }
+        if ('speechSynthesis' in window) {
+          try { window.speechSynthesis.cancel(); } catch (_) {}
+        }
+        playParagraph(currentSentenceIndex);
+      }
+
       notifyPreloader();
     }
 
@@ -10189,19 +10357,28 @@ body.zen-mode #nrFabAdd {
         const chIdx = overrideCh !== null ? overrideCh : currentChapterIndex;
         const voiceSelect = document.getElementById('voiceSelect');
         const selectedOpt = voiceSelect ? (voiceSelect.options[voiceSelect.selectedIndex] || {}) : {};
+        const vId = selectedOpt.value || localStorage.getItem('reader_saved_voice') || 'BV074_streaming';
+        let prov = selectedOpt.dataset?.provider || 'capcut';
+        if (vId.startsWith('eleven_') || vId.includes('adam') || vId.includes('almee')) prov = 'elevenlabs';
+        else if (vId.startsWith('offline_')) prov = 'offline';
+        else if (vId.includes('edge_')) prov = 'edge';
         try {
+          const isMultiVoice = (localStorage.getItem('reader_multi_voice') !== '0');
           await fetch('/api/preload/update', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               bookId: bookData.id,
               chapterIndex: chIdx,
-              voiceId: selectedOpt.value || 'BV074_streaming',
-              provider: selectedOpt.dataset?.provider || 'capcut',
-              speed: currentSpeed,
+              voiceId: vId,
+              provider: prov,
+              speed: (typeof currentVoiceSpeed !== 'undefined' ? currentVoiceSpeed : (currentSpeed || 1.0)),
+              multiVoice: isMultiVoice,
+              multi_voice: isMultiVoice,
               windowSize: 30
             })
           });
+          setTimeout(pollPreloadStatus, 250);
         } catch (e) {
           console.error('Lỗi thông báo preloader:', e);
         }
@@ -10296,18 +10473,14 @@ body.zen-mode #nrFabAdd {
         if (typeof updateHonorTitles === 'function') updateHonorTitles();
         const miniBuffer = document.getElementById('nrPlayerBuffer');
         if (miniBuffer) {
-          const totalChapters = (bookData && Array.isArray(bookData.chapters)) ? bookData.chapters.length : 0;
-          const curIdx = currentChapterIndex || 0;
-          const remainingAhead = Math.max(0, totalChapters - 1 - curIdx);
-          const textBufferCount = Math.min(30, remainingAhead);
-          if (st.enabled) {
-            if (st.isWorking || (st.cachedCount && st.cachedCount > 0)) {
-              miniBuffer.textContent = `Đệm: ${st.cachedCount}/${st.windowTotal || 30}`;
-            } else {
-              miniBuffer.textContent = `Đệm: ${textBufferCount}/30`;
-            }
+          if (!st.enabled) {
+            miniBuffer.textContent = '⏸ Tắt đệm';
+          } else if (st.isWorking) {
+            miniBuffer.textContent = `⚡ ${st.cachedCount || 0}/${st.windowTotal || 30} ch`;
+          } else if (st.cachedCount && st.cachedCount > 0) {
+            miniBuffer.textContent = `⚡ ${st.cachedCount}/${st.windowTotal || 30} ch`;
           } else {
-            miniBuffer.textContent = 'Đệm: Đã tắt';
+            miniBuffer.textContent = `⚡ 0/30 ch`;
           }
         }
         const badge = document.getElementById('preloadBadge');
@@ -10604,8 +10777,8 @@ body.zen-mode #nrFabAdd {
         .then(bList => updateLibraryCountUI(bList.length))
         .catch(() => {});
 
-      // Khởi động đồng bộ bộ đệm (mỗi 4s để giảm tải tài nguyên hệ thống)
-      setInterval(pollPreloadStatus, 4000);
+      // Khởi động đồng bộ bộ đệm (mỗi 2.5s để cập nhật tiến độ mượt mà)
+      setInterval(pollPreloadStatus, 2500);
       pollPreloadStatus();
 
       // Kích hoạt tính năng cuộn con lăn chuyển chương
@@ -10754,7 +10927,7 @@ body.zen-mode #nrFabAdd {
 
     let currentPlaybackSessionId = 0;
 
-    function loadChapter(idx, targetParagraph = 0, isInitialJump = false) {
+    function loadChapter(idx, targetParagraph = 0, shouldAutoPlay = null, isInitialJump = false) {
       // Dừng ngay lập tức âm thanh cũ và huỷ mọi request TTS đang chờ của chương trước
       currentPlaybackSessionId++;
       if (audio) {
@@ -11102,6 +11275,7 @@ body.zen-mode #nrFabAdd {
                 } catch (_) {}
               }
               let targetSentence = p;
+              let targetSentenceIdx = -1;
               try {
                 const el = document.elementFromPoint(menuX, menuY);
                 const sEl = el ? el.closest('.sentence-item') : null;
@@ -11109,10 +11283,11 @@ body.zen-mode #nrFabAdd {
                   const sIdx = parseInt(sEl.dataset.index);
                   if (!isNaN(sIdx) && allSentences && allSentences[sIdx]) {
                     targetSentence = allSentences[sIdx];
+                    targetSentenceIdx = sIdx;
                   }
                 }
               } catch (_) {}
-              showContextMenu(menuX, menuY, targetSentence, pIdx, isHoldGesture);
+              showContextMenu(menuX, menuY, targetSentence, pIdx, isHoldGesture, targetSentenceIdx);
               pendingContextMenu = null;
               touchSelectionActive = false;
               setTimeout(() => { isLongPress = false; }, 400);
@@ -11137,6 +11312,7 @@ body.zen-mode #nrFabAdd {
           const targetX = e.clientX || lastTouchX || touchStartX;
           const targetY = e.clientY || lastTouchY || touchStartY;
           let targetSentence = p;
+          let targetSentenceIdx = -1;
           try {
             const el = document.elementFromPoint(targetX, targetY);
             const sEl = el ? el.closest('.sentence-item') : null;
@@ -11144,10 +11320,11 @@ body.zen-mode #nrFabAdd {
               const sIdx = parseInt(sEl.dataset.index);
               if (!isNaN(sIdx) && allSentences && allSentences[sIdx]) {
                 targetSentence = allSentences[sIdx];
+                targetSentenceIdx = sIdx;
               }
             }
           } catch (_) {}
-          showContextMenu(targetX, targetY, targetSentence, pIdx, true);
+          showContextMenu(targetX, targetY, targetSentence, pIdx, true, targetSentenceIdx);
           return false;
         });
 
@@ -11184,6 +11361,25 @@ body.zen-mode #nrFabAdd {
           sc.scrollLeft = 0;
         }
         if (typeof updateHonorPageCounter === 'function') setTimeout(updateHonorPageCounter, 60);
+      } else if (targetParagraph >= 999999 || targetParagraph >= (allSentences ? allSentences.length : 0)) {
+        const lastSentIdx = Math.max(0, (allSentences ? allSentences.length - 1 : 0));
+        currentParagraphIndex = lastSentIdx;
+        currentSentenceIndex = lastSentIdx;
+        highlightActiveSentence(lastSentIdx, false);
+        const sc = document.getElementById('readerScrollArea') || document.querySelector('main');
+        if (sc) {
+          sc.scrollTop = 999999;
+          setTimeout(() => {
+            if (sc) sc.scrollTop = Math.max(0, sc.scrollHeight - sc.clientHeight);
+            scrollToActiveParagraph(true);
+            if (typeof updateHonorPageCounter === 'function') updateHonorPageCounter();
+          }, 60);
+          setTimeout(() => {
+            if (sc) sc.scrollTop = Math.max(0, sc.scrollHeight - sc.clientHeight);
+            scrollToActiveParagraph(true);
+            if (typeof updateHonorPageCounter === 'function') updateHonorPageCounter();
+          }, 220);
+        }
       } else if (isInitialJump) {
         requestAnimationFrame(() => {
           scrollToActiveParagraph(true);
@@ -11212,7 +11408,12 @@ body.zen-mode #nrFabAdd {
       if (typeof adjustHonorViewportLines === 'function') setTimeout(adjustHonorViewportLines, 70);
       if (typeof updateHonorPageCounter === 'function') setTimeout(updateHonorPageCounter, 90);
 
-      if (isPlaying) {
+      const doAutoPlay = (shouldAutoPlay === true) || (shouldAutoPlay === null && (isPlaying || window.isPlaying));
+      if (doAutoPlay) {
+        isPlaying = true;
+        window.isPlaying = true;
+        updatePlayBtn();
+        updateHonorMediaPillState();
         playParagraph(currentParagraphIndex);
       }
     }
@@ -11225,19 +11426,20 @@ body.zen-mode #nrFabAdd {
     let lastLastChapterToastTime = 0;
 
     async function triggerNextChapterByScroll() {
-      if (!bookData || isChapterTransitioning) return;
+      if (!bookData) return;
       if (typeof isUIOverlayActive === 'function' && isUIOverlayActive()) return;
+      if (isChapterTransitioning) return;
       if (currentChapterIndex + 1 >= bookData.chapters.length) {
         if (bookData.is_web) {
           isChapterTransitioning = true;
           showToast('⏳ Đang tải thêm chương tiếp theo từ web...');
           const added = await fetchMoreWebChapters(5);
-          if (added > 0) {
+          isChapterTransitioning = false;
+          if (added > 0 && currentChapterIndex + 1 < bookData.chapters.length) {
             triggerNextChapterByScroll();
           } else {
             showToast('🎉 Đã là chương mới nhất của truyện!');
           }
-          setTimeout(() => { isChapterTransitioning = false; }, 800);
           return;
         }
         const now = Date.now();
@@ -11248,16 +11450,26 @@ body.zen-mode #nrFabAdd {
         return;
       }
       isChapterTransitioning = true;
+      setTimeout(() => { isChapterTransitioning = false; }, 1200);
       const nextIdx = currentChapterIndex + 1;
       const nextTitle = bookData.chapters[nextIdx]?.title || `Chương ${nextIdx + 1}`;
       showToast(`📖 Đang chuyển sang: ${nextTitle}`);
+
+      const wasPlaying = isPlaying || window.isPlaying;
 
       // Dừng ngay lập tức audio hiện tại để tránh đọc lệch với chữ chương mới
       currentPlaybackSessionId++;
       if (audio) {
         audio.pause();
         audio.onended = null;
-        audio.src = '';
+        cleanupCurrentAudioUrl();
+        try { audio.removeAttribute('src'); audio.load(); } catch (_) {}
+      }
+      if (window.HonorBridge && window.HonorBridge.stopNativeSpeak) {
+        try { window.HonorBridge.stopNativeSpeak(); } catch(_) {}
+      }
+      if ('speechSynthesis' in window) {
+        try { window.speechSynthesis.cancel(); } catch(_) {}
       }
       setLoading(false);
 
@@ -11271,7 +11483,35 @@ body.zen-mode #nrFabAdd {
         scrollArea.scrollTo({ top: 0, behavior: 'instant' });
       }
 
-      loadChapter(nextIdx, 0);
+      loadChapter(nextIdx, 0, wasPlaying, false);
+
+      setTimeout(() => {
+        isChapterTransitioning = false;
+      }, 600);
+    }
+
+    async function triggerPrevChapterByScroll() {
+      if (!bookData || isChapterTransitioning) return;
+      if (currentChapterIndex <= 0) {
+        showToast('📖 Đã là chương đầu tiên của quyển truyện!');
+        return;
+      }
+      isChapterTransitioning = true;
+      const prevIdx = currentChapterIndex - 1;
+      const prevTitle = bookData.chapters[prevIdx]?.title || `Chương ${prevIdx + 1}`;
+      showToast(`📖 Đang chuyển về: ${prevTitle}`);
+
+      currentPlaybackSessionId++;
+      if (audio) {
+        audio.pause();
+        audio.onended = null;
+        cleanupCurrentAudioUrl();
+        try { audio.removeAttribute('src'); audio.load(); } catch (_) {}
+      }
+      setLoading(false);
+
+      // Load chương trước với targetParagraph = 999999 (cuối chương)
+      loadChapter(prevIdx, 999999, isPlaying, true);
 
       setTimeout(() => {
         isChapterTransitioning = false;
@@ -11296,12 +11536,50 @@ body.zen-mode #nrFabAdd {
           } else {
             wheelOverScrollAccumulator = 0;
           }
+        } else if (e.deltaY < 0) { // Đang lăn LÊN
+          const atTop = scrollArea.scrollTop <= 15;
+          if (atTop) {
+            wheelOverScrollAccumulator += Math.abs(e.deltaY);
+            if (wheelOverScrollAccumulator > 55) {
+              wheelOverScrollAccumulator = 0;
+              triggerPrevChapterByScroll();
+            }
+          } else {
+            wheelOverScrollAccumulator = 0;
+          }
         } else {
           wheelOverScrollAccumulator = 0;
         }
       }, { passive: true });
+    }
+    function playFromSentence(sIdx) {
+      if (typeof sIdx !== 'number' || sIdx < 0) sIdx = 0;
+      currentPlaybackSessionId++;
+      if (audio) {
+        audio.pause();
+        audio.onended = null;
+        cleanupCurrentAudioUrl();
+        try { audio.removeAttribute('src'); audio.load(); } catch (_) {}
+      }
+      if (typeof paragraphAudioCache !== 'undefined') paragraphAudioCache.clear();
+      if (typeof paragraphPrefetchInFlight !== 'undefined') paragraphPrefetchInFlight.clear();
+      setLoading(false);
 
-      // Ghi chú: Cử chỉ vuốt chạm và lật trang MagicOS được điều khiển đồng bộ bởi Unified Gesture Engine bên dưới
+      if (typeof allSentences !== 'undefined' && allSentences && allSentences.length > 0) {
+        while (sIdx < allSentences.length && isParagraphSkipped(allSentences[sIdx])) {
+          sIdx++;
+        }
+        if (sIdx >= allSentences.length) sIdx = allSentences.length - 1;
+      }
+
+      currentParagraphIndex = sIdx;
+      currentSentenceIndex = sIdx;
+      highlightActiveSentence(sIdx, true);
+      saveProgress();
+      window.isPlaying = true;
+      updatePlayButton(true);
+      if (typeof updateHonorMediaPillState === 'function') updateHonorMediaPillState();
+      playParagraph(sIdx);
     }
 
     function jumpToParagraph(pIdx) {
@@ -11414,67 +11692,690 @@ body.zen-mode #nrFabAdd {
     }
 
     // =====================================================================
-    // HỆ THỐNG PHÂN VAI KỊCH TRUYỀN THANH TIÊN HIỆP & BỘ NHỚ LUÂN PHIÊN (TURN-TAKING)
+    // HỆ THỐNG XÁC ĐỊNH GIỚI TÍNH NHÂN VẬT ĐA TẦNG & SỔ TAY NHÂN VẬT (DYNAMIC STATE REGISTRY)
+    // CÔNG THỨC TRỌNG SỐ: S_gender = w1·Pronoun + w2·Title + w3·LexicalName + w4·DialogueContext
     // =====================================================================
     let lastDialogueGender = 'male';
 
-    function analyzeDialogueGender(text) {
-      if (!text) return 'narration';
-      const isQuote = /^[“"«「『]/.test(text.trim()) || /^[-–—]\s*/.test(text.trim()) || /[“"«「『][^”"»」』]+[”"»」』]/.test(text);
-      if (!isQuote) return 'narration';
+    const FEMALE_NAME_KEYWORDS = [
+      'tuyết', 'liên', 'như', 'yến', 'nhược', 'mộng', 'tiên', 'linh', 'cầm',
+      'nghiên', 'thiến', 'điệp', 'mai', 'lan', 'cúc', 'trúc', 'hương', 'vy', 'my', 'thảo',
+      'uyên', 'uyển', 'diễm', 'trâm', 'quỳnh', 'châu', 'tú', 'phượng',
+      'thục', 'huyên', 'thiền', 'nga', 'loan', 'kiều', 'hân', 'thùy', 'trang',
+      'hằng', 'huyền', 'nhạn', 'khuê', 'oanh', 'bích', 'thúy', 'nhã'
+    ];
 
-      let dialogueContent = text;
-      const quoteMatch = text.match(/[“"«「『]([^”"»」』]+)[”"»」』]/);
-      if (quoteMatch) {
-        dialogueContent = quoteMatch[1];
-      } else {
-        dialogueContent = text.replace(/^[-–—]\s*/, '');
+    const MALE_NAME_KEYWORDS = [
+      'phong', 'viêm', 'hàn', 'phàm', 'hạo', 'kiệt', 'dũng', 'cường', 'tuấn',
+      'khang', 'thắng', 'vĩnh', 'đức', 'tráng', 'mãnh', 'thạch', 'trần', 'bá',
+      'lâm', 'quang', 'hoàng', 'bảo', 'huy', 'minh', 'sơn', 'long', 'thiên',
+      'trung', 'hiếu', 'nghĩa', 'trí', 'trọng', 'hùng', 'ngạo', 'cương'
+    ];
+
+    const MALE_PRONOUNS = ['hắn', 'y', 'gã', 'lão', 'tên này', 'tiểu tử này', 'chàng', 'nam tử này', 'hắn ta'];
+    const FEMALE_PRONOUNS = ['nàng', 'ả', 'thị', 'cô', 'nha đầu này', 'nàng ta', 'cô ấy', 'nữ tử này', 'tiểu nương tử'];
+
+    const MALE_TITLES = [
+      'sư huynh', 'sư đệ', 'sư thúc', 'sư bá', 'công tử', 'thiếu gia', 'đạo huynh', 'lão tổ',
+      'lão quái', 'lão ma', 'chân nhân', 'tiên sinh', 'thánh tử', 'thiếu chủ', 'tiểu tử', 'đại hán',
+      'lão giả', 'chưởng môn', 'tông chủ', 'vương gia', 'hoàng thượng', 'trượng phu', 'nam nhân',
+      'nam tử', 'tiểu sinh', 'phụ thân', 'cha', 'đại ca', 'huynh đệ', 'huynh trưởng'
+    ];
+
+    const FEMALE_TITLES = [
+      'sư tỷ', 'sư muội', 'sư thái', 'tiên tử', 'cô nương', 'tiểu thư', 'nương tử', 'phu nhân',
+      'thánh nữ', 'yêu nữ', 'ma nữ', 'lão mẫu', 'bà bà', 'nha đầu', 'thiếu phụ', 'mỹ phụ',
+      'nữ nhi', 'công chúa', 'sư nương', 'mẫu thân', 'mẹ', 'tiểu nha đầu', 'tiểu nữ hài',
+      'bà lão', 'bà nội', 'bà ngoại'
+    ];
+
+    const COLD_KEYWORDS = ['lạnh lùng', 'nhàn nhạt', 'hờ hững', 'băng hàn', 'vô cảm', 'lạnh lẽo', 'trầm giọng', 'băng lãnh', 'khô khốc', 'sát khí', 'nghiêm nghị', 'lãnh khốc', 'nguội lạnh', 'lạnh băng', 'âm lãnh', 'lạnh buốt'];
+    const COLD_SHOUT_KEYWORDS = ['quát lạnh', 'lạnh lùng quát', 'lạnh giọng quát', 'hừ lạnh quát', 'gằn giọng', 'sát khí quát', 'nghiến răng quát lạnh', 'lạnh lùng thốt', 'lạnh lùng hô'];
+    const ANGRY_SHOUT_KEYWORDS = ['quát lớn', 'gầm lên', 'hét lớn', 'giận dữ', 'nổi giận lôi đình', 'rống lên', 'gầm thét', 'quát tháo', 'thét dài', 'tức giận', 'phẫn nộ', 'quát', 'thét', 'gầm', 'rống', 'oán hận', 'nghiến răng', 'hung dữ', 'thịnh nộ', 'quát mắng', 'gầm rống', 'hét lên'];
+    const MOCKING_KEYWORDS = ['cười lạnh', 'cười nhạt', 'khinh thường', 'mỉa mai', 'chế giễu', 'cười gằn', 'bĩu môi', 'châm chọc', 'nhạo báng', 'chê cười', 'khinh bỉ', 'cười khẩy', 'nhếch mép'];
+    const SOLEMN_KEYWORDS = ['thản nhiên', 'chậm rãi', 'bình thản', 'từ tốn', 'uy nghiêm', 'vang vọng', 'như sấm rền', 'chấn động càn khôn', 'trang nghiêm', 'đĩnh đạc', 'vọng lại', 'vang rền', 'uy áp'];
+    const WEAK_PAIN_KEYWORDS = ['run rẩy nói', 'thều thào', 'giọng yếu ớt', 'yếu ớt nói', 'yếu ớt lên tiếng', 'ho ra máu nói', 'kinh hãi kêu', 'lắp bắp nói', 'kêu thảm', 'hốt hoảng nói', 'thở dốc nói', 'đứt quãng nói', 'thảm thiết kêu', 'hoảng sợ nói', 'sợ hãi kêu', 'sợ sệt nói', 'đau đớn nói'];
+    const LAUGH_JOY_KEYWORDS = ['cười ha hả', 'cười lớn', 'mừng rỡ', 'kích động', 'cười sảng khoái', 'hớn hở', 'vui mừng', 'đắc ý', 'khoái chí', 'phấn khích', 'cười rộ'];
+    const TELEPATHY_KEYWORDS = ['truyền âm', 'thần thức', 'trong đầu vang lên', 'thức hải', 'mật ngữ', 'truyền âm nói', 'vang lên trong thức hải', 'vang trong đầu'];
+    const TENDER_KEYWORDS = ['dịu dàng', 'ngọt ngào', 'thỏ thẻ', 'nhẹ nhàng', 'e thẹn', 'khẽ nói', 'mỉm cười', 'ngượng ngùng', 'ôn nhu', 'âu yếm'];
+    const WHISPER_KEYWORDS = ['thì thầm', 'thì thào', 'nhỏ giọng', 'trầm giọng', 'lẩm bẩm', 'lặng lẽ', 'khẽ bảo'];
+
+    // SỔ TAY NHÂN VẬT (REGISTRY PERSISTENCE)
+    function getBookRegistryKey() {
+      const bTitle = (typeof bookData !== 'undefined' && bookData && (bookData.title || bookData.id)) ? (bookData.title || bookData.id) : 'default_novel';
+      return 'nr_char_registry_' + encodeURIComponent(String(bTitle).trim().slice(0, 50));
+    }
+
+    function loadCharacterRegistry() {
+      try {
+        const key = getBookRegistryKey();
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : {};
+      } catch (e) {
+        return {};
+      }
+    }
+
+    function saveCharacterToRegistry(name, gender, confidence, source) {
+      if (!name || typeof name !== 'string') return;
+      const clean = name.trim();
+      if (!clean || clean.length < 2) return;
+      try {
+        const key = getBookRegistryKey();
+        const reg = loadCharacterRegistry();
+        const existing = reg[clean];
+        // Confidence upgrade: nâng cấp nếu chưa có hoặc độ tin cậy mới >= độ tin cậy cũ
+        if (!existing || confidence >= (existing.confidence || 0)) {
+          reg[clean] = {
+            gender: gender,
+            confidence: confidence,
+            source: source,
+            updatedAt: Date.now(),
+            count: (existing?.count || 0) + 1
+          };
+        } else {
+          existing.count = (existing.count || 0) + 1;
+        }
+        localStorage.setItem(key, JSON.stringify(reg));
+        updateCharacterRegistryUIBadge();
+      } catch (e) {
+        console.warn('[CharacterRegistry] save error:', e);
+      }
+    }
+
+    function updateCharacterGenderManual(name, newGender) {
+      if (!name) return;
+      try {
+        const key = getBookRegistryKey();
+        const reg = loadCharacterRegistry();
+        if (reg[name]) {
+          reg[name].gender = newGender;
+          reg[name].confidence = 1.0;
+          reg[name].source = 'Chỉ định thủ công';
+          reg[name].updatedAt = Date.now();
+          localStorage.setItem(key, JSON.stringify(reg));
+          renderCharacterRegistryModal();
+        }
+      } catch (e) {}
+    }
+
+    function deleteCharacterFromRegistry(name) {
+      if (!name) return;
+      try {
+        const key = getBookRegistryKey();
+        const reg = loadCharacterRegistry();
+        delete reg[name];
+        localStorage.setItem(key, JSON.stringify(reg));
+        renderCharacterRegistryModal();
+        updateCharacterRegistryUIBadge();
+      } catch (e) {}
+    }
+
+    function clearCurrentBookCharacterRegistry() {
+      if (confirm('Bạn có chắc chắn muốn xóa toàn bộ bộ nhớ nhân vật đã ghi nhận của cuốn sách này? AI sẽ nhận diện lại từ đầu.')) {
+        try {
+          const key = getBookRegistryKey();
+          localStorage.removeItem(key);
+          renderCharacterRegistryModal();
+          updateCharacterRegistryUIBadge();
+        } catch (e) {}
+      }
+    }
+
+    function updateCharacterRegistryUIBadge() {
+      try {
+        const reg = loadCharacterRegistry();
+        const count = Object.keys(reg).length;
+        const badge = document.getElementById('nrCharCountBadge');
+        if (badge) badge.textContent = `${count} nhân vật`;
+        const sub = document.getElementById('nrCharRegistrySub');
+        if (sub) {
+          if (count === 0) {
+            sub.textContent = 'Chưa có nhân vật nào được lưu trong bộ nhớ cuốn này';
+          } else {
+            sub.textContent = `Đã ghi nhận ${count} nhân vật (Bấm để xem & đổi giọng)`;
+          }
+        }
+      } catch (e) {}
+    }
+
+    function openCharacterRegistryModal() {
+      const overlay = document.getElementById('nrCharRegistryModalOverlay');
+      if (overlay) {
+        overlay.classList.add('show');
+        renderCharacterRegistryModal();
+      }
+    }
+
+    function closeCharacterRegistryModal(e) {
+      if (e && e.target && e.target !== e.currentTarget && !e.target.classList.contains('modal-overlay')) {
+        return;
+      }
+      const overlay = document.getElementById('nrCharRegistryModalOverlay');
+      if (overlay) overlay.classList.remove('show');
+    }
+
+    function filterCharacterRegistryList() {
+      renderCharacterRegistryModal();
+    }
+
+    function renderCharacterRegistryModal() {
+      const container = document.getElementById('nrCharListContainer');
+      const totalCountEl = document.getElementById('nrCharTotalCount');
+      const searchInput = document.getElementById('nrCharSearchInput');
+      if (!container) return;
+
+      const reg = loadCharacterRegistry();
+      const query = (searchInput?.value || '').trim().toLowerCase();
+      let entries = Object.entries(reg);
+
+      if (query) {
+        entries = entries.filter(([name]) => name.toLowerCase().includes(query));
       }
 
-      const lower = dialogueContent.toLowerCase();
-      const firstWords = lower.split(/\s+/).slice(0, 10).join(' ');
+      entries.sort((a, b) => (b[1].count || 0) - (a[1].count || 0));
 
-      let fScore = 0;
-      let mScore = 0;
+      if (totalCountEl) totalCountEl.textContent = `${entries.length} / ${Object.keys(reg).length} nhân vật`;
 
-      // TẦNG 1: ĐẠI TỪ TỰ XƯNG NỘI BỘ (Xianxia First-Person Pronouns - Trọng số quyết định +5)
-      const femaleSelf = ['tiểu nữ', 'thiếp', 'thiếp thân', 'nô gia', 'nô tỳ', 'bản cung', 'tiểu muội', 'bần ni', 'lão thân', 'muội muội', 'muội', 'nhi thần', 'bản cô nương'];
-      const maleSelf = ['tại hạ', 'lão phu', 'bản tọa', 'bổn tọa', 'bần đạo', 'lão nạp', 'bản công tử', 'tiểu sinh', 'mỗ', 'vi sư', 'mạt tướng', 'huynh đệ', 'bản vương', 'bổn vương', 'trẫm', 'bản tôn', 'bổn tôn', 'tiểu tử', 'vi huynh', 'lão hủ'];
-
-      if (femaleSelf.some(w => firstWords.includes(w))) fScore += 5;
-      if (maleSelf.some(w => firstWords.includes(w))) mScore += 5;
-
-      // TẦNG 2: XƯNG HÔ HƯỚNG TỚI NGƯỜI NGHE (Vocative to Interlocutor - Nghịch đảo +4)
-      const femaleToMale = ['sư huynh', 'công tử', 'chàng', 'đại ca', 'phu quân', 'tướng công', 'huynh', 'phụ thân', 'lão gia', 'vương gia', 'hoàng thượng', 'biểu ca'];
-      const maleToFemale = ['nương tử', 'tiểu thư', 'cô nương', 'tiểu nha đầu', 'sư muội', 'nàng', 'ái phi', 'tiên tử', 'thánh nữ', 'muội muội', 'mẫu thân', 'nương'];
-
-      if (femaleToMale.some(w => firstWords.includes(w))) fScore += 4;
-      if (maleToFemale.some(w => firstWords.includes(w))) mScore += 4;
-
-      // TẦNG 3: DẪN NHẬP / THOÁT THOẠI NGOÀI NGOẶC (Lead-in / Lead-out Attribution +3)
-      const outerText = text.replace(/[“"«「『][^”"»」』]+[”"»」』]/g, ' ').toLowerCase();
-      const femaleTitles = ['nàng', 'cô ấy', 'tiểu thư', 'sư muội', 'tỷ tỷ', 'mẫu thân', 'mẹ', 'nữ tử', 'công chúa', 'nương tử', 'thiếu nữ', 'phu nhân', 'muội muội', 'tiên tử', 'thánh nữ', 'nha hoàn', 'bà lão', 'mỹ phụ', 'nữ nhi', 'sư tôn', 'sư nương'];
-      const maleTitles = ['chàng', 'hắn', 'công tử', 'sư huynh', 'huynh đệ', 'phụ thân', 'cha', 'nam tử', 'huynh trưởng', 'thiếu niên', 'đại ca', 'lão giả', 'đạo nhân', 'lão tổ', 'môn chủ', 'chưởng môn', 'tông chủ', 'tiểu tử', 'gã', 'y', 'trượng phu', 'nam nhân'];
-      const speechVerbs = ['nói', 'đáp', 'hỏi', 'than', 'cười', 'thầm', 'bảo', 'nghẹn ngào', 'thì thào', 'thỏ thẻ', 'quát', 'thét', 'gầm', 'rống', 'la', 'cười lạnh', 'hừ lạnh', 'trầm giọng', 'lẩm bẩm', 'thốt lên', 'hô', 'nhủ', 'nghĩ', 'truyền âm', 'tiếp lời', 'khẽ nói'];
-
-      if (femaleTitles.some(t => outerText.includes(t))) {
-        fScore += 2;
-        if (speechVerbs.some(v => outerText.includes(v))) fScore += 2;
-      }
-      if (maleTitles.some(t => outerText.includes(t))) {
-        mScore += 2;
-        if (speechVerbs.some(v => outerText.includes(v))) mScore += 2;
+      if (entries.length === 0) {
+        container.innerHTML = `<div style="text-align:center; padding:24px; color:var(--text-muted); font-size:0.84rem;">${query ? 'Không tìm thấy nhân vật phù hợp' : 'Chưa có nhân vật nào được phân vai trong cuốn sách này. Khi bạn nghe truyện có thoại, AI sẽ tự động điền danh sách vào đây.'}</div>`;
+        return;
       }
 
-      // TẦNG 4: TURN-TAKING LUÂN PHIÊN HỘI THOẠI (Nếu câu ngắn không chứa từ chỉ thị)
-      if (fScore === 0 && mScore === 0) {
-        lastDialogueGender = (lastDialogueGender === 'male') ? 'female' : 'male';
-        return lastDialogueGender;
+      container.innerHTML = entries.map(([name, data]) => {
+        const isMale = (data.gender === 'male');
+        const badgeColor = isMale ? '#38bdf8' : '#f472b6';
+        const badgeBg = isMale ? 'rgba(56,189,248,0.18)' : 'rgba(244,114,182,0.18)';
+        const icon = isMale ? '👨' : '👩';
+        const targetGender = isMale ? 'female' : 'male';
+        const targetLabel = isMale ? 'Đổi sang Nữ 👩' : 'Đổi sang Nam 👨';
+        const targetBtnColor = isMale ? '#f472b6' : '#38bdf8';
+        const targetBtnBorder = isMale ? 'rgba(244,114,182,0.4)' : 'rgba(56,189,248,0.4)';
+        const confPct = Math.round((data.confidence || 0.7) * 100);
+
+        return `
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:10px; gap:8px;">
+            <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:0;">
+              <div style="font-size:1.45rem; flex-shrink:0;">${icon}</div>
+              <div style="min-width:0; flex:1;">
+                <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                  <span style="font-weight:700; font-size:0.88rem; color:var(--text-color);">${name}</span>
+                  <span style="font-size:0.70rem; font-weight:700; padding:1px 6px; border-radius:6px; background:${badgeBg}; color:${badgeColor};">${isMale ? 'Nam' : 'Nữ'} (${confPct}%)</span>
+                </div>
+                <div style="font-size:0.73rem; color:var(--text-muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                  Nguồn: ${data.source || 'Nhận diện tự động'} • ${data.count || 1} lượt thoại
+                </div>
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+              <button class="btn" onclick="updateCharacterGenderManual('${name.replace(/'/g, "\\\\'")}', '${targetGender}')" style="padding:5px 9px; font-size:0.74rem; font-weight:600; color:${targetBtnColor}; border-color:${targetBtnBorder};">
+                ${targetLabel}
+              </button>
+              <button class="btn" onclick="deleteCharacterFromRegistry('${name.replace(/'/g, "\\\\'")}')" style="padding:5px 8px; font-size:0.74rem; color:#ef4444; border-color:transparent;" title="Xóa nhân vật này khỏi bộ nhớ">✕</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // =====================================================================
+    // HỆ THỐNG PHÂN VAI KỊCH TRUYỀN THANH ĐA TẦNG (LOOK-AHEAD CONTEXT ATTRIBUTION)
+    // =====================================================================
+    function analyzeDialogueAttribution(text, nextText = '', prevText = '', sIdx = -1) {
+      try {
+        if (!text) return { isDialogue: false, gender: 'narration', emotion: 'normal', speedFactor: 1.0, pitchFactor: 1.0, speaker: '' };
+
+        const trimmed = text.trim();
+        let isQuote = /^[“"«「『]/.test(trimmed) || /^[-–—]\s*/.test(trimmed) || /[“"«「『][^”"»」』]+[”"»」』]/.test(trimmed);
+
+        // NÂNG CẤP ĐẶC BIỆT: KẾ THỪA THOẠI TRONG CÙNG 1 ĐOẠN VĂN (MULTI-SENTENCE DIALOGUE CONTINUATION)
+        // Khi 1 nhân vật nói nhiều câu liên tiếp trong cùng 1 đoạn (ví dụ: "- Thiếu niên này là ai? Thiên phú thật kinh người."),
+        // các câu tiếp theo không có gạch đầu dòng nhưng vẫn trọn vẹn là lời thoại của nhân vật đó!
+        let isParaContinuation = false;
+        let parentDialogueAttr = null;
+        if (!isQuote && typeof sIdx === 'number' && sIdx > 0 && typeof sentenceMeta !== 'undefined' && sentenceMeta && sentenceMeta[sIdx] && sentenceMeta[sIdx - 1]) {
+          const currPara = sentenceMeta[sIdx].paraIndex;
+          const prevPara = sentenceMeta[sIdx - 1].paraIndex;
+          if (currPara !== undefined && currPara === prevPara) {
+            let firstIdx = sIdx;
+            while (firstIdx > 0 && sentenceMeta[firstIdx - 1] && sentenceMeta[firstIdx - 1].paraIndex === currPara) {
+              firstIdx--;
+            }
+            const firstText = (typeof allSentences !== 'undefined' && allSentences[firstIdx]) 
+              ? allSentences[firstIdx].trim() 
+              : (sentenceMeta[firstIdx] ? sentenceMeta[firstIdx].text.trim() : '');
+            const paraStartsDialogue = /^[-–—]\s*/.test(firstText) || /^[“"«「『]/.test(firstText);
+            const isNarrationInterruption = 
+              /([A-ZÀ-Ỹa-zà-ỹ0-9\s]+?)\s+(?:nói|hỏi|đáp|lên tiếng|bảo|quát|thốt lên|thầm nghĩ|nghĩ|lẩm bẩm)[:]\s*$/i.test(trimmed) ||
+              /^[-–—]\s*([A-ZÀ-Ỹa-zà-ỹ0-9\s]+?)\s+(?:nói|hỏi|đáp|lên tiếng|quát|thét|gầm|lắc đầu|gật đầu|thở dài|nhìn|bảo|nghĩ)/i.test(trimmed) ||
+              /^(?:Nói xong|Dứt lời|Nói đoạn|Vừa dứt lời|Dứt câu|Tiếng nói vừa dứt|Sau đó|Lúc này|Chợt thấy|Bỗng nhiên|Đột nhiên|Chỉ thấy|Chỉ nghe|Thấy vậy|Nghe vậy)\b/i.test(trimmed);
+
+            if (paraStartsDialogue && !isNarrationInterruption) {
+              try {
+                const prevNext = (typeof allSentences !== 'undefined' && firstIdx + 1 < allSentences.length) ? allSentences[firstIdx + 1] : '';
+                const prevPrev = (typeof allSentences !== 'undefined' && firstIdx > 0) ? allSentences[firstIdx - 1] : '';
+                parentDialogueAttr = analyzeDialogueAttribution(firstText, prevNext, prevPrev, -1);
+                if (parentDialogueAttr && parentDialogueAttr.isDialogue) {
+                  isParaContinuation = true;
+                  isQuote = true;
+                }
+              } catch (_) {}
+            }
+          }
+        }
+
+        if (!isQuote) {
+          return { isDialogue: false, gender: 'narration', emotion: 'normal', speedFactor: 1.0, pitchFactor: 1.0, speaker: '' };
+        }
+
+        let dialogueContent = trimmed;
+        const quoteMatch = trimmed.match(/[“"«「『]([^”"»」』]+)[”"»」』]/);
+        let sameSentenceOuter = '';
+        if (quoteMatch) {
+          dialogueContent = quoteMatch[1];
+          sameSentenceOuter = trimmed.replace(quoteMatch[0], ' ').trim();
+        } else if (/^[\-\–\—]/.test(trimmed)) {
+          const dashMatch = trimmed.replace(/^[\-\–\—]\s*/, '').match(/^(.+?[!?.…])[\s\-\–\—,:]+([A-ZÀ-Ỹa-zà-ỹ].*)$/);
+          if (dashMatch) {
+            dialogueContent = dashMatch[1].trim();
+            sameSentenceOuter = dashMatch[2].trim();
+          } else {
+            dialogueContent = trimmed.replace(/^[\-\–\—]\s*/, '');
+          }
+        } else {
+          dialogueContent = trimmed;
+        }
+
+        // Vùng văn bản dẫn xuất (Lead-out & Lead-in), chuẩn hóa bỏ ký tự gạch đầu dòng
+        const rawLeadOut = (sameSentenceOuter || nextText || '').trim();
+        const leadOut = rawLeadOut.replace(/^[\-\–\—\s:,]+/, '').trim();
+        const rawLeadIn = (prevText || '').trim();
+        const leadIn = rawLeadIn.replace(/[\-\–\—\s:,]+$/, '').trim();
+
+        let speaker = '';
+        let manner = '';
+        let verb = '';
+
+        // TẬNG 0: BỘ TỪ ĐIỂN QUY CHUẨN ĐẠI TỪ & DANH XƯNG CHUẨN XÁC
+        const femaleTitlesRegex = '(?:nàng|cô|cô ấy|cô gái|ả|thị|bà|tiểu thư|cô nương|tiểu nha đầu|sư muội|sư tỷ|tỷ tỷ|muội muội|tiên tử|thánh nữ|mẫu thân|mẹ|nữ tử|công chúa|nương tử|thiếu nữ|phu nhân|nha hoàn|bà lão|mỹ phụ|nữ nhi|sư nương)';
+        const maleTitlesRegex = '(?:hắn|chàng|y|gã|anh|anh ấy|ông|công tử|sư huynh|sư đệ|huynh đệ|phụ thân|cha|nam tử|huynh trưởng|thiếu niên|đại ca|lão giả|đạo nhân|lão tổ|môn chủ|chưởng môn|tông chủ|tiểu tử|trượng phu|nam nhân|lão quái|lão ma|thiếu gia)';
+        const speechVerbsRegex = '(?:lên\\s+tiếng|nói|hỏi|đáp|cười|thì\\s+thào|thỏ\\s+thẻ|than|lẩm\\s+bẩm|thốt\\s+lên|bảo|quát|thét|gầm|rống|la|hô|trầm\\s+giọng|khẽ\\s+nói|khẽ\\s+thở\\s+dài|thở\\s+dài|nhủ|nghĩ|nghĩ\\s+thầm|thầm\\s+nghĩ|trong\\s+(?:lòng|nội\\s+tâm))';
+
+        // TẬNG 1: KHỚP TRỰC TIẾP CHỦ NGỮ CÂU THOẠI (DIRECT SUBJECT-VERB SPEECH TAG) - ĐỘ CHÍNH XÁC 100%
+        let directGender = null;
+        let directConfidence = 0.0;
+        let directSource = '';
+
+        if (leadOut) {
+          // 1.1 Mẫu Chủ ngữ - Đối tượng (Ví dụ: "Hắn nhìn nàng nói" -> Hắn là người nói = Nam)
+          const mSubjObj = leadOut.match(new RegExp('^[\\s\\-\\–\\—,:]*' + maleTitlesRegex + '\\s+(?:nhìn|hướng|quay sang|đối|với)\\s+' + femaleTitlesRegex + '\\s*' + speechVerbsRegex, 'i'));
+          const fSubjObj = leadOut.match(new RegExp('^[\\s\\-\\–\\—,:]*' + femaleTitlesRegex + '\\s+(?:nhìn|hướng|quay sang|đối|với)\\s+' + maleTitlesRegex + '\\s*' + speechVerbsRegex, 'i'));
+          if (mSubjObj) {
+            directGender = 'male'; directConfidence = 1.0; directSource = 'Chủ ngữ dẫn xuất (Hắn->Nàng)';
+          } else if (fSubjObj) {
+            directGender = 'female'; directConfidence = 1.0; directSource = 'Chủ ngữ dẫn xuất (Nàng->Hắn)';
+          }
+
+          // 1.2 Mẫu Chủ ngữ Đại từ thông thường (Ví dụ: "- Đi thôi! - Hắn nói." / "- Được. - Nàng khẽ đáp.")
+          if (!directGender) {
+            const mLeadOut = leadOut.match(new RegExp('^[\\s\\-\\–\\—,:]*' + maleTitlesRegex + '\\s+(?:[a-zà-ỹ\\s]*?)' + speechVerbsRegex, 'i'));
+            const fLeadOut = leadOut.match(new RegExp('^[\\s\\-\\–\\—,:]*' + femaleTitlesRegex + '\\s+(?:[a-zà-ỹ\\s]*?)' + speechVerbsRegex, 'i'));
+            if (mLeadOut && !fLeadOut) {
+              directGender = 'male'; directConfidence = 1.0; directSource = 'Đại từ dẫn xuất (' + mLeadOut[0].trim() + ')';
+            } else if (fLeadOut && !mLeadOut) {
+              directGender = 'female'; directConfidence = 1.0; directSource = 'Đại từ dẫn xuất (' + fLeadOut[0].trim() + ')';
+            }
+          }
+
+          // 1.3 Mẫu Tên Riêng Viết Hoa ở câu dẫn xuất (Ví dụ: "- Cẩn thận! - Tiêu Viêm trầm giọng nói." / "- Diệp Tuyết mỉm cười.")
+          if (!directGender) {
+            const nameMatch = leadOut.match(new RegExp('^[\\s\\-\\–\\—,:]*([A-ZÀ-Ỹ][a-zà-ỹ]+(?:\\s+[A-ZÀ-Ỹ][a-zà-ỹ]+)*)(?:\\s+(.*?))?\\s*' + speechVerbsRegex));
+            if (nameMatch) {
+              speaker = nameMatch[1].trim();
+              manner = (nameMatch[2] || '').trim();
+              const spWords = speaker.toLowerCase().split(/\s+/);
+              const givenName = spWords[spWords.length - 1];
+              if (FEMALE_NAME_KEYWORDS.includes(givenName)) {
+                directGender = 'female'; directConfidence = 0.95; directSource = 'Tên riêng dẫn xuất (' + speaker + ')';
+              } else if (MALE_NAME_KEYWORDS.includes(givenName)) {
+                directGender = 'male'; directConfidence = 0.95; directSource = 'Tên riêng dẫn xuất (' + speaker + ')';
+              }
+            }
+          }
+        }
+
+        // 1.4 Kiểm tra câu dẫn nhập (Lead-in) nếu Lead-out không có
+        if (!directGender && leadIn) {
+          const mInSubjObj = leadIn.match(new RegExp(maleTitlesRegex + '\\s+(?:nhìn|hướng|quay sang|đối|với)\\s+' + femaleTitlesRegex + '\\s*' + speechVerbsRegex + '[:]\\s*$', 'i'));
+          const fInSubjObj = leadIn.match(new RegExp(femaleTitlesRegex + '\\s+(?:nhìn|hướng|quay sang|đối|với)\\s+' + maleTitlesRegex + '\\s*' + speechVerbsRegex + '[:]\\s*$', 'i'));
+          if (mInSubjObj) {
+            directGender = 'male'; directConfidence = 1.0; directSource = 'Chủ ngữ dẫn nhập (Hắn->Nàng)';
+          } else if (fInSubjObj) {
+            directGender = 'female'; directConfidence = 1.0; directSource = 'Chủ ngữ dẫn nhập (Nàng->Hắn)';
+          }
+
+          if (!directGender) {
+            const mLeadIn = leadIn.match(new RegExp(maleTitlesRegex + '\\s+(?:[a-zà-ỹ\\s]*?)' + speechVerbsRegex + '[:]\\s*$', 'i'));
+            const fLeadIn = leadIn.match(new RegExp(femaleTitlesRegex + '\\s+(?:[a-zà-ỹ\\s]*?)' + speechVerbsRegex + '[:]\\s*$', 'i'));
+            if (mLeadIn && !fLeadIn) {
+              directGender = 'male'; directConfidence = 1.0; directSource = 'Đại từ dẫn nhập';
+            } else if (fLeadIn && !mLeadIn) {
+              directGender = 'female'; directConfidence = 1.0; directSource = 'Đại từ dẫn nhập';
+            }
+          }
+
+          if (!directGender) {
+            const leadInNameMatch = leadIn.match(new RegExp('([A-ZÀ-Ỹ][a-zà-ỹ]+(?:\\s+[A-ZÀ-Ỹ][a-zà-ỹ]+)*)\\s+(?:.*?)\\s*' + speechVerbsRegex + '[:]\\s*$'));
+            if (leadInNameMatch) {
+              speaker = leadInNameMatch[1].trim();
+              const spWords = speaker.toLowerCase().split(/\s+/);
+              const givenName = spWords[spWords.length - 1];
+              if (FEMALE_NAME_KEYWORDS.includes(givenName)) {
+                directGender = 'female'; directConfidence = 0.95; directSource = 'Tên riêng dẫn nhập (' + speaker + ')';
+              } else if (MALE_NAME_KEYWORDS.includes(givenName)) {
+                directGender = 'male'; directConfidence = 0.95; directSource = 'Tên riêng dẫn nhập (' + speaker + ')';
+              }
+            }
+          }
+        }
+
+        let cleanSp = speaker ? speaker.trim() : '';
+        const registry = loadCharacterRegistry();
+        const cached = cleanSp ? registry[cleanSp] : null;
+
+        let gender = 'neutral';
+        let confidence = 0.5;
+        let bestSource = '';
+
+        if (directGender) {
+          gender = directGender;
+          confidence = directConfidence;
+          bestSource = directSource;
+        } else if (isParaContinuation && parentDialogueAttr && parentDialogueAttr.gender && parentDialogueAttr.gender !== 'neutral') {
+          speaker = parentDialogueAttr.speaker || '';
+          cleanSp = speaker;
+          gender = parentDialogueAttr.gender;
+          confidence = parentDialogueAttr.confidence || 0.85;
+          bestSource = parentDialogueAttr.source ? `${parentDialogueAttr.source} (Cùng đoạn)` : 'Cùng đoạn thoại';
+        } else if (cached && cached.confidence >= 0.85) {
+          gender = cached.gender;
+          confidence = cached.confidence;
+          bestSource = cached.source ? `${cached.source} (Sổ tay)` : 'Sổ tay Nhân vật';
+        } else {
+          // TẦNG 2: XƯNG HÔ NỘI TẠI TRONG LỜI THOẠI (FIRST-PERSON PRONOUNS)
+          const lowerDia = dialogueContent.toLowerCase();
+          const firstWords = lowerDia.split(/\s+/).slice(0, 8).join(' ');
+
+          const femaleSelf = ['tiểu nữ', 'thiếp', 'thiếp thân', 'nô gia', 'nô tỳ', 'bản cung', 'tiểu muội', 'bần ni', 'lão thân', 'bản cô nương'];
+          const maleSelf = ['tại hạ', 'lão phu', 'bản tọa', 'bổn tọa', 'bần đạo', 'lão nạp', 'bản công tử', 'tiểu sinh', 'mỗ', 'vi sư', 'mạt tướng', 'bản vương', 'bổn vương', 'trẫm', 'bản tôn', 'bổn tôn', 'tiểu tử', 'vi huynh', 'lão hủ'];
+          const femaleToMale = ['phu quân', 'tướng công', 'chàng à', 'chàng ơi', 'sư huynh của muội'];
+          const maleToFemale = ['nương tử', 'tiểu thư', 'cô nương', 'tiểu nha đầu', 'ái phi', 'nàng ơi', 'sư muội của ta'];
+
+          if (femaleSelf.some(w => firstWords.includes(w)) || femaleToMale.some(w => firstWords.includes(w))) {
+            gender = 'female'; confidence = 0.95; bestSource = 'Xưng hô trong thoại (Nữ)';
+          } else if (maleSelf.some(w => firstWords.includes(w)) || maleToFemale.some(w => firstWords.includes(w))) {
+            gender = 'male'; confidence = 0.95; bestSource = 'Xưng hô trong thoại (Nam)';
+          } else {
+            // TẦNG 3: FALLBACK LUÂN PHIÊN (TURN-TAKING)
+            gender = (lastDialogueGender === 'male') ? 'female' : 'male';
+            confidence = 0.50;
+            bestSource = 'Luân phiên đối thoại';
+          }
+        }
+
+        // LƯU VÀO SỔ TAY NHÂN VẬT VỚI CONFIDENCE CAO
+        if (cleanSp && confidence >= 0.80) {
+          saveCharacterToRegistry(cleanSp, gender, confidence, bestSource);
+        }
+
+        lastDialogueGender = gender;
+
+        // =====================================================================
+        // XÁC ĐỊNH BIỂU CẢM & NGỮ ĐIỆU ĐẶC THÙ TIÊN HIỆP (7 CORE EMOTION TAGS)
+        // =====================================================================
+        let emotion = 'normal';
+        let speedFactor = 1.0;
+        let pitchFactor = 1.0;
+        let sfxCue = '';
+
+        const lowerDia = dialogueContent.toLowerCase();
+        const hasExclamation = /[!？！]/.test(dialogueContent);
+        const hasEllipsis = /(\.\.\.|…)/.test(dialogueContent);
+        const combinedManner = `${manner} ${verb} ${leadOut.slice(0, 100)}`.toLowerCase();
+
+        // 1. COLD_SHOUT (Quát lạnh / Sát khí quát - Pha trộn giữa tức giận và lạnh lùng, đanh thép bén ngót)
+        if (
+          COLD_SHOUT_KEYWORDS.some(k => combinedManner.includes(k)) ||
+          (/quát|gầm|thét/i.test(combinedManner) && /lạnh|băng|sát khí/i.test(combinedManner))
+        ) {
+          emotion = 'cold_shout';
+          speedFactor = 1.08;
+          pitchFactor = 0.88;
+          sfxCue = 'hmph';
+        }
+        // 2. ANGRY_SHOUT (Phẫn nộ / Quát tháo / Gầm rống - Tốc độ nhanh dồn dập, cao độ gắt)
+        else if (
+          ANGRY_SHOUT_KEYWORDS.some(k => combinedManner.includes(k)) ||
+          (/quát|gầm|thét|rống|hét/i.test(combinedManner) && hasExclamation) ||
+          /(ngươi dám|chết đi|cút|hỗn xược|tìm cái chết|nạp mạng đi)/i.test(lowerDia)
+        ) {
+          emotion = 'angry_shout';
+          speedFactor = 1.10;
+          pitchFactor = 1.20;
+        }
+        // 3. COLD (Lạnh lùng / Sát khí - Nhàn nhạt, hờ hững, hạ thấp tông giọng, ngắt nghỉ dứt khoát)
+        else if (
+          COLD_KEYWORDS.some(k => combinedManner.includes(k)) ||
+          /lạnh lùng|nhàn nhạt|hờ hững|băng hàn|vô cảm|lạnh lẽo/i.test(combinedManner)
+        ) {
+          emotion = 'cold';
+          speedFactor = 0.96;
+          pitchFactor = 0.90;
+          sfxCue = 'hmph';
+        }
+        // 4. MOCKING (Ngạo mạn / Châm biếm / Cười nhạt - Nhấn giọng kéo dài, cao ngạo)
+        else if (
+          MOCKING_KEYWORDS.some(k => combinedManner.includes(k)) ||
+          /cười lạnh|cười nhạt|khinh thường|mỉa mai|chế giễu|cười gằn/i.test(combinedManner) ||
+          /^(hừ|ha ha|nực cười|chỉ bằng ngươi|buồn cười)/i.test(lowerDia.trim())
+        ) {
+          emotion = 'mocking';
+          speedFactor = 0.96;
+          pitchFactor = 1.08;
+          sfxCue = 'chuckle';
+        }
+        // 5. SOLEMN (Uy nghiêm / Cao nhân / Lão tổ - Tông trầm uy áp, tốc độ tự nhiên không bị lê thê)
+        else if (
+          SOLEMN_KEYWORDS.some(k => combinedManner.includes(k)) ||
+          /(lão phu|bản tôn|bản tọa|bổn tọa|bổn tôn|tiểu bối|lão tổ)/i.test(lowerDia) ||
+          /thản nhiên|chậm rãi nói|bình thản nói|từ tốn nói|uy nghiêm nói|như sấm rền/i.test(combinedManner)
+        ) {
+          emotion = 'solemn';
+          speedFactor = 0.95;
+          pitchFactor = 0.86;
+          sfxCue = 'aura';
+        }
+        // 6. WEAK_PAIN (Trọng thương / Sợ hãi / Thều thào - Âm lượng nhỏ, tốc độ tự nhiên không lê thê)
+        else if (
+          WEAK_PAIN_KEYWORDS.some(k => combinedManner.includes(k)) ||
+          /run rẩy nói|thều thào|giọng yếu ớt|ho ra máu.*?(?:nói|hỏi)|kinh hãi kêu|lắp bắp nói|kêu thảm/i.test(combinedManner) ||
+          (hasEllipsis && /(ngươi\.\.\.|tha\s+mạng|phốc|không\.\.\.)/i.test(lowerDia))
+        ) {
+          emotion = 'weak_pain';
+          speedFactor = 0.95;
+          pitchFactor = 0.92;
+          sfxCue = 'gasp';
+        }
+        // 7. LAUGH_JOY (Sảng khoái / Đắc ý / Cười lớn - Tông cao, tươi vui, tốc độ nhanh)
+        else if (
+          LAUGH_JOY_KEYWORDS.some(k => combinedManner.includes(k)) ||
+          /cười ha hả|cười lớn|mừng rỡ|kích động|sảng khoái/i.test(combinedManner) ||
+          /(ha ha ha|tốt! tốt! tốt!|trời giúp ta)/i.test(lowerDia)
+        ) {
+          emotion = 'laugh_joy';
+          speedFactor = 1.12;
+          pitchFactor = 1.20;
+        }
+        // 8. TELEPATHY (Truyền âm / Thần thức - Vang vọng trong thức hải)
+        else if (
+          TELEPATHY_KEYWORDS.some(k => combinedManner.includes(k)) ||
+          /truyền âm|thần thức|thức hải|trong đầu vang lên/i.test(combinedManner)
+        ) {
+          emotion = 'telepathy';
+          speedFactor = 0.95;
+          pitchFactor = 0.98;
+          sfxCue = 'telepathy';
+        }
+        // 9. TENDER (Dịu dàng / Ngọt ngào)
+        else if (
+          TENDER_KEYWORDS.some(k => combinedManner.includes(k)) ||
+          /dịu dàng|ngọt ngào|khẽ nói|thỏ thẻ/i.test(combinedManner)
+        ) {
+          emotion = 'tender';
+          speedFactor = 0.96;
+          pitchFactor = 1.05;
+        }
+        // 10. WHISPER (Thì thầm / Nhỏ giọng)
+        else if (
+          WHISPER_KEYWORDS.some(k => combinedManner.includes(k)) ||
+          /thì thầm|thì thào|nhỏ giọng|trầm giọng/i.test(combinedManner)
+        ) {
+          emotion = 'whisper';
+          speedFactor = 0.90;
+          pitchFactor = 0.92;
+        }
+
+        // Kế thừa sắc thái biểu cảm của câu thoại trước trong cùng đoạn nếu câu này chưa gắn cảm xúc riêng
+        if (isParaContinuation && parentDialogueAttr && emotion === 'normal' && parentDialogueAttr.emotion && parentDialogueAttr.emotion !== 'normal') {
+          emotion = parentDialogueAttr.emotion;
+          speedFactor = parentDialogueAttr.speedFactor || 1.0;
+          pitchFactor = parentDialogueAttr.pitchFactor || 1.0;
+          sfxCue = parentDialogueAttr.sfxCue || '';
+        }
+
+        return {
+          isDialogue: true,
+          speaker: cleanSp,
+          gender: gender,
+          confidence: confidence,
+          source: bestSource,
+          emotion: emotion,
+          manner: manner,
+          speedFactor: speedFactor,
+          pitchFactor: pitchFactor,
+          sfxCue: sfxCue
+        };
+      } catch (err) {
+        console.warn('[Dialogue Attribution Exception]', err);
+        return { isDialogue: false, gender: 'narration', emotion: 'normal', speedFactor: 1.0, pitchFactor: 1.0, speaker: '' };
+      }
+    }
+
+    function analyzeDialogueGender(text, nextText = '', prevText = '', sIdx = -1) {
+      const res = analyzeDialogueAttribution(text, nextText, prevText, sIdx);
+      return res.gender;
+    }
+
+    function sanitizeDialogueForTTS(text, attr) {
+      if (!attr || !attr.isDialogue) return text;
+      let cleaned = text;
+      if (/^[\s-–—"“«»”]*(hừ|hừm|hừ lạnh|phốc|khụ khụ)[!?,.:;…\s-–—]*/i.test(cleaned)) {
+        const stripped = cleaned.replace(/^[\s-–—"“«»”]*(hừ|hừm|hừ lạnh|phốc|khụ khụ)[!?,.:;…\s-–—]*/i, '');
+        if (stripped && /[a-zA-Z0-9à-ỹÀ-Ỹ]/.test(stripped)) {
+          cleaned = stripped;
+        }
+      }
+      return cleaned;
+    }
+
+    function getPairedMultiVoice(baseVoiceId, provider, targetGender) {
+      if (targetGender === 'narration' || targetGender === 'neutral' || !targetGender) {
+        return baseVoiceId;
+      }
+      const vId = (baseVoiceId || '').toLowerCase();
+      const isBaseFemale = (
+        vId.includes('female') ||
+        vId.includes('hoaimy') ||
+        vId.includes('nhỏ') ||
+        vId.includes('bv421') ||
+        vId.includes('bv074') ||
+        vId.includes('huong') ||
+        vId.includes('richgirl') ||
+        vId.includes('banmai') ||
+        vId.includes('ngochuyen') ||
+        vId.includes('calmwoman') ||
+        vId.includes('thao_vy')
+      );
+
+      // 1. CAPCUT TTS (Online)
+      if (provider === 'capcut' || vId.startsWith('bv') || vId.includes('richgirl') || vId.includes('huong')) {
+        if (targetGender === 'female') {
+          // Thoại Nữ: Tuyệt đối KHÔNG dùng giọng dẫn truyện!
+          if (vId.includes('bv074')) {
+            // Người dẫn là Cô Gái Hoạt Ngôn -> Lời thoại Nữ dùng Review Phim siêu truyền cảm
+            return 'multi_female_richgirl_uranus_bigtts';
+          } else if (vId.includes('richgirl')) {
+            // Người dẫn là Review Phim -> Lời thoại Nữ dùng Cô Gái Hoạt Ngôn tươi trẻ
+            return 'BV074_streaming';
+          } else if (vId.includes('bv421') || vId.includes('huong')) {
+            return 'multi_female_richgirl_uranus_bigtts';
+          }
+          return 'multi_female_richgirl_uranus_bigtts';
+        }
+
+        if (targetGender === 'male') {
+          // Thoại Nam:
+          if (vId.includes('bv075')) {
+            // Người dẫn đã là Nam Trầm Ấm -> Lời thoại Nam dùng giọng Nam Minh (Edge) để tách biệt 100%
+            return 'vi-VN-NamMinhNeural';
+          }
+          return 'BV075_streaming';
+        }
       }
 
-      const finalGender = (fScore > mScore) ? 'female' : 'male';
-      lastDialogueGender = finalGender;
-      return finalGender;
+      // 2. EDGE TTS (Online)
+      if (provider === 'edge' || vId.startsWith('vi-vn-') || vId.startsWith('en-us-')) {
+        if (targetGender === 'female') {
+          if (vId.includes('hoaimy')) {
+            // Người dẫn là Hoài My -> Lời thoại Nữ dùng Review Phim (CapCut)
+            return 'multi_female_richgirl_uranus_bigtts';
+          }
+          return 'vi-VN-HoaiMyNeural';
+        }
+
+        if (targetGender === 'male') {
+          if (vId.includes('namminh')) {
+            // Người dẫn là Nam Minh -> Lời thoại Nam dùng Nam Trầm Ấm (CapCut)
+            return 'BV075_streaming';
+          }
+          return 'vi-VN-NamMinhNeural';
+        }
+      }
+
+      // 3. PIPER OFFLINE TTS (offline_*)
+      if (provider === 'offline' || vId.startsWith('offline_')) {
+        if (targetGender === 'female') {
+          if (vId.includes('banmai')) return 'offline_ngochuyennew';
+          if (vId.includes('ngochuyen')) return 'offline_banmai';
+          if (vId.includes('calmwoman')) return 'offline_banmai';
+          return 'offline_banmai';
+        }
+        if (targetGender === 'male') {
+          if (vId.includes('deepman')) return 'offline_manhdung';
+          if (vId.includes('manhdung')) return 'offline_deepman3909';
+          return 'offline_deepman3909';
+        }
+      }
+
+      // 4. Default Fallback
+      if (targetGender === 'female') {
+        return isBaseFemale ? 'multi_female_richgirl_uranus_bigtts' : 'BV074_streaming';
+      }
+      if (targetGender === 'male') {
+        return !isBaseFemale ? 'vi-VN-NamMinhNeural' : 'BV075_streaming';
+      }
+
+      return baseVoiceId;
     }
 
     // =====================================================================
@@ -11631,16 +12532,126 @@ body.zen-mode #nrFabAdd {
         noise.start(now);
       }
 
+      function playHmph() {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(140, now);
+        osc.frequency.exponentialRampToValueAtTime(70, now + 0.15);
+        gain.gain.setValueAtTime(0.35, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.16);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.18);
+      }
+
+      function playChuckle() {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+        [0, 0.08].forEach((delay, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(180 - i * 20, now + delay);
+          osc.frequency.exponentialRampToValueAtTime(120, now + delay + 0.06);
+          gain.gain.setValueAtTime(0.25, now + delay);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + delay + 0.07);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now + delay);
+          osc.stop(now + delay + 0.08);
+        });
+      }
+
+      function playGasp() {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+        const bufLen = Math.floor(ctx.sampleRate * 0.18);
+        const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'highpass';
+        filter.frequency.setValueAtTime(1200, now);
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.05, now);
+        gain.gain.linearRampToValueAtTime(0.35, now + 0.08);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.18);
+        src.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        src.start(now);
+      }
+
+      function playAura() {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(65, now);
+        osc.frequency.exponentialRampToValueAtTime(32, now + 0.55);
+        gain.gain.setValueAtTime(0.4, now);
+        gain.gain.exponentialRampToValueAtTime(0.005, now + 0.6);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.65);
+      }
+
+      function playTelepathy() {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+        [880, 1320].forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, now);
+          osc.frequency.exponentialRampToValueAtTime(freq * 1.04, now + 0.15);
+          osc.frequency.exponentialRampToValueAtTime(freq, now + 0.35);
+          const vol = 0.18 / (idx + 1);
+          gain.gain.setValueAtTime(0.01, now);
+          gain.gain.linearRampToValueAtTime(vol, now + 0.06);
+          gain.gain.exponentialRampToValueAtTime(0.002, now + 0.38);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.4);
+        });
+      }
+
       return {
         unlock: unlock,
-        play: function(type) {
+        play: function(type, count = 1) {
           try {
             if (localStorage.getItem('reader_sfx_enabled') === '0') return;
             unlock();
-            if (type === 'impact') playImpact();
-            else if (type === 'explosion') playExplosion();
-            else if (type === 'clash') playClash();
-            else if (type === 'whoosh') playWhoosh();
+            if (type === 'hmph') { playHmph(); return; }
+            if (type === 'chuckle') { playChuckle(); return; }
+            if (type === 'gasp') { playGasp(); return; }
+            if (type === 'aura') { playAura(); return; }
+            if (type === 'telepathy') { playTelepathy(); return; }
+
+            const repeatCount = Math.min(Math.max(1, count || 1), 4);
+            const intervalMs = (type === 'explosion') ? 400 : (type === 'clash' ? 220 : 180);
+            for (let i = 0; i < repeatCount; i++) {
+              setTimeout(() => {
+                if (type === 'impact') playImpact();
+                else if (type === 'explosion') playExplosion();
+                else if (type === 'clash') playClash();
+                else if (type === 'whoosh') playWhoosh();
+              }, i * intervalMs);
+            }
           } catch (e) {
             console.warn('[SFX Engine Error]', e);
           }
@@ -11648,27 +12659,44 @@ body.zen-mode #nrFabAdd {
       };
     })();
 
-    const SFX_PATTERNS = [
-      { type: 'explosion', regex: /(?:^|[\s“"«'–—])(oanh\s+long(?:\s+long)?|oành(?:\s+oành)?|oanh|ầm(?:\s+ầm){1,2}|ầm\s+vang|ầm|đùng\s+đoàng|đùng(?:\s+đùng)?|đoàng|bùm(?:\s+bùm)?|nổ\s+tung)(?:\s+một\s+tiếng)?(?=[!?.…,\s”"»'–—]|$)/i },
-      { type: 'impact', regex: /(?:^|[\s“"«'–—])(rầm(?:\s+rầm)?|bịch(?:\s+bịch)?|huỵch|bộp(?:\s+bộp)?|bốp(?:\s+bốp)?|chát|rắc(?:\s+rắc)?|bành)(?:\s+một\s+tiếng)?(?=[!?.…,\s”"»'–—]|$)/i },
-      { type: 'clash', regex: /(?:^|[\s“"«'–—])(leng\s+keng|keng(?:\s+keng)?|choang(?:\s+choang)?|xoảng(?:\s+xoảng)?|xủng\s+xoảng|boong|coong)(?:\s+một\s+tiếng)?(?=[!?.…,\s”"»'–—]|$)/i },
-      { type: 'whoosh', regex: /(?:^|[\s“"«'–—])(vun\s+vút|vút(?:\s+vút)?|vèo(?:\s+vèo)?|xẹt(?:\s+xẹt)?|xoẹt(?:\s+xoẹt)?|chéo|vù(?:\s+vù)?|phù)(?:\s+một\s+tiếng)?(?=[!?.…,\s”"»'–—]|$)/i }
-    ];
+    const SFX_WORDS_RAW = '(?:oanh\\s+long(?:\\s+long)?|oành(?:\\s+oành)?|oanh\\s+tạc|oanh\\s+kích|oanh\\s+ầm|xuy(?:\\s+xuy){1,2}|xuy(?=[!?.…~–—]|(?:\\s+một\\s+tiếng))|phanh(?:\\s+phanh)?|ầm(?:\\s+ầm){1,2}|ầm\\s+vang|ầm\\s+ào|đùng\\s+đoàng|đùng(?:\\s+đùng)?|đoàng(?:\\s+đoàng)?|bùm(?:\\s+bùm)?|nổ\\s+tung|rầm(?:\\s+rầm)?|bịch(?:\\s+bịch)?|huỵch(?:\\s+huỵch)?|bộp(?:\\s+bộp)?|bốp(?:\\s+bốp)?|chát(?:\\s+chát)?(?![a-zA-Z0-9à-ỹÀ-Ỹ\\s]*(?:chúa|ngắt))|rắc(?:\\s+rắc)?|bành\\s+bành|leng\\s+keng|keng(?:\\s+keng)?|choang(?:\\s+choang)?|xoảng(?:\\s+xoảng)?|xủng\\s+xoảng|boong(?:\\s+boong)?|coong(?:\\s+coong)?|vun\\s+vút|vút(?:\\s+vút)?|vèo(?:\\s+vèo)?|xẹt(?:\\s+xẹt)?|xoẹt(?:\\s+xoẹt)?|chéo(?:\\s+chéo)?|vù(?:\\s+vù)?|phù(?:\\s+phù)?(?![a-zA-Z0-9à-ỹÀ-Ỹ\\s]*(?:hợp|thủy|hộ|du|hiệu|chú)))';
+
+    function getSfxGlobalRegex() {
+      try {
+        return new RegExp('(?<![\\p{L}\\p{N}])' + SFX_WORDS_RAW + '(?:\\s+một\\s+tiếng)?(?![\\p{L}\\p{N}])', 'giu');
+      } catch (e) {
+        return new RegExp('(?:^|[^a-zA-Z0-9à-ỹÀ-Ỹ])(' + SFX_WORDS_RAW + ')(?:\\s+một\\s+tiếng)?(?![a-zA-Z0-9à-ỹÀ-Ỹ])', 'gi');
+      }
+    }
 
     function detectSfxInText(text) {
       if (!text) return null;
-      for (const p of SFX_PATTERNS) {
-        if (p.regex.test(text)) return p.type;
+      try {
+        const regex = getSfxGlobalRegex();
+        const matches = text.match(regex);
+        if (!matches || matches.length === 0) return null;
+        const first = matches[0].toLowerCase();
+        let type = 'explosion';
+        if (/keng|choang|xoảng|boong|coong/i.test(first)) type = 'clash';
+        else if (/vút|vèo|xẹt|xoẹt|chéo|vù|phù|xuy/i.test(first)) type = 'whoosh';
+        else if (/rầm|bịch|huỵch|bộp|bốp|chát|rắc|bành|phanh/i.test(first)) type = 'impact';
+        else type = 'explosion';
+        return { type: type, count: matches.length };
+      } catch (e) {
+        return null;
       }
-      return null;
     }
 
     function pruneSfxFromText(text) {
       if (!text) return text;
-      let res = text;
-      const pruneRegex = /(?:^|[\s“"«'–—])(?:oanh\s+long(?:\s+long)?|oành(?:\s+oành)?|oanh|ầm(?:\s+ầm){1,2}|ầm\s+vang|ầm|đùng\s+đoàng|đùng(?:\s+đùng)?|đoàng|bùm(?:\s+bùm)?|nổ\s+tung|rầm(?:\s+rầm)?|bịch(?:\s+bịch)?|huỵch|bộp(?:\s+bộp)?|bốp(?:\s+bốp)?|chát|rắc(?:\s+rắc)?|bành|leng\s+keng|keng(?:\s+keng)?|choang(?:\s+choang)?|xoảng(?:\s+xoảng)?|xủng\s+xoảng|boong|coong|vun\s+vút|vút(?:\s+vút)?|vèo(?:\s+vèo)?|xẹt(?:\s+xẹt)?|xoẹt(?:\s+xoẹt)?|chéo|vù(?:\s+vù)?|phù)(?:\s+một\s+tiếng)?[!?.…,”"»'–—\s]*/gi;
-      res = res.replace(pruneRegex, ' ').replace(/\s{2,}/g, ' ').trim();
-      return res;
+      try {
+        const regex = getSfxGlobalRegex();
+        let res = text.replace(regex, ' ');
+        res = res.replace(/[\s,;:!?.\-–—]+/gu, ' ').trim();
+        return res;
+      } catch (e) {
+        return text;
+      }
     }
 
     async function prefetchSentenceAudio(chIdx, sIdx) {
@@ -11677,8 +12705,9 @@ body.zen-mode #nrFabAdd {
       const text = allSentences[sIdx].trim();
       if (!text || isParagraphSkipped(text)) return;
       let spokenText = filterSkippedPhrases(text);
-      const sfxType = detectSfxInText(spokenText);
-      if (sfxType && (localStorage.getItem('reader_sfx_enabled') !== '0')) {
+      let sfxInfo = null;
+      try { sfxInfo = detectSfxInText(spokenText); } catch (_) {}
+      if (sfxInfo && (localStorage.getItem('reader_sfx_enabled') !== '0')) {
         spokenText = pruneSfxFromText(spokenText);
       }
       if (!spokenText || !/[\p{L}\p{N}]/u.test(spokenText)) return;
@@ -11690,7 +12719,18 @@ body.zen-mode #nrFabAdd {
 
       if (provider === 'native' || voiceId === 'android_native') return;
 
-      const key = getAudioCacheKey(chIdx, sIdx, voiceId);
+      const isMultiVoice = (localStorage.getItem('reader_multi_voice') !== '0');
+      const nextSentence = (sIdx + 1 < allSentences.length) ? allSentences[sIdx + 1] : '';
+      const attr = isMultiVoice ? analyzeDialogueAttribution(text, nextSentence, prevSentence, sIdx) : { isDialogue: false, gender: 'narration', emotion: 'normal', speedFactor: 1.0, pitchFactor: 1.0, speaker: '' };
+      if (isMultiVoice && attr.isDialogue) {
+        spokenText = sanitizeDialogueForTTS(spokenText, attr);
+      }
+      spokenText = spokenText.replace(/(?<!\d),\s*(?!——)/g, ', —— ');
+
+      const effectiveVoiceId = (isMultiVoice && attr.isDialogue) ? getPairedMultiVoice(voiceId, provider, attr.gender) : voiceId;
+      const effectiveSpeed = currentSpeed * attr.speedFactor;
+
+      const key = getAudioCacheKey(chIdx, sIdx, `${effectiveVoiceId}_${attr.emotion}`);
       if (paragraphAudioCache.has(key) || paragraphPrefetchInFlight.has(key)) return;
 
       paragraphPrefetchInFlight.add(key);
@@ -11701,19 +12741,23 @@ body.zen-mode #nrFabAdd {
           body: JSON.stringify({
             text: spokenText,
             book_id: bookData ? bookData.id : null,
-            voice_id: voiceId,
+            voice_id: effectiveVoiceId,
+            base_voice_id: voiceId,
             provider: provider,
-            speed: currentSpeed,
+            speed: effectiveSpeed,
             bilingual_mode: currentBilingualMode,
-            multi_voice: (localStorage.getItem('reader_multi_voice') !== '0')
+            multi_voice: isMultiVoice,
+            emotion: attr.emotion,
+            dialogue_role: attr.gender,
+            speaker: attr.speaker
           })
         });
         if (res.ok) {
           const blob = await res.blob();
           if (blob.size >= 300) {
             paragraphAudioCache.set(key, blob);
-            // Giới hạn bộ đệm 20 câu gần nhất
-            if (paragraphAudioCache.size > 20) {
+            // Giới hạn bộ đệm 25 câu gần nhất
+            if (paragraphAudioCache.size > 25) {
               const firstKey = paragraphAudioCache.keys().next().value;
               paragraphAudioCache.delete(firstKey);
             }
@@ -11724,7 +12768,7 @@ body.zen-mode #nrFabAdd {
       }
     }
 
-    function triggerPrefetchAhead(startIdx, count = 2) {
+    function triggerPrefetchAhead(startIdx, count = 5) {
       if (!allSentences || allSentences.length === 0) return;
 
       for (let i = 1; i <= count; i++) {
@@ -11737,23 +12781,23 @@ body.zen-mode #nrFabAdd {
 
     // =====================================================================
     // BỘ ĐIỀU PHỐI KHOẢNG NGHỈ TỰ NHIÊN THEO NGỮ CẢNH (CONTEXTUAL PAUSE TUNER)
-    // - Giữa 2 câu cùng đoạn: ngắt nhẹ 180ms để giữ nhịp thở tự nhiên
-    // - Hết một đoạn văn (xuống dòng): ngắt 520ms như người đọc lấy hơi chuyển cảnh
-    // - Hết chương: ngắt 1200ms để lắng đọng trước khi chuyển sang chương mới
+    // - Giữa 2 câu cùng đoạn: ngắt siêu mượt 25ms (liền mạch như hơi thở, chống giật cục 100%)
+    // - Hết một đoạn văn (xuống dòng): ngắt 150ms chuyển ý tự nhiên
+    // - Hết chương: ngắt 500ms trước khi nạp chương tiếp theo
     // =====================================================================
     function advanceToNextSentenceWithContextualPause() {
       if (!isPlaying) return;
       const mySession = currentPlaybackSessionId;
       const nextIdx = currentParagraphIndex + 1;
 
-      let pauseMs = 180;
+      let pauseMs = 60;
       if (nextIdx >= allSentences.length) {
-        pauseMs = 1200;
+        pauseMs = 500;
       } else if (sentenceMeta && sentenceMeta[currentParagraphIndex] && sentenceMeta[nextIdx]) {
         const currPara = sentenceMeta[currentParagraphIndex].paraIndex;
         const nextPara = sentenceMeta[nextIdx].paraIndex;
         if (currPara !== undefined && nextPara !== undefined && currPara !== nextPara) {
-          pauseMs = 520;
+          pauseMs = 200;
         }
       }
 
@@ -11843,28 +12887,27 @@ body.zen-mode #nrFabAdd {
       }
 
       // KÍCH HOẠT HIỆU ỨNG ÂM THANH ĐIỆN ẢNH (FOLEY SFX) VÀ CẮT BỎ TỪ TƯỢNG THANH THÔ
-      const sfxType = detectSfxInText(text);
-      if (sfxType && (localStorage.getItem('reader_sfx_enabled') !== '0')) {
-        SfxEngine.play(sfxType);
-      }
-
+      let sfxInfo = null;
+      try { sfxInfo = detectSfxInText(text); } catch (_) {}
       let spokenText = filterSkippedPhrases(text);
-      if (sfxType && (localStorage.getItem('reader_sfx_enabled') !== '0')) {
-        SfxEngine.play(sfxType);
+      if (sfxInfo && (localStorage.getItem('reader_sfx_enabled') !== '0')) {
+        try { SfxEngine.play(sfxInfo.type, sfxInfo.count); } catch (_) {}
         spokenText = pruneSfxFromText(spokenText);
       }
 
       if (!spokenText || !/[\p{L}\p{N}]/u.test(spokenText)) {
-        if (sfxType && (localStorage.getItem('reader_sfx_enabled') !== '0')) {
-          console.log(`[SFX] Đã phát hiệu ứng '${sfxType}', chuyển tiếp câu`);
+        if (sfxInfo && (localStorage.getItem('reader_sfx_enabled') !== '0')) {
+          console.log(`[SFX] Đã phát hiệu ứng '${sfxInfo.type}' (x${sfxInfo.count}), chuyển tiếp câu`);
           setLoading(false);
           updateMediaSession(ch.title, text);
-          const sfxDelay = (sfxType === 'explosion') ? 1150 : (sfxType === 'clash' ? 750 : 550);
+          const baseDelay = (sfxInfo.type === 'explosion') ? 1100 : (sfxInfo.type === 'clash' ? 700 : 500);
+          const intervalMs = (sfxInfo.type === 'explosion') ? 400 : (sfxInfo.type === 'clash' ? 220 : 180);
+          const totalDelay = baseDelay + (sfxInfo.count - 1) * intervalMs;
           setTimeout(() => {
             if (isPlaying && mySessionId === currentPlaybackSessionId) {
               advanceToNextSentenceWithContextualPause();
             }
-          }, sfxDelay);
+          }, totalDelay);
           return;
         }
         console.log(`[Skip] Bỏ qua câu do không còn từ đọc sau khi lọc cụm từ: "${text}"`);
@@ -11877,28 +12920,42 @@ body.zen-mode #nrFabAdd {
       const voiceId = selectedOpt.value || 'BV074_streaming';
       const provider = selectedOpt.dataset?.provider || 'capcut';
 
+      const isMultiVoice = (localStorage.getItem('reader_multi_voice') !== '0');
+      const nextSentence = (idx + 1 < allSentences.length) ? allSentences[idx + 1] : '';
+      const prevSentence = (idx > 0) ? allSentences[idx - 1] : '';
+      let attr = { isDialogue: false, gender: 'narration', emotion: 'normal', speedFactor: 1.0, pitchFactor: 1.0, speaker: '' };
+      if (isMultiVoice) {
+        try {
+          attr = analyzeDialogueAttribution(text, nextSentence, prevSentence, idx);
+          if (attr.isDialogue) {
+            spokenText = sanitizeDialogueForTTS(spokenText, attr);
+          }
+        } catch (e) {
+          console.warn('[Dialogue Attribution Error]', e);
+        }
+      }
+
+      // Tinh chỉnh nhịp ngắt nghỉ dấu phẩy (Comma Prosody & Breath Enhancer):
+      // Bổ sung nhịp ngắt hơi biểu cảm sâu lắng (~1000ms) giữa các vế câu ngăn cách bởi dấu phẩy
+      spokenText = spokenText.replace(/(?<!\d),\s*(?!——)/g, ', —— ');
+
       // 1. Giọng hệ thống máy Android (android_native)
       const isSystemNativeVoice = (provider === 'native' || voiceId === 'android_native');
       if (isSystemNativeVoice) {
         let effectivePitch = currentPitch;
-        let effectiveSpeed = currentSpeed;
-        const isMultiVoice = (localStorage.getItem('reader_multi_voice') !== '0');
-        if (isMultiVoice) {
-          const role = analyzeDialogueGender(spokenText);
-          if (role === 'female') {
-            effectivePitch = Math.min(2.0, currentPitch * 1.15); // Cao hơn, trong trẻo cho nhân vật nữ
-          } else if (role === 'male') {
-            effectivePitch = Math.max(0.5, currentPitch * 0.88); // Trầm ấm cho nhân vật nam
-          }
-          if (/[!？！]/.test(spokenText)) {
-            effectiveSpeed = Math.min(2.0, currentSpeed * 1.05); // Hào hứng, cao trào
-          } else if (/(\.\.\.|…)/.test(spokenText)) {
-            effectiveSpeed = Math.max(0.5, currentSpeed * 0.94); // Suy tư, ngập ngừng
-          }
+        let effectiveSpeed = currentSpeed * attr.speedFactor;
+        if (isMultiVoice && attr.isDialogue) {
+          const genderMultiplier = (attr.gender === 'female') ? 1.25 : ((attr.gender === 'male') ? 0.76 : 1.0);
+          effectivePitch = currentPitch * genderMultiplier * attr.pitchFactor;
+          effectivePitch = Math.max(0.5, Math.min(2.0, effectivePitch));
+          effectiveSpeed = Math.max(0.5, Math.min(2.5, effectiveSpeed));
         }
         if (window.HonorBridge && window.HonorBridge.speakNativeWithPitch) {
           setLoading(false);
           updateMediaSession(ch.title, spokenText);
+          if (attr.sfxCue && localStorage.getItem('reader_sfx_enabled') !== '0') {
+            try { SfxEngine.play(attr.sfxCue); } catch (_) {}
+          }
           const ok = window.HonorBridge.speakNativeWithPitch(spokenText, effectiveSpeed, effectivePitch);
           if (!ok) {
             console.warn('[Native TTS] Thử lại câu...');
@@ -11939,7 +12996,10 @@ body.zen-mode #nrFabAdd {
       }
 
       // 2. Giọng Online & Giọng Offline AI đã tải về
-      const cacheKey = getAudioCacheKey(currentChapterIndex, idx, voiceId);
+      const effectiveVoiceId = (isMultiVoice && attr.isDialogue) ? getPairedMultiVoice(voiceId, provider, attr.gender) : voiceId;
+      const effectiveSpeed = currentSpeed * attr.speedFactor;
+
+      const cacheKey = getAudioCacheKey(currentChapterIndex, idx, `${effectiveVoiceId}_${attr.emotion}`);
       let blob = paragraphAudioCache.get(cacheKey);
 
       if (blob) {
@@ -11953,11 +13013,15 @@ body.zen-mode #nrFabAdd {
             body: JSON.stringify({
               text: spokenText,
               book_id: bookData ? bookData.id : null,
-              voice_id: voiceId,
+              voice_id: effectiveVoiceId,
+              base_voice_id: voiceId,
               provider: provider,
-              speed: currentSpeed,
+              speed: effectiveSpeed,
               bilingual_mode: currentBilingualMode,
-              multi_voice: (localStorage.getItem('reader_multi_voice') !== '0')
+              multi_voice: isMultiVoice,
+              emotion: attr.emotion,
+              dialogue_role: attr.gender,
+              speaker: attr.speaker
             })
           });
 
@@ -12002,7 +13066,8 @@ body.zen-mode #nrFabAdd {
       const audioUrl = URL.createObjectURL(blob);
       window._currentAudioBlobUrl = audioUrl;
       audio.src = audioUrl;
-      audio.playbackRate = (typeof currentSpeed === 'number' && currentSpeed > 0) ? currentSpeed : 1.0;
+      const targetRate = (typeof effectiveSpeed === 'number' && effectiveSpeed > 0) ? effectiveSpeed : (currentSpeed || 1.0);
+      audio.playbackRate = Math.max(0.5, Math.min(2.5, targetRate));
       updateMediaSession(ch.title, text);
 
       audio.onended = () => {
@@ -12018,9 +13083,16 @@ body.zen-mode #nrFabAdd {
         advanceToNextSentenceWithContextualPause();
       };
 
-      // Nếu câu có hiệu ứng âm thanh (SFX) ở đầu, tạo khoảng nghỉ ngắn 320ms để tiếng nổ/binh khí nổ vang trước khi giọng đọc bắt đầu
-      if (sfxType && (localStorage.getItem('reader_sfx_enabled') !== '0')) {
-        await new Promise(r => setTimeout(r, 320));
+      // Nếu câu có hiệu ứng âm thanh (SFX) ở đầu, tạo khoảng nghỉ ngắn 120ms để tiếng nổ/binh khí nổ vang trước khi giọng đọc bắt đầu
+      if (sfxInfo && (localStorage.getItem('reader_sfx_enabled') !== '0')) {
+        await new Promise(r => setTimeout(r, 120));
+        if (mySessionId !== currentPlaybackSessionId || !isPlaying) return;
+      }
+
+      // Kích hoạt âm thanh biểu cảm nhân vật (Hừ lạnh, ho ra máu, tiếng cười, uy áp, thần thức...)
+      if (attr.sfxCue && (localStorage.getItem('reader_sfx_enabled') !== '0')) {
+        try { SfxEngine.play(attr.sfxCue); } catch (_) {}
+        await new Promise(r => setTimeout(r, 50));
         if (mySessionId !== currentPlaybackSessionId || !isPlaying) return;
       }
 
@@ -12032,7 +13104,7 @@ body.zen-mode #nrFabAdd {
         setLoading(false);
       }
 
-      triggerPrefetchAhead(idx, 2);
+      triggerPrefetchAhead(idx, 5);
     }
 
     window.onNativeTtsStart = function() {
@@ -12330,26 +13402,84 @@ body.zen-mode #nrFabAdd {
     }
 
     function nextParagraph() {
+      const willPlay = isPlaying || window.isPlaying;
+      if (!allSentences || allSentences.length === 0 || currentSentenceIndex + 1 >= allSentences.length) {
+        // Đang ở cuối chương -> Nhảy ngay sang chương kế tiếp
+        if (bookData && bookData.chapters && currentChapterIndex + 1 < bookData.chapters.length) {
+          const nextChIdx = currentChapterIndex + 1;
+          const nextTitle = bookData.chapters[nextChIdx]?.title || `Chương ${nextChIdx + 1}`;
+          showToast(`⏭️ Sang đầu: ${nextTitle}`);
+          currentPlaybackSessionId++;
+          if (audio) {
+            audio.pause();
+            audio.onended = null;
+            cleanupCurrentAudioUrl();
+            try { audio.removeAttribute('src'); audio.load(); } catch (_) {}
+          }
+          if (window.HonorBridge && window.HonorBridge.stopNativeSpeak) {
+            try { window.HonorBridge.stopNativeSpeak(); } catch(_) {}
+          }
+          if ('speechSynthesis' in window) {
+            try { window.speechSynthesis.cancel(); } catch(_) {}
+          }
+          setLoading(false);
+          isChapterTransitioning = false;
+          loadChapter(nextChIdx, 0, willPlay, false);
+          return;
+        } else if (bookData && bookData.is_web && typeof fetchMoreWebChapters === 'function') {
+          showToast('⏳ Đang tải thêm chương tiếp theo từ web...');
+          fetchMoreWebChapters(5).then(added => {
+            if (added > 0 && currentChapterIndex + 1 < bookData.chapters.length) {
+              isChapterTransitioning = false;
+              loadChapter(currentChapterIndex + 1, 0, willPlay, false);
+            } else {
+              pauseAudio();
+              showToast('🎉 Đã là chương mới nhất của truyện!');
+            }
+          });
+          return;
+        } else {
+          showToast('🎉 Đã là câu cuối cùng của quyển truyện!');
+          return;
+        }
+      }
       currentPlaybackSessionId++;
       if (audio) {
         audio.pause();
         audio.onended = null;
         cleanupCurrentAudioUrl();
       }
-      currentParagraphIndex++;
-      playParagraph(currentParagraphIndex);
+      currentSentenceIndex++;
+      currentParagraphIndex = currentSentenceIndex;
+      playParagraph(currentSentenceIndex);
     }
 
     function prevParagraph() {
-      if (currentParagraphIndex > 0) {
+      if (currentSentenceIndex > 0) {
         currentPlaybackSessionId++;
         if (audio) {
           audio.pause();
           audio.onended = null;
           cleanupCurrentAudioUrl();
         }
-        currentParagraphIndex--;
-        playParagraph(currentParagraphIndex);
+        currentSentenceIndex--;
+        currentParagraphIndex = currentSentenceIndex;
+        playParagraph(currentSentenceIndex);
+      } else if (currentChapterIndex > 0 && bookData && bookData.chapters) {
+        const prevChIdx = currentChapterIndex - 1;
+        const prevTitle = bookData.chapters[prevChIdx]?.title || `Chương ${prevChIdx + 1}`;
+        showToast(`📖 Lùi về cuối: ${prevTitle}`);
+        currentPlaybackSessionId++;
+        if (audio) {
+          audio.pause();
+          audio.onended = null;
+          cleanupCurrentAudioUrl();
+          try { audio.removeAttribute('src'); audio.load(); } catch (_) {}
+        }
+        setLoading(false);
+        loadChapter(prevChIdx, 999999, isPlaying, true);
+      } else {
+        showToast('📖 Đã là câu đầu tiên của quyển truyện!');
       }
     }
 
@@ -12623,12 +13753,12 @@ body.zen-mode #nrFabAdd {
       uiObserver.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['class'] });
     } catch (e) {}
 
-    window.safeTurnNextPage = function() {
-      if (isPlaying) {
+    window.safeTurnNextPage = function(isUserGesture = false) {
+      if (!isUserGesture && isPlaying) {
         console.log('[SafeTurn] Bỏ qua tự lật trang vì Media đang phát');
         return;
       }
-      if (typeof isTouchStartedInTopSafeZone !== 'undefined' && isTouchStartedInTopSafeZone) {
+      if (!isUserGesture && typeof isTouchStartedInTopSafeZone !== 'undefined' && isTouchStartedInTopSafeZone) {
         console.log('[SafeTurn] Bỏ qua lật trang vì thao tác ở vùng an toàn 1/5 phía trên');
         return;
       }
@@ -12636,15 +13766,15 @@ body.zen-mode #nrFabAdd {
       const now = Date.now();
       if (now - lastPageTurnTime < 260) return;
       lastPageTurnTime = now;
-      window.nextPage();
+      window.nextPage(isUserGesture);
     };
 
-    window.safeTurnPrevPage = function() {
-      if (isPlaying) {
+    window.safeTurnPrevPage = function(isUserGesture = false) {
+      if (!isUserGesture && isPlaying) {
         console.log('[SafeTurn] Bỏ qua tự lật trang vì Media đang phát');
         return;
       }
-      if (typeof isTouchStartedInTopSafeZone !== 'undefined' && isTouchStartedInTopSafeZone) {
+      if (!isUserGesture && typeof isTouchStartedInTopSafeZone !== 'undefined' && isTouchStartedInTopSafeZone) {
         console.log('[SafeTurn] Bỏ qua lật trang vì thao tác ở vùng an toàn 1/5 phía trên');
         return;
       }
@@ -12652,7 +13782,7 @@ body.zen-mode #nrFabAdd {
       const now = Date.now();
       if (now - lastPageTurnTime < 260) return;
       lastPageTurnTime = now;
-      window.prevPage();
+      window.prevPage(isUserGesture);
     };
 
     window.turnNextPage = window.safeTurnNextPage;
@@ -12793,16 +13923,29 @@ body.zen-mode #nrFabAdd {
       if (isUIOverlayActive()) return;
       const sc = document.getElementById('readerScrollArea') || window;
       const maxScroll = Math.max(0, sc.scrollHeight - sc.clientHeight);
-      const atBottom = maxScroll > 60 && (sc.scrollTop + sc.clientHeight) >= (sc.scrollHeight - 25);
+      const atBottom = (maxScroll <= 35) || ((sc.scrollTop + sc.clientHeight) >= (sc.scrollHeight - 45)) || (sc.scrollTop >= maxScroll - 35);
 
       if (atBottom) {
         if (typeof triggerNextChapterByScroll === 'function') {
           triggerNextChapterByScroll();
+        } else if (typeof window.nextChapter === 'function') {
+          window.nextChapter();
         }
         return;
       }
 
       const targetScroll = getOptimalPageTurnTarget(sc, 'next');
+
+      if (targetScroll <= sc.scrollTop + 5 || targetScroll >= maxScroll - 5) {
+        if (sc.scrollTop >= maxScroll - 45 || maxScroll <= 35) {
+          if (typeof triggerNextChapterByScroll === 'function') {
+            triggerNextChapterByScroll();
+          } else if (typeof window.nextChapter === 'function') {
+            window.nextChapter();
+          }
+          return;
+        }
+      }
 
       if (window.currentReaderPageMode === 'slide' || window.currentReaderPageMode === 'curl') {
         isPageFlipping = true;
@@ -12908,11 +14051,13 @@ body.zen-mode #nrFabAdd {
       const sc = document.getElementById('readerScrollArea') || window;
       sc.scrollLeft = 0;
       const maxScroll = Math.max(0, sc.scrollHeight - sc.clientHeight);
-      const atTop = maxScroll > 60 && sc.scrollTop <= 15;
+      const atTop = sc.scrollTop <= 15;
 
       if (atTop) {
-        if (typeof triggerPrevChapter === 'function') {
-          triggerPrevChapter();
+        if (typeof triggerPrevChapterByScroll === 'function') {
+          triggerPrevChapterByScroll();
+        } else if (typeof window.prevChapter === 'function') {
+          window.prevChapter();
         }
         return;
       }
@@ -13137,18 +14282,17 @@ body.zen-mode #nrFabAdd {
         const absX = Math.abs(dx);
         const absY = Math.abs(dy);
 
-        // 1. Nh?n di?n vu?t ngang d?t kho?t ?? l?t trang
-        if (absX > 35 && absX > absY * 1.5) {
-          if (isPlaying) return;
+        // 1. Nhận diện vuốt ngang dứt khoát để lật trang
+        if (absX > 35 && absX > absY * 1.15) {
           const curSel = window.getSelection();
           if (curSel && !curSel.isCollapsed && curSel.toString().trim()) {
             try { curSel.removeAllRanges(); } catch(e){}
           }
           isTouchGestureHandled = true;
           if (dx < 0) {
-            window.safeTurnNextPage();
+            window.safeTurnNextPage(true);
           } else {
-            window.safeTurnPrevPage();
+            window.safeTurnPrevPage(true);
           }
         }
       }
@@ -13164,7 +14308,7 @@ body.zen-mode #nrFabAdd {
         return;
       }
 
-      // Ki?m tra modal ?ang m? th?c t?
+      // Kiểm tra modal đang mở thực tế
       const modalOpen = document.querySelector('.modal-overlay.open, .modal.open, .library-modal.open, .drawer.open, .chapter-drawer.open, #chapterDrawer.open, .drawer-overlay.open, #drawerOverlay.open');
       if (modalOpen) {
         isTouchGestureHandled = false;
@@ -13187,18 +14331,17 @@ body.zen-mode #nrFabAdd {
         const absY = Math.abs(diffY);
         const duration = Date.now() - touchGestureStartTime;
 
-        // 1. Vu?t nhanh nh? tay ?? l?t trang 3D
-        if (duration < 750 && absX > 30 && absX > absY * 1.5) {
-          if (isPlaying) return;
+        // 1. Vuốt nhanh nhả tay để lật trang 3D
+        if (duration < 750 && absX > 30 && absX > absY * 1.15) {
           const curSel = window.getSelection();
           if (curSel && !curSel.isCollapsed && curSel.toString().trim()) {
             try { curSel.removeAllRanges(); } catch(e){}
           }
           isTouchGestureHandled = true;
           if (diffX < 0) {
-            window.safeTurnNextPage();
+            window.safeTurnNextPage(true);
           } else {
-            window.safeTurnPrevPage();
+            window.safeTurnPrevPage(true);
           }
           return;
         }
@@ -13442,8 +14585,8 @@ body.zen-mode #nrFabAdd {
     // ==========================================
     const DEFAULT_OTA_3G_URL = 'https://rehab-survey-clusters-joins.trycloudflare.com';
     const DEFAULT_OTA_WIFI_URL = 'http://192.168.1.204:5000';
-    const CURRENT_APP_VERSION = 'v1.6.33';
-    const CURRENT_APP_BUILD = 193;
+    const CURRENT_APP_VERSION = 'v1.6.51';
+    const CURRENT_APP_BUILD = 211;
 
     function initOtaSettingsUI() {
       const input = document.getElementById('nrOtaServerInput');
@@ -13480,15 +14623,15 @@ body.zen-mode #nrFabAdd {
       const input = document.getElementById('nrOtaServerInput');
       let server = (input && input.value ? input.value.trim() : '') || localStorage.getItem('honor_ota_server') || '';
       
-      // Nếu server rỗng hoặc trỏ về localhost / 127.0.0.1 của điện thoại -> Tự động chuyển sang Cloudflare 3G hoặc Wi-Fi
-      if (!server || server.includes('127.0.0.1') || server.includes('localhost')) {
+      // Nếu server rỗng hoặc trỏ về localhost / 127.0.0.1 / :8765 của điện thoại -> Tự động chuyển sang Cloudflare 3G hoặc Wi-Fi
+      if (!server || server.includes('127.0.0.1') || server.includes('localhost') || server.includes(':8765')) {
         server = DEFAULT_OTA_3G_URL;
       }
       server = server.replace(/\/+$/, '');
       if (!server.startsWith('http')) {
         server = 'http://' + server;
       }
-      const apkUrl = `${server}/LReader.apk`;
+      const apkUrl = `${server}/download-app`;
 
       if (typeof showHonorToast === 'function') {
         showHonorToast('🚀 Đang mở tải Full APK: ' + apkUrl);
@@ -13496,11 +14639,28 @@ body.zen-mode #nrFabAdd {
         showToast('🚀 Đang mở tải Full APK: ' + apkUrl);
       }
 
-      if (window.HonorBridge && window.HonorBridge.downloadApk) {
-        window.HonorBridge.downloadApk(apkUrl);
-      } else {
-        window.open(apkUrl, '_blank');
+      if (window.HonorBridge && typeof window.HonorBridge.downloadApk === 'function') {
+        try {
+          window.HonorBridge.downloadApk(apkUrl);
+          return;
+        } catch (err) {
+          console.warn('[HonorBridge downloadApk error]', err);
+        }
       }
+
+      try {
+        const link = document.createElement('a');
+        link.href = apkUrl;
+        link.download = 'LReader.apk';
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } catch (_) {}
+
+      setTimeout(() => {
+        window.location.href = apkUrl;
+      }, 250);
     }
 
     function setOtaPreset(mode) {
@@ -13915,12 +15075,10 @@ body.zen-mode #nrFabAdd {
           const absY = Math.abs(dy);
           const duration = Date.now() - touchStartTime;
 
-          // N?u l? vu?t ngang d?t kho?t -> Cho ph?p l?t trang 3D
-          if (duration < 650 && absX > 35 && absX > absY * 1.5) {
-            if (!isPlaying) {
-              if (dx < 0) window.safeTurnNextPage();
-              else window.safeTurnPrevPage();
-            }
+          // Nếu là vuốt ngang dứt khoát -> Cho phép lật trang 3D
+          if (duration < 650 && absX > 35 && absX > absY * 1.15) {
+            if (dx < 0) window.safeTurnNextPage(true);
+            else window.safeTurnPrevPage(true);
             return;
           }
 
@@ -14022,27 +15180,17 @@ body.zen-mode #nrFabAdd {
         e.stopPropagation();
         e.preventDefault();
       }
-      currentPlaybackSessionId++;
-      if (audio) {
-        audio.pause();
-        audio.onended = null;
-      }
       if (window.HonorBridge && window.HonorBridge.stopNativeSpeak) {
         try { window.HonorBridge.stopNativeSpeak(); } catch(_) {}
       }
       if ('speechSynthesis' in window) {
         try { window.speechSynthesis.cancel(); } catch(_) {}
       }
-
-      if (currentSentenceIndex > 0) {
-        currentSentenceIndex--;
-        currentParagraphIndex = currentSentenceIndex;
-      }
       isPlaying = true;
       window.isPlaying = true;
       updatePlayBtn();
       updateHonorMediaPillState();
-      playParagraph(currentSentenceIndex);
+      prevParagraph();
     }
 
     // Nút nhảy đến câu sau để đọc (Tua nhanh qua đoạn không muốn nghe)
@@ -14051,27 +15199,11 @@ body.zen-mode #nrFabAdd {
         e.stopPropagation();
         e.preventDefault();
       }
-      currentPlaybackSessionId++;
-      if (audio) {
-        audio.pause();
-        audio.onended = null;
-      }
-      if (window.HonorBridge && window.HonorBridge.stopNativeSpeak) {
-        try { window.HonorBridge.stopNativeSpeak(); } catch(_) {}
-      }
-      if ('speechSynthesis' in window) {
-        try { window.speechSynthesis.cancel(); } catch(_) {}
-      }
-
-      if (allSentences && currentSentenceIndex + 1 < allSentences.length) {
-        currentSentenceIndex++;
-        currentParagraphIndex = currentSentenceIndex;
-      }
       isPlaying = true;
       window.isPlaying = true;
       updatePlayBtn();
       updateHonorMediaPillState();
-      playParagraph(currentSentenceIndex);
+      nextParagraph();
     }
 
     function updateHonorMediaPillState() {
@@ -14279,25 +15411,36 @@ body.zen-mode #nrFabAdd {
 
       if (topBadge) {
         const chShort = 'C' + chNum;
-        let bufText = '0/30';
+        let textAhead = 30;
+        if (bookData && bookData.chapters && bookData.chapters.length > 0) {
+          const ahead = Math.max(0, bookData.chapters.length - 1 - (currentChapterIndex || 0));
+          textAhead = Math.min(30, ahead);
+        }
+        topBadge.textContent = `${chShort} • 📖 ${textAhead}/30`;
+      }
+
+      const audioBadge = document.getElementById('honorTopAudioBufferWrap');
+      if (audioBadge) {
         const st = window.latestPreloadStatus;
         const isPreloadEnabled = (st && st.enabled !== undefined) ? !!st.enabled : (localStorage.getItem('reader_preload_enabled') !== '0');
-
         if (!isPreloadEnabled) {
-          bufText = 'Tắt đệm';
-        } else {
-          const totalChapters = (bookData && Array.isArray(bookData.chapters)) ? bookData.chapters.length : 0;
-          const curIdx = currentChapterIndex || 0;
-          const remainingAhead = Math.max(0, totalChapters - curIdx);
-          const textBufferCount = Math.min(30, remainingAhead > 0 ? remainingAhead : totalChapters);
-
-          if (st && (st.isWorking || (st.cachedCount && st.cachedCount > 0))) {
-            bufText = `${st.cachedCount}/${st.windowTotal || 30}`;
-          } else {
-            bufText = `${textBufferCount}/30`;
+          audioBadge.innerHTML = `<span style="opacity: 0.6;">🔇 Tắt</span>`;
+        } else if (st && st.isWorking) {
+          const cached = st.cachedCount || 0;
+          const total = st.windowTotal || 30;
+          let detail = '';
+          if (st.workingChapter !== null && st.workingChapter !== undefined) {
+            detail = ` (C${st.workingChapter + 1}:${st.workingPara || 0}/${st.totalWorkingParas || '..'})`;
           }
+          audioBadge.innerHTML = `<span style="color: #38bdf8; font-weight: 700;">🔄 ${cached}/${total}${detail}</span>`;
+        } else {
+          const cached = (st && typeof st.cachedCount === 'number') ? st.cachedCount : 0;
+          const total = (st && typeof st.windowTotal === 'number' && st.windowTotal > 0) ? st.windowTotal : 30;
+          const isFull = cached >= total && total > 0;
+          const col = isFull ? '#10b981' : '#38bdf8';
+          const icon = isFull ? '🎧' : '🔊';
+          audioBadge.innerHTML = `<span style="color: ${col}; font-weight: 600;">${icon} ${cached}/${total}</span>`;
         }
-        topBadge.textContent = `${chShort} • ${bufText}`;
       }
 
       if (slider && bookData && bookData.chapters && bookData.chapters.length > 0) {

@@ -225,17 +225,26 @@ def get_ota_version():
         stat = bundle_path.stat()
         return jsonify({
             "success": True,
-            "version": "v1.6.33",
-            "version_code": 193,
+            "version": "v1.6.51",
+            "version_code": 211,
             "size": stat.st_size,
             "updated_at": int(stat.st_mtime),
             "changelog": [
-                "💥 Âm thanh điện ảnh SFX: Thay thế trọn vẹn từ tượng thanh (Oanh long, ầm ầm, keng, vút...) bằng hiệu ứng âm thanh thật, loại bỏ hoàn toàn việc đọc thô chữ 'long'",
-                "🎧 Đồng bộ Web Audio & Native Audio Generator: Tự động unlock AudioContext và sinh âm thanh WAV nổi đa kênh",
-                "🛡️ Bảo toàn nguyên vẹn tên riêng Ô Hạo, Mã Binh"
+                "⚡ Thiết kế lại toàn diện bộ đệm audio 30 chương: Hỗ trợ chạy nền liên tục với Foreground Service & WakeLock cho đến khi đủ 30 chương",
+                "🚀 Tăng tốc tải trước âm thanh gấp 3 lần với bộ xử lý đa luồng song song và tự động nạp thêm chương truyện web",
+                "📊 Hiển thị tiến độ đệm audio trực quan theo thời gian thực trên thanh trạng thái: 🔄 X/30 (CX: Y/Z) và 🎧 30/30 khi hoàn tất",
+                "⏭️ Sửa dứt điểm lỗi kẹt chuyển chương: Bấm Next Media hoặc lật trang ở cuối chương tự động nhảy sang chương kế tiếp trơn tru"
             ]
         })
     return jsonify({"success": False}), 404
+
+@app.route("/api/ota/status")
+def get_ota_status():
+    return jsonify({"success": True, "active": True})
+
+@app.route("/api/debug/crash-log")
+def get_debug_crash_log():
+    return jsonify({"success": True, "crashes": []})
 
 @app.route("/ota")
 @app.route("/ota-3g")
@@ -666,11 +675,15 @@ def apply_pronunciation_rules(text, rules=None):
     result = re.sub(r'(?<![\w\u00C0-\u1EF9])VI(?![\w\u00C0-\u1EF9])', 'Vy', result)
     result = re.sub(r'(?<![\w\u00C0-\u1EF9])xi(?![\w\u00C0-\u1EF9])', 'xy', result)
     result = re.sub(r'(?<![\w\u00C0-\u1EF9])Xi(?![\w\u00C0-\u1EF9])', 'Xy', result)
-    result = re.sub(r'(?<![\w\u00C0-\u1EF9])XI(?![\w\u00C0-\u1EF9])', 'Xy', result)
     result = re.sub(r'(?<![\w\u00C0-\u1EF9])[Ôô](?![\w\u00C0-\u1EF9])', 'Ôh', result)
+    result = re.sub(r'(?<![\w\u00C0-\u1EF9])A(?![\w\u00C0-\u1EF9])', 'Ah', result)
+    result = re.sub(r'(?<![\w\u00C0-\u1EF9])a(?![\w\u00C0-\u1EF9])', 'ah', result)
 
-    result = re.sub(r'\s*([,;:.!?…])\s*', r'\1 ', result)
-    result = re.sub(r'\s+', ' ', result).strip()
+    # 5. Tinh chỉnh nhịp ngắt nghỉ dấu phẩy (Comma Prosody & Breath Enhancer):
+    # Chuẩn hóa toàn bộ dấu phẩy giữa các vế câu thành ', —— ' để tạo nhịp nghỉ thở sâu lắng, rành mạch
+    result = re.sub(r'\s*([;:.!?…])\s*', r'\1 ', result)
+    result = re.sub(r'(?<!\d),\s*(?!——)', ', —— ', result)
+    result = re.sub(r'[^\S\r\n]{3,}', '  ', result).strip()
 
     return result
 
@@ -1106,10 +1119,42 @@ def generate_elevenlabs_audio(text, voice_id):
             time.sleep(0.2 * (attempt + 1))
     raise last_err or Exception(f"Không thể tạo giọng đọc ElevenLabs: {last_err}")
 
-async def generate_edge_audio(text, voice_id, speed=1.0):
+async def generate_edge_audio(text, voice_id, speed=1.0, emotion="normal"):
     rate_percent = int((speed - 1.0) * 100)
+    pitch_str = "+0Hz"
+    if emotion == "cold":
+        rate_percent -= 8
+        pitch_str = "-12Hz"
+    elif emotion == "cold_shout":
+        rate_percent += 15
+        pitch_str = "-10Hz"
+    elif emotion in ("angry_shout", "angry"):
+        rate_percent += 18
+        pitch_str = "+15Hz"
+    elif emotion == "mocking":
+        rate_percent -= 6
+        pitch_str = "+6Hz"
+    elif emotion == "solemn":
+        rate_percent -= 14
+        pitch_str = "-18Hz"
+    elif emotion == "weak_pain":
+        rate_percent -= 18
+        pitch_str = "-8Hz"
+    elif emotion == "laugh_joy":
+        rate_percent += 12
+        pitch_str = "+12Hz"
+    elif emotion == "telepathy":
+        rate_percent -= 5
+        pitch_str = "+0Hz"
+    elif emotion == "tender":
+        rate_percent -= 6
+        pitch_str = "+4Hz"
+    elif emotion == "whisper":
+        rate_percent -= 10
+        pitch_str = "-4Hz"
+
     rate_str = f"+{rate_percent}%" if rate_percent >= 0 else f"{rate_percent}%"
-    communicate = edge_tts.Communicate(text, voice_id, rate=rate_str)
+    communicate = edge_tts.Communicate(text, voice_id, rate=rate_str, pitch=pitch_str)
     audio_bytes = bytearray()
     async for chunk in communicate.stream():
         if chunk["type"] == "audio":
@@ -1172,7 +1217,7 @@ def merge_audio_chunks(chunks_bytes):
             except Exception:
                 pass
 
-def synthesize_audio_smart(spoken_text, voice_id, provider, speed=1.0, bilingual_mode="off"):
+def synthesize_audio_smart(spoken_text, voice_id, provider, speed=1.0, bilingual_mode="off", emotion="normal"):
     # 1. Tự động chuyển ký hiệu toán học & so sánh (> ➔ lớn hơn, < ➔ nhỏ hơn, >= ➔ lớn hơn hoặc bằng...)
     spoken_text = bilingual.convert_symbols_to_spoken_text(spoken_text)
 
@@ -1181,11 +1226,24 @@ def synthesize_audio_smart(spoken_text, voice_id, provider, speed=1.0, bilingual
     if not clean_text:
         return None
 
+    if emotion in ("cold", "cold_shout", "angry_shout") and not clean_text.endswith(('!', '?')):
+        clean_text = clean_text.rstrip(' ,;…-–—') + '!'
+
     if not bilingual_mode:
         bilingual_mode = bilingual.get_bilingual_mode()
 
+    # Smart Provider Routing: Tự động điều phối provider theo định dạng voice_id
+    effective_provider = provider
+    str_v = str(voice_id).lower()
+    if str_v.startswith("offline_"):
+        effective_provider = "offline"
+    elif str_v.startswith("vi-vn-") or str_v.startswith("en-us-"):
+        effective_provider = "edge"
+    elif str_v.startswith("bv") or "bigtts" in str_v or "vi_female" in str_v:
+        effective_provider = "capcut"
+
     # 2. Xử lý theo chế độ song ngữ đã chọn
-    is_11labs = (provider == "elevenlabs" or str(voice_id).startswith("eleven_") or "almee" in str(voice_id).lower() or "adam" in str(voice_id).lower())
+    is_11labs = (effective_provider == "elevenlabs" or str(voice_id).startswith("eleven_") or "almee" in str_v or "adam" in str_v)
 
     if is_11labs:
         # Nếu đang chọn giọng ElevenLabs (Almee-Anh, Adam-Anh, Adam-Mỹ) -> Sinh âm thanh tiếng Anh chuẩn Studio
@@ -1208,12 +1266,12 @@ def synthesize_audio_smart(spoken_text, voice_id, provider, speed=1.0, bilingual
     if bilingual_mode == "phonetic":
         # Chế độ 2: Phiên âm thuần Việt - chuyển toàn bộ từ tiếng Anh sang cách đọc ngữ âm tiếng Việt
         clean_text = bilingual.transliterate_english_to_vietnamese(clean_text)
-        if provider == "offline" or voice_id.startswith("offline_"):
+        if effective_provider == "offline" or voice_id.startswith("offline_"):
             return offline_tts.synthesize_offline(clean_text, voice_id, speed)
-        elif provider == "capcut":
+        elif effective_provider == "capcut":
             return generate_capcut_audio(clean_text, voice_id)
         else:
-            return asyncio.run(generate_edge_audio(clean_text, voice_id, speed))
+            return asyncio.run(generate_edge_audio(clean_text, voice_id, speed, emotion=emotion))
 
     elif bilingual_mode == "native":
         # Chế độ 1: Song ngữ bản xứ (Giọng lai Việt + Mỹ chuẩn bản xứ)
@@ -1222,12 +1280,12 @@ def synthesize_audio_smart(spoken_text, voice_id, provider, speed=1.0, bilingual
 
         # Nếu không có từ tiếng Anh -> đọc bình thường với giọng đã chọn
         if not has_en:
-            if provider == "offline" or voice_id.startswith("offline_"):
+            if effective_provider == "offline" or voice_id.startswith("offline_"):
                 return offline_tts.synthesize_offline(clean_text, voice_id, speed)
-            elif provider == "capcut":
+            elif effective_provider == "capcut":
                 return generate_capcut_audio(clean_text, voice_id)
             else:
-                return asyncio.run(generate_edge_audio(clean_text, voice_id, speed))
+                return asyncio.run(generate_edge_audio(clean_text, voice_id, speed, emotion=emotion))
 
         # Nếu có từ tiếng Anh:
         if provider == "capcut":
@@ -1258,12 +1316,12 @@ def synthesize_audio_smart(spoken_text, voice_id, provider, speed=1.0, bilingual
                     continue
                 v = voice_id if lang == 'vi' else en_voice
                 try:
-                    c = asyncio.run(generate_edge_audio(s, v, speed))
+                    c = asyncio.run(generate_edge_audio(s, v, speed, emotion=emotion))
                     if c:
                         chunks.append(c)
                 except Exception as err:
                     print(f"[Bilingual Native Edge Error] '{s}' với giọng {v}: {err}")
-                    c = asyncio.run(generate_edge_audio(s, voice_id, speed))
+                    c = asyncio.run(generate_edge_audio(s, voice_id, speed, emotion=emotion))
                     if c:
                         chunks.append(c)
             return b"".join(chunks) if chunks else None
@@ -1312,12 +1370,12 @@ def synthesize_audio_smart(spoken_text, voice_id, provider, speed=1.0, bilingual
 
     else:
         # Chế độ 0: Tắt (Mặc định) - giữ nguyên câu gốc
-        if provider == "offline" or voice_id.startswith("offline_"):
+        if effective_provider == "offline" or voice_id.startswith("offline_"):
             return offline_tts.synthesize_offline(clean_text, voice_id, speed)
-        elif provider == "capcut":
+        elif effective_provider == "capcut":
             return generate_capcut_audio(clean_text, voice_id)
         else:
-            return asyncio.run(generate_edge_audio(clean_text, voice_id, speed))
+            return asyncio.run(generate_edge_audio(clean_text, voice_id, speed, emotion=emotion))
 
 @app.route("/api/bilingual-mode", methods=["GET", "POST"])
 def api_bilingual_mode():
@@ -1395,6 +1453,9 @@ def get_tts():
             provider = "elevenlabs"
         speed = float(req.get("speed", 1.0))
         bilingual_mode = req.get("bilingual_mode") or bilingual.get_bilingual_mode()
+        emotion = req.get("emotion") or "normal"
+        dialogue_role = req.get("dialogue_role") or "narration"
+        speaker = req.get("speaker") or ""
 
         is_offline = (provider == "offline" or voice_id.startswith("offline_"))
         default_mime = "audio/wav" if is_offline else "audio/mpeg"
@@ -1408,11 +1469,11 @@ def get_tts():
             return send_file(io.BytesIO(get_silent_audio()), mimetype=default_mime)
 
         # Kiểm tra và xử lý từ tượng thanh (Foley SFX Engine)
-        sfx_type, pruned_sfx = offline_tts.detect_and_prune_sfx(filtered_text)
+        sfx_type, pruned_sfx, sfx_count = offline_tts.detect_and_prune_sfx(filtered_text)
         if sfx_type:
             if not pruned_sfx or not re.search(r'\w', pruned_sfx, re.UNICODE):
-                # Câu thuần túy là từ tượng thanh (ví dụ: "Oanh long!", "Ầm!", "Keng!", "Vút!")
-                sfx_wav = offline_tts.generate_sfx_wav_bytes(sfx_type)
+                # Câu thuần túy là từ tượng thanh (ví dụ: "Oanh long!", "Ầm!", "Keng!", "Vút!", "Vèo, vèo, vèo!")
+                sfx_wav = offline_tts.generate_sfx_wav_bytes(sfx_type, count=sfx_count)
                 if sfx_wav:
                     return send_file(io.BytesIO(sfx_wav), mimetype="audio/wav")
             else:
@@ -1421,7 +1482,7 @@ def get_tts():
         spoken_text = apply_pronunciation_rules(filtered_text)
         spoken_text = bilingual.convert_symbols_to_spoken_text(spoken_text)
         words_ver = bilingual.get_custom_words_version()
-        cache_key = hashlib.md5(f"{provider}:{voice_id}:{speed}:{bilingual_mode}:{words_ver}:{spoken_text}".encode('utf-8')).hexdigest()
+        cache_key = hashlib.md5(f"v2_breath:{provider}:{voice_id}:{speed}:{emotion}:{bilingual_mode}:{words_ver}:{spoken_text}".encode('utf-8')).hexdigest()
 
         # Kiểm tra cache trước (hỗ trợ cả .mp3 và .wav)
         for ext, m in [("mp3", "audio/mpeg"), ("wav", "audio/wav")]:
@@ -1429,7 +1490,7 @@ def get_tts():
             if cache_file.exists() and cache_file.stat().st_size > 1000:
                 return send_file(cache_file, mimetype=m)
 
-        audio_bytes = synthesize_audio_smart(spoken_text, voice_id, provider, speed, bilingual_mode)
+        audio_bytes = synthesize_audio_smart(spoken_text, voice_id, provider, speed, bilingual_mode, emotion=emotion)
         if not audio_bytes or len(audio_bytes) < 1000:
             # Câu chỉ có chữ Hán -> trả về im lặng ngắn nhưng không lưu vào cache
             return send_file(io.BytesIO(get_silent_audio()), mimetype=default_mime)
@@ -1458,6 +1519,47 @@ def get_tts():
 # BỘ ĐỆM TỰ ĐỘNG TẢI TRƯỚC 30 CHƯƠNG (SLIDING WINDOW PRELOADER SIÊU TỐC)
 # Luôn giữ trước tối đa 30 chương trong bộ nhớ đệm, đa luồng tải nhanh gấp 3 lần
 # =====================================================================
+def split_into_sentences(text):
+    if not text:
+        return []
+    text = re.sub(r'\.{3,}', '…', text.strip())
+    if not text:
+        return []
+    text = re.sub(r'\.\s*([a-zA-Z]{2,6})\b', r'\uE000\1', text)
+    def mask_quotes(m):
+        q = m.group(0)
+        return q.replace('.', '\uE001').replace('!', '\uE002').replace('?', '\uE003').replace('…', '\uE004')
+    text = re.sub(r'([“"«「『][^”"»」』]+[”"»」』])', mask_quotes, text)
+    matches = re.findall(r'([^.!?…\n]+(?:[.!?…]+["\'”’»)]*|[\n]+|$))', text)
+    raw_sentences = []
+    buf = ""
+    for m in matches:
+        part = m.replace('\uE000', '.').replace('\uE001', '.').replace('\uE002', '!').replace('\uE003', '?').replace('\uE004', '…').strip()
+        if not part:
+            continue
+        if re.match(r'^\d+\.$', part) or re.match(r'^\$\d+\.$', part):
+            buf = f"{buf} {part}" if buf else part
+            continue
+        if buf:
+            part = f"{buf} {part}"
+            buf = ""
+        if len(part) > 220:
+            sub_parts = re.split(r'([,;:—]\s+)', part)
+            sub_buf = ""
+            for s in sub_parts:
+                if len(sub_buf) + len(s) > 160 and len(sub_buf) > 30:
+                    raw_sentences.append(sub_buf.strip())
+                    sub_buf = s
+                else:
+                    sub_buf += s
+            if sub_buf.strip():
+                raw_sentences.append(sub_buf.strip())
+        else:
+            raw_sentences.append(part)
+    if buf.strip():
+        raw_sentences.append(buf.strip())
+    return raw_sentences
+
 class ChapterPreloader:
     def __init__(self):
         self.lock = threading.Lock()
@@ -1512,15 +1614,18 @@ class ChapterPreloader:
                 "totalBookChapters": self.total_book_chapters
             }
 
-    def _is_para_cached(self, text, voice_id, provider, speed):
+    def _get_cache_key(self, text, voice_id, provider, speed, emotion="normal"):
         spoken_text = apply_pronunciation_rules(text)
         spoken_text = bilingual.convert_symbols_to_spoken_text(spoken_text)
         b_mode = bilingual.get_bilingual_mode()
         words_ver = bilingual.get_custom_words_version()
-        key = hashlib.md5(f"{provider}:{voice_id}:{speed}:{b_mode}:{words_ver}:{spoken_text}".encode('utf-8')).hexdigest()
+        return hashlib.md5(f"v2_breath:{provider}:{voice_id}:{speed}:{emotion}:{b_mode}:{words_ver}:{spoken_text}".encode('utf-8')).hexdigest()
+
+    def _is_para_cached(self, text, voice_id, provider, speed):
+        key = self._get_cache_key(text, voice_id, provider, speed)
         for ext in ["mp3", "wav"]:
             p = CACHE_DIR / f"{key}.{ext}"
-            if p.exists() and p.stat().st_size > 100:
+            if p.exists() and p.stat().st_size > 500:
                 return True
         return False
 
@@ -1528,14 +1633,13 @@ class ChapterPreloader:
         spoken_text = apply_pronunciation_rules(text)
         spoken_text = bilingual.convert_symbols_to_spoken_text(spoken_text)
         b_mode = bilingual.get_bilingual_mode()
-        words_ver = bilingual.get_custom_words_version()
-        key = hashlib.md5(f"{provider}:{voice_id}:{speed}:{b_mode}:{words_ver}:{spoken_text}".encode('utf-8')).hexdigest()
+        key = self._get_cache_key(text, voice_id, provider, speed)
         for ext in ["mp3", "wav"]:
             p = CACHE_DIR / f"{key}.{ext}"
-            if p.exists() and p.stat().st_size > 100:
+            if p.exists() and p.stat().st_size > 500:
                 return True
         try:
-            audio_bytes = synthesize_audio_smart(spoken_text, voice_id, provider, speed, b_mode)
+            audio_bytes = synthesize_audio_smart(spoken_text, voice_id, provider, speed, b_mode, emotion="normal")
             if audio_bytes and len(audio_bytes) > 500:
                 ext = "wav" if audio_bytes.startswith(b"RIFF") else "mp3"
                 p = CACHE_DIR / f"{key}.{ext}"
@@ -1619,22 +1723,25 @@ class ChapterPreloader:
                 for c_idx in window_slice:
                     ch = chapters[c_idx]
                     paras = ch.get("paragraphs", [])
-                    missing_paras = []
-                    for p_idx, p in enumerate(paras):
-                        txt = p.strip()
-                        if not txt or is_text_skipped(txt, skip_rules, book_id):
+                    missing_sentences = []
+                    all_sentences = []
+                    for p in paras:
+                        p_txt = p.strip()
+                        if not p_txt or is_text_skipped(p_txt, skip_rules, book_id):
                             continue
-                        txt = filter_skipped_phrases(txt, skip_rules, book_id)
-                        clean_text = re.sub(r'[\u4e00-\u9fff]+', '', txt).strip()
-                        if not clean_text or not re.search(r'\w', clean_text, re.UNICODE):
-                            continue
-                        if not self._is_para_cached(txt, voice_id, provider, speed):
-                            missing_paras.append((p_idx, txt))
+                        sents = split_into_sentences(p_txt)
+                        for s in sents:
+                            s_txt = filter_skipped_phrases(s, skip_rules, book_id).strip()
+                            clean_text = re.sub(r'[\u4e00-\u9fff]+', '', s_txt).strip()
+                            if clean_text and re.search(r'\w', clean_text, re.UNICODE):
+                                all_sentences.append(s_txt)
+                                if not self._is_para_cached(s_txt, voice_id, provider, speed):
+                                    missing_sentences.append(s_txt)
                     
-                    if len(missing_paras) == 0:
+                    if len(missing_sentences) == 0 and len(all_sentences) > 0:
                         cached_in_win += 1
-                    else:
-                        needed_chapters.append((c_idx, missing_paras, len(paras)))
+                    elif len(missing_sentences) > 0:
+                        needed_chapters.append((c_idx, missing_sentences, len(all_sentences)))
 
                 with self.lock:
                     self.cached_count = cached_in_win
@@ -1646,14 +1753,14 @@ class ChapterPreloader:
                     time.sleep(1.0)
                     continue
 
-                for c_idx, missing_paras, total_p in needed_chapters:
+                for c_idx, missing_sentences, total_s in needed_chapters:
                     with self.lock:
                         if (not self.enabled or self.book_id != book_id or 
                             self.current_chapter != start_ch or self.voice_id != voice_id):
                             break
                         self.is_running = True
                         self.current_working_chapter = c_idx
-                        self.total_working_paras = total_p
+                        self.total_working_paras = total_s
                         self.current_working_para = 0
 
                     num_workers = 1 if (provider == "offline" or str(voice_id).startswith("offline_")) else 3
@@ -1663,12 +1770,12 @@ class ChapterPreloader:
                             time.sleep(0.5)
                         res = self._cache_para(txt_to_cache, voice_id, provider, speed)
                         with self.lock:
-                            self.current_working_para = min(self.current_working_para + 1, total_p)
+                            self.current_working_para = min(self.current_working_para + 1, total_s)
                         return res
 
                     with ThreadPoolExecutor(max_workers=num_workers) as executor:
                         futures = []
-                        for p_idx, txt in missing_paras:
+                        for txt in missing_sentences:
                             with self.lock:
                                 if (not self.enabled or self.book_id != book_id or 
                                     self.current_chapter != start_ch or self.voice_id != voice_id):
@@ -1711,6 +1818,9 @@ def update_preload():
 
 @app.route("/api/preload/status", methods=["GET"])
 def get_preload_status():
+    book_id = request.args.get("bookId")
+    if book_id and not preloader.book_id:
+        preloader.update(book_id, 0)
     return jsonify(preloader.get_status())
 
 @app.route("/api/preload/toggle", methods=["POST"])

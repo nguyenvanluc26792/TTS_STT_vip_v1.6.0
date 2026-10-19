@@ -381,66 +381,86 @@ def find_best_downloaded_voice(gender_preference, exclude_id=None):
             return v["id"]
     return None
 
-def generate_sfx_samples(sfx_type, sample_rate=22050):
+def generate_sfx_samples(sfx_type, count=1, sample_rate=22050):
     """
     Sinh tín hiệu âm thanh hiệu ứng thực tế (Foley SFX Synthesis) bằng thuật toán DSP:
     - impact: Va chạm quyền cước, nện đòn trầm đục (phanh, bịch, bộp, rầm, rắc)
     - explosion: Tiếng sấm sét, vụ nổ rền (ầm, bùm, đùng, đoàng, oành, nổ)
     - clash: Va chạm binh khí kim loại tóe lửa (keng, choang, xoảng, leng keng)
     - whoosh: Kiếm khí, phi kiếm, ám khí xé rách không gian (vút, vèo, xẹt, chéo)
+    Hỗ trợ phát lặp lại tự nhiên theo số lần xuất hiện (ví dụ: Vèo, vèo, vèo -> count=3)
     """
     import math, random
-    samples = []
+    one_chunk = []
+    gap_sec = 0.10
+
     if sfx_type == 'impact':
-        dur = 0.35
+        dur = 0.32
+        gap_sec = 0.12
         n_samples = int(sample_rate * dur)
         for i in range(n_samples):
             t = i / sample_rate
-            freq = 110.0 * math.exp(-t * 9.0) + 40.0
+            freq = 120.0 * math.exp(-t * 8.0) + 40.0
             phase = 2.0 * math.pi * freq * t
-            sub = math.sin(phase) * math.exp(-t * 10.0)
-            noise = random.uniform(-1.0, 1.0) * math.exp(-t * 30.0)
+            sub = math.sin(phase) * math.exp(-t * 9.0)
+            noise = random.uniform(-1.0, 1.0) * math.exp(-t * 25.0)
             val = (sub * 0.75 + noise * 0.25) * 0.95
-            samples.append(val)
+            one_chunk.append(val)
     elif sfx_type == 'explosion':
         dur = 0.75
+        gap_sec = 0.18
         n_samples = int(sample_rate * dur)
         for i in range(n_samples):
             t = i / sample_rate
-            freq = 85.0 * math.exp(-t * 4.0) + 30.0
+            freq = 90.0 * math.exp(-t * 3.5) + 35.0
             phase = 2.0 * math.pi * freq * t
-            sub = math.sin(phase) * math.exp(-t * 4.0)
-            noise = random.uniform(-1.0, 1.0) * math.exp(-t * 5.0)
-            val = (sub * 0.6 + noise * 0.4) * 0.95
-            samples.append(val)
+            sub = math.sin(phase) * math.exp(-t * 3.5)
+            noise = random.uniform(-1.0, 1.0) * math.exp(-t * 4.5)
+            val = (sub * 0.65 + noise * 0.35) * 0.95
+            one_chunk.append(val)
     elif sfx_type == 'clash':
-        dur = 0.55
+        dur = 0.50
+        gap_sec = 0.10
         n_samples = int(sample_rate * dur)
         for i in range(n_samples):
             t = i / sample_rate
-            bell1 = math.sin(2.0 * math.pi * 2350.0 * t) * math.exp(-t * 6.5)
-            bell2 = math.sin(2.0 * math.pi * 3180.0 * t) * math.exp(-t * 8.5)
-            bell3 = math.sin(2.0 * math.pi * 4820.0 * t) * math.exp(-t * 13.0)
-            click = random.uniform(-1.0, 1.0) * math.exp(-t * 65.0)
-            val = (bell1 * 0.4 + bell2 * 0.3 + bell3 * 0.2 + click * 0.2) * 0.9
-            samples.append(val)
+            b1 = math.sin(2.0 * math.pi * 2350.0 * t) * math.exp(-t * 7.0)
+            b2 = math.sin(2.0 * math.pi * 3400.0 * t) * math.exp(-t * 9.0)
+            b3 = math.sin(2.0 * math.pi * 5100.0 * t) * math.exp(-t * 14.0)
+            click = random.uniform(-1.0, 1.0) * math.exp(-t * 70.0)
+            val = (b1 * 0.35 + b2 * 0.3 + b3 * 0.2 + click * 0.15) * 0.9
+            one_chunk.append(val)
     elif sfx_type == 'whoosh':
-        dur = 0.32
+        dur = 0.28
+        gap_sec = 0.08
         n_samples = int(sample_rate * dur)
         for i in range(n_samples):
             t = i / sample_rate
             env = (math.sin(math.pi * t / dur)) ** 2
             noise = random.uniform(-1.0, 1.0)
-            carrier = math.sin(2.0 * math.pi * (700.0 + 1300.0 * math.sin(math.pi * t / dur)) * t)
-            val = (noise * 0.45 + carrier * 0.55) * env * 0.85
-            samples.append(val)
-    return samples
+            carrier = math.sin(2.0 * math.pi * (600.0 + 1400.0 * math.sin(math.pi * t / dur)) * t)
+            val = (noise * 0.4 + carrier * 0.6) * env * 0.9
+            one_chunk.append(val)
+    else:
+        return []
 
-def generate_sfx_wav_bytes(sfx_type, sample_rate=22050):
+    repeat_count = max(1, min(int(count or 1), 4))
+    if repeat_count == 1:
+        return one_chunk
+
+    gap_samples = int(sample_rate * gap_sec)
+    all_samples = []
+    for c in range(repeat_count):
+        all_samples.extend(one_chunk)
+        if c < repeat_count - 1:
+            all_samples.extend([0.0] * gap_samples)
+    return all_samples
+
+def generate_sfx_wav_bytes(sfx_type, count=1, sample_rate=22050):
     """
     Sinh file WAV âm thanh hiệu ứng (SFX) 16-bit PCM mono chuẩn.
     """
-    samples = generate_sfx_samples(sfx_type, sample_rate)
+    samples = generate_sfx_samples(sfx_type, count=count, sample_rate=sample_rate)
     if not samples:
         return None
     import io, wave, struct
@@ -456,37 +476,47 @@ def generate_sfx_wav_bytes(sfx_type, sample_rate=22050):
         wf.writeframes(raw)
     return buf.getvalue()
 
+SFX_WORDS_RAW = r'(?:oanh\s+long(?:\s+long)?|oành(?:\s+oành)?|oanh|phanh(?:\s+phanh)?|xuy(?:\s+xuy){1,2}|xuy(?=[!?.…~–—]|(?:\s+một\s+tiếng))|ầm(?:\s+ầm){1,2}|ầm\s+vang|ầm|đùng\s+đoàng|đùng(?:\s+đùng)?|đoàng|bùm(?:\s+bùm)?|nổ\s+tung|rầm(?:\s+rầm)?|bịch(?:\s+bịch)?|huỵch|bộp(?:\s+bộp)?|bốp(?:\s+bốp)?|chát|rắc(?:\s+rắc)?|bành|leng\s+keng|keng(?:\s+keng)?|choang(?:\s+choang)?|xoảng(?:\s+xoảng)?|xủng\s+xoảng|boong|coong|vun\s+vút|vút(?:\s+vút)?|vèo(?:\s+vèo)?|xẹt(?:\s+xẹt)?|xoẹt(?:\s+xoẹt)?|chéo|vù(?:\s+vù)?|phù)'
+SFX_REGEX_ZERO_WIDTH = None
+
+def get_sfx_regex():
+    global SFX_REGEX_ZERO_WIDTH
+    if SFX_REGEX_ZERO_WIDTH is None:
+        import re
+        SFX_REGEX_ZERO_WIDTH = re.compile(rf'(?i)(?<![\w\u00C0-\u1EF9]){SFX_WORDS_RAW}(?:\s+một\s+tiếng)?(?![\w\u00C0-\u1EF9])')
+    return SFX_REGEX_ZERO_WIDTH
+
 def detect_and_prune_sfx(text):
     """
     Phát hiện từ tượng thanh độc lập và cắt bỏ (Prune) khỏi văn bản đọc để TTS không đọc thô:
     - 1. Nổ / Sấm: oanh long, oanh long long, ầm, ầm ầm, bùm, đùng, đoàng, oành, oanh, nổ tung
-    - 2. Va chạm / Quyền cước: rầm, bịch, huỵch, bộp, bốp, chát, rắc, bành
+    - 2. Va chạm / Quyền cước: rầm, bịch, huỵch, bộp, bốp, chát, rắc, bành, phanh
     - 3. Binh khí: keng, choang, xoảng, leng keng, xủng xoảng, boong, coong
-    - 4. Kiếm khí / Xé gió: vun vút, vút, vèo, xẹt, xoẹt, chéo, vù, phù
-    Hỗ trợ kèm cụm 'một tiếng' (ví dụ: 'oanh long một tiếng', 'keng một tiếng', 'rầm một tiếng')
+    - 4. Kiếm khí / Xé gió: vun vút, vút, vèo, xẹt, xoẹt, chéo, vù, phù, xuy, xuy xuy
+    Hỗ trợ lặp lại nhiều lần liên tiếp (Vèo, vèo, vèo / Keng, keng, keng / Phanh, phanh, phanh / Xuy, xuy, xuy) bằng Zero-width assertions.
+    Trả về (sfx_type, cleaned_text, count)
     """
+    if not text:
+        return None, text, 0
     import re
-    # 1. Nổ / Sấm sét: oanh long (long), oành, ầm ầm, bùm, đùng đoàng, nổ tung
-    m = re.search(r'(?i)(?:^|[\s“"«\'–—])(oanh\s+long(?:\s+long)?|oành(?:\s+oành)?|oanh|ầm(?:\s+ầm){1,2}|ầm\s+vang|ầm|đùng\s+đoàng|đùng(?:\s+đùng)?|đoàng|bùm(?:\s+bùm)?|nổ\s+tung)(?:\s+một\s+tiếng)?(?=[!?.…,”"»\'–—\s]|$)', text)
-    if m:
-        pruned = re.sub(r'(?i)(?:^|[\s“"«\'–—])(?:oanh\s+long(?:\s+long)?|oành(?:\s+oành)?|oanh|ầm(?:\s+ầm){1,2}|ầm\s+vang|ầm|đùng\s+đoàng|đùng(?:\s+đùng)?|đoàng|bùm(?:\s+bùm)?|nổ\s+tung)(?:\s+một\s+tiếng)?[!?.…,”"»\'–—\s]*', ' ', text).strip()
-        return 'explosion', pruned
-    # 2. Va chạm / Quyền cước: rầm, bịch, huỵch, bộp, bốp, chát, rắc, bành
-    m = re.search(r'(?i)(?:^|[\s“"«\'–—])(rầm(?:\s+rầm)?|bịch(?:\s+bịch)?|huỵch|bộp(?:\s+bộp)?|bốp(?:\s+bốp)?|chát|rắc(?:\s+rắc)?|bành)(?:\s+một\s+tiếng)?(?=[!?.…,”"»\'–—\s]|$)', text)
-    if m:
-        pruned = re.sub(r'(?i)(?:^|[\s“"«\'–—])(?:rầm(?:\s+rầm)?|bịch(?:\s+bịch)?|huỵch|bộp(?:\s+bộp)?|bốp(?:\s+bốp)?|chát|rắc(?:\s+rắc)?|bành)(?:\s+một\s+tiếng)?[!?.…,”"»\'–—\s]*', ' ', text).strip()
-        return 'impact', pruned
-    # 3. Binh khí: leng keng, keng, choang, xoảng, xủng xoảng, boong, coong
-    m = re.search(r'(?i)(?:^|[\s“"«\'–—])(leng\s+keng|keng(?:\s+keng)?|choang(?:\s+choang)?|xoảng(?:\s+xoảng)?|xủng\s+xoảng|boong|coong)(?:\s+một\s+tiếng)?(?=[!?.…,”"»\'–—\s]|$)', text)
-    if m:
-        pruned = re.sub(r'(?i)(?:^|[\s“"«\'–—])(?:leng\s+keng|keng(?:\s+keng)?|choang(?:\s+choang)?|xoảng(?:\s+xoảng)?|xủng\s+xoảng|boong|coong)(?:\s+một\s+tiếng)?[!?.…,”"»\'–—\s]*', ' ', text).strip()
-        return 'clash', pruned
-    # 4. Kiếm khí / Xé gió: vun vút, vút, vèo, xẹt, xoẹt, chéo, vù, phù
-    m = re.search(r'(?i)(?:^|[\s“"«\'–—])(vun\s+vút|vút(?:\s+vút)?|vèo(?:\s+vèo)?|xẹt(?:\s+xẹt)?|xoẹt(?:\s+xoẹt)?|chéo|vù(?:\s+vù)?|phù)(?:\s+một\s+tiếng)?(?=[!?.…,”"»\'–—\s]|$)', text)
-    if m:
-        pruned = re.sub(r'(?i)(?:^|[\s“"«\'–—])(?:vun\s+vút|vút(?:\s+vút)?|vèo(?:\s+vèo)?|xẹt(?:\s+xẹt)?|xoẹt(?:\s+xoẹt)?|chéo|vù(?:\s+vù)?|phù)(?:\s+một\s+tiếng)?[!?.…,”"»\'–—\s]*', ' ', text).strip()
-        return 'whoosh', pruned
-    return None, text
+    pat = get_sfx_regex()
+    matches = pat.findall(text)
+    if not matches:
+        return None, text, 0
+
+    first = matches[0].lower()
+    if re.search(r'keng|choang|xoảng|boong|coong', first):
+        sfx_type = 'clash'
+    elif re.search(r'vút|vèo|xẹt|xoẹt|chéo|vù|phù|xuy', first):
+        sfx_type = 'whoosh'
+    elif re.search(r'rầm|bịch|huỵch|bộp|bốp|chát|rắc|bành|phanh', first):
+        sfx_type = 'impact'
+    else:
+        sfx_type = 'explosion'
+
+    pruned = pat.sub('', text)
+    cleaned = re.sub(r'[\s,;:!?.\-–—]+', ' ', pruned).strip()
+    return sfx_type, cleaned, len(matches)
 
 def parse_contextual_story_segments(text):
     """
@@ -512,8 +542,8 @@ def parse_contextual_story_segments(text):
 
     segments = []
     female_titles = r'\b(nàng|nàng ấy|cô ấy|cô|tiểu thư|sư muội|tỷ tỷ|mẫu thân|mẹ|nữ tử|công chúa|nương tử|thiếu nữ|phu nhân|muội muội|tiên tử|thánh nữ|nha hoàn|bà lão|mỹ phụ|nữ nhi|sư tôn|sư nương|Ngọc|Mai|Hương|Lan|Linh|Trang|Nhi)\b'
-    male_titles = r'\b(chàng|hắn|hắn ta|công tử|sư huynh|huynh đệ|phụ thân|cha|nam tử|huynh trưởng|thiếu niên|đại ca|lão giả|đạo nhân|lão tổ|môn chủ|chưởng môn|tông chủ|tiểu tử|gã|y|trượng phu|nam nhân|hoàng thượng|vương gia|Lý Phong|Phong|Minh|Quang|Dũng|Huy)\b'
-    verbs = r'\b(nói|đáp|hỏi|than|cười|thầm|bảo|nghẹn ngào|thì thào|thỏ thẻ|quát|thét|gầm|rống|la|cười lạnh|hừ lạnh|trầm giọng|lẩm bẩm|thốt lên|hô|nhủ|nghĩ|truyền âm|tiếp lời|khẽ nói)\b'
+    male_titles = r'\b(chàng|hắn|hắn ta|công tử|sư huynh|huynh đệ|phụ thân|cha|nam tử|huynh trưởng|thiếu niên|đại ca|lão giả|đạo nhân|lão tổ|môn chủ|chưởng môn|tông chủ|tiểu tử|gã|y|trượng phu|nam nhân|hoàng thượng|vương gia|Lý Phong|Phong|Minh|Quang|Dũng|Huy|Vương Võ|Võ|Lâm Tiêu|Tiêu|Hàn Lập)\b'
+    verbs = r'\b(nói|đáp|hỏi|than|cười|thầm|bảo|nghẹn ngào|thì thào|thỏ thẻ|quát|thét|gầm|rống|la|cười lạnh|hừ lạnh|trầm giọng|lẩm bẩm|thốt lên|hô|nhủ|nghĩ|truyền âm|tiếp lời|khẽ nói|trong nội tâm|trong lòng|đáy lòng|tâm niệm|thầm nghĩ|nghĩ thầm|thầm than|thầm nhủ|thầm mắng|kinh ngạc|kinh hãi|hoảng sợ|chấn động|chấn kinh|biến sắc|ngẩn người|bàng hoàng|trầm ngâm|tự nhủ|nhíu mày|thở dài|nhếch miệng|cười nhạt|cười gằn)\b'
     
     for i, p in enumerate(raw_parts):
         p_clean = p.strip()
@@ -525,9 +555,13 @@ def parse_contextual_story_segments(text):
             continue
             
         # Kiểm tra từ tượng thanh độc lập
-        sfx_type, pruned_text = detect_and_prune_sfx(clean_text)
+        sfx_res = detect_and_prune_sfx(clean_text)
+        sfx_type, pruned_text = sfx_res[0], sfx_res[1]
         if sfx_type and pruned_text:
             clean_text = pruned_text
+            
+        # Tinh chỉnh nhịp ngắt nghỉ dấu phẩy (Comma Prosody & Breath Enhancer):
+        clean_text = re.sub(r'(?<=[^\W\d_]),\s*(?=[^\W\d_“"«])', ',: ', clean_text)
             
         prev_ctx = raw_parts[i-1] if i > 0 else ""
         next_ctx = raw_parts[i+1] if i + 1 < len(raw_parts) else ""

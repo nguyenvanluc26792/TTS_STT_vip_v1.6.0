@@ -2,6 +2,8 @@ package com.dragon.read.reader.ui
 
 import android.annotation.SuppressLint
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -47,6 +49,8 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.dragon.read.reader.server.HonorLocalServer
 import com.dz.business.reader.utils.InputManagerExHelper
+import android.app.DownloadManager
+import android.os.Environment
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.HttpURLConnection
@@ -874,9 +878,37 @@ class ReaderActivity : ComponentActivity() {
         webView.isLongClickable = true
         webView.isHapticFeedbackEnabled = true
 
+        webView.setDownloadListener { url, _, _, _, _ ->
+            try {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(intent)
+            } catch (e: Throwable) {
+                Log.e(TAG, "DownloadListener error: ${e.message}")
+            }
+        }
+
         webView.addJavascriptInterface(HonorJsBridge(), "HonorBridge")
 
         webView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                val uri = request?.url ?: return false
+                val urlStr = uri.toString()
+                if (urlStr.endsWith(".apk", ignoreCase = true) || urlStr.contains("/download-app")) {
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(intent)
+                        return true
+                    } catch (e: Throwable) {
+                        Log.e(TAG, "shouldOverrideUrlLoading error: ${e.message}")
+                    }
+                }
+                return false
+            }
+
             override fun onRenderProcessGone(view: WebView?, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
                 Log.e(TAG, "WebView onRenderProcessGone! didCrash=${detail?.didCrash()}")
                 runOnUiThread {
@@ -1343,12 +1375,12 @@ class ReaderActivity : ComponentActivity() {
         super.onActionModeStarted(mode)
     }
 
-    private fun triggerNextPage() {
-        if (isMediaPlaying) {
+    private fun triggerNextPage(fromUser: Boolean = true) {
+        if (!fromUser && isMediaPlaying) {
             Log.i(TAG, "isMediaPlaying = true -> Bỏ qua triggerNextPage tự lật trang")
             return
         }
-        if (currentAnimMode == InputManagerExHelper.ANIM_NONE) {
+        if (!fromUser && currentAnimMode == InputManagerExHelper.ANIM_NONE) {
             Log.i(TAG, "currentAnimMode == ANIM_NONE -> Bỏ qua triggerNextPage vì MagicOS đã tắt")
             return
         }
@@ -1363,9 +1395,9 @@ class ReaderActivity : ComponentActivity() {
                 const sc = document.getElementById('readerScrollArea') || document.querySelector('main');
                 if (sc) sc.scrollLeft = 0;
                 if (typeof window.nextPage === 'function') {
-                    window.nextPage();
+                    window.nextPage(true);
                 } else if (typeof window.safeTurnNextPage === 'function') {
-                    window.safeTurnNextPage();
+                    window.safeTurnNextPage(true);
                 } else if (sc) {
                     sc.scrollBy({ top: window.innerHeight * 0.85, behavior: 'smooth' });
                 }
@@ -1375,12 +1407,12 @@ class ReaderActivity : ComponentActivity() {
         webView.evaluateJavascript(js, null)
     }
 
-    private fun triggerPreviousPage() {
-        if (isMediaPlaying) {
+    private fun triggerPreviousPage(fromUser: Boolean = true) {
+        if (!fromUser && isMediaPlaying) {
             Log.i(TAG, "isMediaPlaying = true -> Bỏ qua triggerPreviousPage tự lật trang")
             return
         }
-        if (currentAnimMode == InputManagerExHelper.ANIM_NONE) {
+        if (!fromUser && currentAnimMode == InputManagerExHelper.ANIM_NONE) {
             Log.i(TAG, "currentAnimMode == ANIM_NONE -> Bỏ qua triggerPreviousPage vì MagicOS đã tắt")
             return
         }
@@ -1395,9 +1427,9 @@ class ReaderActivity : ComponentActivity() {
                 const sc = document.getElementById('readerScrollArea') || document.querySelector('main');
                 if (sc) sc.scrollLeft = 0;
                 if (typeof window.prevPage === 'function') {
-                    window.prevPage();
+                    window.prevPage(true);
                 } else if (typeof window.safeTurnPrevPage === 'function') {
-                    window.safeTurnPrevPage();
+                    window.safeTurnPrevPage(true);
                 } else if (sc) {
                     sc.scrollBy({ top: -window.innerHeight * 0.85, behavior: 'smooth' });
                 }
@@ -1534,6 +1566,7 @@ class ReaderActivity : ComponentActivity() {
         fun updateMediaSession(title: String, artist: String, isPlaying: Boolean, album: String) {
             try {
                 runOnUiThread {
+                    localServer?.isAudioPlaying = isPlaying
                     this@ReaderActivity.onMediaPlayingChanged(isPlaying)
                     ReaderMediaService.startOrUpdate(
                         this@ReaderActivity,
@@ -1552,8 +1585,11 @@ class ReaderActivity : ComponentActivity() {
         fun stopMediaService() {
             try {
                 runOnUiThread {
+                    localServer?.isAudioPlaying = false
                     this@ReaderActivity.onMediaPlayingChanged(false)
-                    ReaderMediaService.stop(this@ReaderActivity)
+                    if (localServer?.preloader?.isWorking != true) {
+                        ReaderMediaService.stop(this@ReaderActivity)
+                    }
                 }
             } catch (e: Throwable) {
                 Log.e(TAG, "Error in stopMediaService: ${e.message}")
@@ -1628,6 +1664,7 @@ class ReaderActivity : ComponentActivity() {
             try {
                 runOnUiThread {
                     try {
+                        textToSpeech?.setPitch(1.0f)
                         textToSpeech?.setSpeechRate(if (speed in 0.5f..2.5f) speed else 1.0f)
                         val uttId = "reader_utt_${System.currentTimeMillis()}"
                         val params = android.os.Bundle().apply {
@@ -1659,11 +1696,98 @@ class ReaderActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
+        fun speakNativeWithPitch(text: String, speed: Float, pitch: Float): Boolean {
+            if (!isTtsReady || textToSpeech == null) return false
+            try {
+                runOnUiThread {
+                    try {
+                        textToSpeech?.setSpeechRate(if (speed in 0.5f..2.5f) speed else 1.0f)
+                        textToSpeech?.setPitch(if (pitch in 0.5f..2.0f) pitch else 1.0f)
+                        val uttId = "reader_utt_${System.currentTimeMillis()}"
+                        val params = android.os.Bundle().apply {
+                            putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, uttId)
+                        }
+                        val res = textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, params, uttId)
+                        if (res != TextToSpeech.SUCCESS) {
+                            Log.w(TAG, "textToSpeech.speak error code: $res")
+                            runOnUiThread {
+                                try {
+                                    webView.evaluateJavascript("if (window.onNativeTtsError) window.onNativeTtsError();", null)
+                                } catch (e: Throwable) {}
+                            }
+                        }
+                    } catch (e: Throwable) {
+                        Log.e(TAG, "Lỗi speakNativeWithPitch: ${e.message}")
+                        runOnUiThread {
+                            try {
+                                webView.evaluateJavascript("if (window.onNativeTtsError) window.onNativeTtsError();", null)
+                            } catch (err: Throwable) {}
+                        }
+                    }
+                }
+                return true
+            } catch (e: Throwable) {
+                Log.e(TAG, "Error in speakNativeWithPitch bridge: ${e.message}")
+                return false
+            }
+        }
+
+        @JavascriptInterface
         fun stopNativeSpeak() {
             runOnUiThread {
                 try {
                     textToSpeech?.stop()
                 } catch (e: Exception) {}
+            }
+        }
+
+        @JavascriptInterface
+        fun copyToClipboard(text: String) {
+            runOnUiThread {
+                try {
+                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    val clip = ClipData.newPlainText("Copied Text", text)
+                    clipboard?.setPrimaryClip(clip)
+                    Toast.makeText(this@ReaderActivity, "📋 Đã sao chép vào bộ nhớ tạm", Toast.LENGTH_SHORT).show()
+                } catch (e: Throwable) {
+                    Log.e(TAG, "Error copyToClipboard: ${e.message}")
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun downloadApk(url: String) {
+            runOnUiThread {
+                try {
+                    val safeUrl = url.trim()
+                    Log.i(TAG, "HonorJsBridge.downloadApk called with: $safeUrl")
+
+                    // 1. Dùng Android DownloadManager tải trực tiếp file về thư mục Downloads của máy
+                    try {
+                        val uri = Uri.parse(safeUrl)
+                        val request = DownloadManager.Request(uri).apply {
+                            setTitle("Honor Reader v1.6.45")
+                            setDescription("Đang tải tệp cài đặt LReader.apk...")
+                            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                            setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "LReader.apk")
+                            setMimeType("application/vnd.android.package-archive")
+                        }
+                        val dm = getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
+                        dm?.enqueue(request)
+                        Toast.makeText(this@ReaderActivity, "📥 Đang tải APK về máy...", Toast.LENGTH_SHORT).show()
+                    } catch (dmErr: Throwable) {
+                        Log.w(TAG, "DownloadManager enqueue error: ${dmErr.message}")
+                    }
+
+                    // 2. Mở trình duyệt mặc định tải trực tiếp để đảm bảo 100% người dùng có file ngay
+                    val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(safeUrl)).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(browserIntent)
+                } catch (e: Throwable) {
+                    Log.e(TAG, "Lỗi mở liên kết tải APK: ${e.message}")
+                    Toast.makeText(this@ReaderActivity, "Lỗi mở tải: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
