@@ -5131,6 +5131,81 @@ body.zen-mode #nrFabAdd {
           <span style="font-size:0.82rem; color:#7c7e8e; display:inline-flex; align-items:center; gap:4px;">Tùy chỉnh <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
         </div>
 
+        <!-- 2.5. CHẾ ĐỘ PHÁT GIỌNG: 2 MODE (ĐỔI GIỌNG THEO GIỚI TÍNH vs 1 GIỌNG DUY NHẤT) -->
+        <div class="nr-card-title" style="display:flex; justify-content:space-between; align-items:center;">
+          <span>🎭 Chế độ phát giọng (Voice Mode)</span>
+          <span id="nrVoiceModeBadge" style="font-size:0.75rem; padding:2px 8px; border-radius:99px; background:rgba(16,185,129,0.18); color:#10b981; font-weight:700;">Mode 1: Đa giọng</span>
+        </div>
+        <div class="nr-card" style="border-radius:18px; padding:14px; margin-bottom:14px; background:linear-gradient(135deg, rgba(79,70,229,0.06), rgba(16,185,129,0.04)); border:1.5px solid rgba(79,70,229,0.25);">
+          <!-- Nút chuyển 2 Mode (Segmented Control) -->
+          <div style="display:flex; gap:8px; margin-bottom:14px; background:rgba(0,0,0,0.25); padding:4px; border-radius:12px; border:1px solid rgba(255,255,255,0.08);">
+            <button type="button" id="btnVoiceModeMulti" class="nr-chip-btn active" style="flex:1; padding:9px 6px; font-size:0.78rem; font-weight:700; border-radius:10px; display:flex; align-items:center; justify-content:center; gap:5px;" onclick="setVoiceMode('multi')">
+              <span>🎭 Mode 1: Đa giọng (Giới tính)</span>
+            </button>
+            <button type="button" id="btnVoiceModeSingle" class="nr-chip-btn" style="flex:1; padding:9px 6px; font-size:0.78rem; font-weight:700; border-radius:10px; display:flex; align-items:center; justify-content:center; gap:5px;" onclick="setVoiceMode('single')">
+              <span>🎙️ Mode 2: 1 Voice duy nhất</span>
+            </button>
+          </div>
+
+          <!-- NỘI DUNG MODE 1: Chọn giọng cho từng giới tính -->
+          <div id="nrVoiceModeMultiPanel" style="display:block;">
+            <div style="font-size:0.75rem; color:#94a3b8; margin-bottom:10px; line-height:1.4;">
+              ✨ Tự động nhận diện vai diễn. Hãy chọn giọng bạn muốn gán cho từng giới tính bên dưới:
+            </div>
+
+            <!-- 1. Giọng Dẫn Truyện -->
+            <div style="margin-bottom:10px; background:rgba(0,0,0,0.22); padding:10px 12px; border-radius:12px; border:1px solid rgba(255,255,255,0.06);">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <span style="font-size:0.80rem; font-weight:700; color:#cbd5e1; display:flex; align-items:center; gap:6px;">
+                  <span>📖 Giọng Dẫn truyện (Người kể)</span>
+                </span>
+                <span id="nrVoiceNarratorBadge" style="font-size:0.70rem; color:#38bdf8; background:rgba(56,189,248,0.15); padding:1px 6px; border-radius:6px;">Cô Gái Hoạt Ngôn</span>
+              </div>
+              <select id="selectVoiceNarrator" style="width:100%; box-sizing:border-box; padding:8px 10px; font-size:0.80rem; border-radius:8px; border:1px solid rgba(255,255,255,0.15); background:rgba(15,23,42,0.85); color:#f1f5f9; outline:none;" onchange="onGenderVoiceChange('narration', this.value)">
+              </select>
+            </div>
+
+            <!-- 2. Giọng Nhân Vật Nam -->
+            <div style="margin-bottom:10px; background:rgba(0,0,0,0.22); padding:10px 12px; border-radius:12px; border:1px solid rgba(255,255,255,0.06);">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <span style="font-size:0.80rem; font-weight:700; color:#cbd5e1; display:flex; align-items:center; gap:6px;">
+                  <span>👨 Giọng Nhân vật Nam</span>
+                </span>
+                <span id="nrVoiceMaleBadge" style="font-size:0.70rem; color:#38bdf8; background:rgba(56,189,248,0.15); padding:1px 6px; border-radius:6px;">Nam Trầm Ấm</span>
+              </div>
+              <select id="selectVoiceMale" style="width:100%; box-sizing:border-box; padding:8px 10px; font-size:0.80rem; border-radius:8px; border:1px solid rgba(255,255,255,0.15); background:rgba(15,23,42,0.85); color:#f1f5f9; outline:none;" onchange="onGenderVoiceChange('male', this.value)">
+              </select>
+            </div>
+
+            <!-- 3. Giọng Nhân Vật Nữ -->
+            <div style="margin-bottom:10px; background:rgba(0,0,0,0.22); padding:10px 12px; border-radius:12px; border:1px solid rgba(255,255,255,0.06);">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <span style="font-size:0.80rem; font-weight:700; color:#cbd5e1; display:flex; align-items:center; gap:6px;">
+                  <span>👩 Giọng Nhân vật Nữ</span>
+                </span>
+                <span id="nrVoiceFemaleBadge" style="font-size:0.70rem; color:#f472b6; background:rgba(244,114,182,0.15); padding:1px 6px; border-radius:6px;">Review Phim</span>
+              </div>
+              <select id="selectVoiceFemale" style="width:100%; box-sizing:border-box; padding:8px 10px; font-size:0.80rem; border-radius:8px; border:1px solid rgba(255,255,255,0.15); background:rgba(15,23,42,0.85); color:#f1f5f9; outline:none;" onchange="onGenderVoiceChange('female', this.value)">
+              </select>
+            </div>
+          </div>
+
+          <!-- NỘI DUNG MODE 2: 1 Voice duy nhất -->
+          <div id="nrVoiceModeSinglePanel" style="display:none;">
+            <div style="font-size:0.75rem; color:#94a3b8; margin-bottom:10px; line-height:1.4;">
+              🎙️ Toàn bộ truyện (cả câu thoại nhân vật và câu dẫn) sẽ được đọc bằng đúng 1 giọng duy nhất:
+            </div>
+            <div style="background:rgba(0,0,0,0.22); padding:10px 12px; border-radius:12px; border:1px solid rgba(255,255,255,0.06);">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <span style="font-size:0.80rem; font-weight:700; color:#cbd5e1;">Giọng đọc duy nhất:</span>
+                <span id="nrVoiceSingleBadge" style="font-size:0.70rem; color:#10b981; background:rgba(16,185,129,0.15); padding:1px 6px; border-radius:6px;">Đang chọn</span>
+              </div>
+              <select id="selectVoiceSingle" style="width:100%; box-sizing:border-box; padding:8px 10px; font-size:0.80rem; border-radius:8px; border:1px solid rgba(255,255,255,0.15); background:rgba(15,23,42,0.85); color:#f1f5f9; outline:none;" onchange="onSingleVoiceChange(this.value)">
+              </select>
+            </div>
+          </div>
+        </div>
+
         <!-- 3. Giọng đọc (Đầy đủ CapCut AI, Edge AI, Piper Offline, Google) -->
         <div class="nr-card-title">Giọng đọc</div>
         <div class="nr-card">
@@ -10073,6 +10148,9 @@ body.zen-mode #nrFabAdd {
         updateVoicePickerDisplay();
         syncVoiceUIElements(defaultVoice);
 
+        // Đồng bộ các bộ chọn giọng cho Mode 1 (Đa giọng theo giới tính) & Mode 2 (Đơn giọng)
+        populateGenderVoiceSelects();
+
         // Nếu modal chọn giọng đang mở thì cập nhật lại danh sách
         const pickerModal = document.getElementById('voicePickerModalOverlay');
         if (pickerModal && pickerModal.classList.contains('open')) {
@@ -10094,7 +10172,13 @@ body.zen-mode #nrFabAdd {
         return;
       }
       localStorage.setItem('reader_saved_voice', val);
+      if (getVoiceMode() === 'single') {
+        localStorage.setItem('reader_voice_single', val);
+      } else {
+        localStorage.setItem('reader_voice_narrator', val);
+      }
       syncVoiceUIElements(val);
+      populateGenderVoiceSelects();
 
       // Xóa toàn bộ bộ đệm âm thanh khi đổi giọng đọc để câu tiếp theo không bị dính giọng cũ
       if (typeof paragraphAudioCache !== 'undefined') paragraphAudioCache.clear();
@@ -12439,7 +12523,234 @@ body.zen-mode #nrFabAdd {
       return cleaned;
     }
 
+
+    // =====================================================================
+    // HỆ THỐNG ĐIỀU PHỐI 2 CHẾ ĐỘ GIỌNG ĐỌC (VOICE MODE ENGINE):
+    // Mode 1: Đổi giọng theo giới tính (Gán giọng riêng cho Dẫn truyện, Nam, Nữ)
+    // Mode 2: 1 Voice duy nhất xuyên suốt truyện
+    // =====================================================================
+    function getVoiceMode() {
+      const mode = localStorage.getItem('reader_voice_mode');
+      if (mode === 'single' || mode === 'multi') return mode;
+      return (localStorage.getItem('reader_multi_voice') === '0') ? 'single' : 'multi';
+    }
+
+    function setVoiceMode(mode) {
+      localStorage.setItem('reader_voice_mode', mode);
+      localStorage.setItem('reader_multi_voice', mode === 'multi' ? '1' : '0');
+      updateVoiceModeUI();
+
+      if (typeof paragraphAudioCache !== 'undefined') paragraphAudioCache.clear();
+      if (typeof paragraphPrefetchInFlight !== 'undefined') paragraphPrefetchInFlight.clear();
+
+      if (isPlaying && typeof currentSentenceIndex === 'number' && currentSentenceIndex >= 0) {
+        currentPlaybackSessionId++;
+        if (audio) {
+          audio.pause();
+          audio.onended = null;
+          cleanupCurrentAudioUrl();
+        }
+        if (window.HonorBridge && window.HonorBridge.stopNativeSpeak) {
+          try { window.HonorBridge.stopNativeSpeak(); } catch (_) {}
+        }
+        if ('speechSynthesis' in window) {
+          try { window.speechSynthesis.cancel(); } catch (_) {}
+        }
+        playParagraph(currentSentenceIndex);
+      }
+
+      if (typeof showToast === 'function') {
+        showToast(mode === 'multi' ? '🎭 Đã bật Mode 1: Đổi giọng theo giới tính' : '🎙️ Đã chuyển sang Mode 2: 1 Voice duy nhất');
+      }
+    }
+
+    function getSingleVoice() {
+      return localStorage.getItem('reader_voice_single') || localStorage.getItem('reader_saved_voice') || 'BV074_streaming';
+    }
+
+    function getProviderForVoiceId(vId) {
+      if (!vId) return 'capcut';
+      const s = String(vId).toLowerCase();
+      if (s === 'android_native') return 'native';
+      if (s.startsWith('offline_')) return 'offline';
+      if (s.startsWith('vi-vn-') || s.startsWith('en-us-') || s.startsWith('edge_')) return 'edge';
+      if (s.startsWith('eleven_') || s.includes('adam') || s.includes('almee')) return 'elevenlabs';
+      return 'capcut';
+    }
+
+    function onSingleVoiceChange(val) {
+      localStorage.setItem('reader_voice_single', val);
+      localStorage.setItem('reader_saved_voice', val);
+      const mainSelect = document.getElementById('voiceSelect');
+      if (mainSelect) mainSelect.value = val;
+      syncVoiceUIElements(val);
+
+      if (typeof paragraphAudioCache !== 'undefined') paragraphAudioCache.clear();
+      if (typeof paragraphPrefetchInFlight !== 'undefined') paragraphPrefetchInFlight.clear();
+
+      if (isPlaying && typeof currentSentenceIndex === 'number' && currentSentenceIndex >= 0) {
+        currentPlaybackSessionId++;
+        if (audio) { audio.pause(); audio.onended = null; cleanupCurrentAudioUrl(); }
+        playParagraph(currentSentenceIndex);
+      }
+      updateGenderVoiceBadges();
+      if (typeof showToast === 'function') showToast('🎙️ Đã cập nhật giọng đọc duy nhất');
+    }
+
+    function onGenderVoiceChange(gender, val) {
+      if (gender === 'narration') {
+        localStorage.setItem('reader_voice_narrator', val);
+      } else if (gender === 'male') {
+        localStorage.setItem('reader_voice_male', val);
+      } else if (gender === 'female') {
+        localStorage.setItem('reader_voice_female', val);
+      }
+      updateGenderVoiceBadges();
+
+      if (typeof paragraphAudioCache !== 'undefined') paragraphAudioCache.clear();
+      if (typeof paragraphPrefetchInFlight !== 'undefined') paragraphPrefetchInFlight.clear();
+
+      if (isPlaying && typeof currentSentenceIndex === 'number' && currentSentenceIndex >= 0) {
+        currentPlaybackSessionId++;
+        if (audio) { audio.pause(); audio.onended = null; cleanupCurrentAudioUrl(); }
+        playParagraph(currentSentenceIndex);
+      }
+      const label = (gender === 'narration') ? 'Dẫn truyện' : (gender === 'male' ? 'Nhân vật Nam' : 'Nhân vật Nữ');
+      if (typeof showToast === 'function') showToast('🎭 Đã cập nhật giọng cho ' + label);
+    }
+
+    function populateGenderVoiceSelects() {
+      const mainSelect = document.getElementById('voiceSelect');
+      if (!mainSelect) return;
+
+      const targetSelects = [
+        { id: 'selectVoiceNarrator', key: 'reader_voice_narrator', def: localStorage.getItem('reader_saved_voice') || 'BV074_streaming' },
+        { id: 'selectVoiceMale', key: 'reader_voice_male', def: 'BV075_streaming' },
+        { id: 'selectVoiceFemale', key: 'reader_voice_female', def: 'multi_female_richgirl_uranus_bigtts' },
+        { id: 'selectVoiceSingle', key: 'reader_voice_single', def: localStorage.getItem('reader_saved_voice') || 'BV074_streaming' }
+      ];
+
+      targetSelects.forEach(item => {
+        const el = document.getElementById(item.id);
+        if (!el) return;
+        el.innerHTML = '';
+
+        Array.from(mainSelect.children).forEach(child => {
+          if (child.tagName === 'OPTGROUP') {
+            const grp = document.createElement('optgroup');
+            grp.label = child.label;
+            Array.from(child.children).forEach(opt => {
+              if (opt.value === '__manage_offline__') return;
+              const newOpt = document.createElement('option');
+              newOpt.value = opt.value;
+              newOpt.textContent = opt.textContent;
+              newOpt.dataset.provider = opt.dataset.provider || '';
+              grp.appendChild(newOpt);
+            });
+            if (grp.children.length > 0) {
+              el.appendChild(grp);
+            }
+          } else if (child.tagName === 'OPTION') {
+            if (child.value === '__manage_offline__') return;
+            const newOpt = document.createElement('option');
+            newOpt.value = child.value;
+            newOpt.textContent = child.textContent;
+            newOpt.dataset.provider = child.dataset.provider || '';
+            el.appendChild(newOpt);
+          }
+        });
+
+        const saved = localStorage.getItem(item.key) || item.def;
+        el.value = saved;
+        if (!el.value && el.options.length > 0) {
+          el.selectedIndex = 0;
+        }
+      });
+
+      updateVoiceModeUI();
+    }
+
+    function updateVoiceModeUI() {
+      const mode = getVoiceMode();
+      const btnMulti = document.getElementById('btnVoiceModeMulti');
+      const btnSingle = document.getElementById('btnVoiceModeSingle');
+      const panelMulti = document.getElementById('nrVoiceModeMultiPanel');
+      const panelSingle = document.getElementById('nrVoiceModeSinglePanel');
+      const badge = document.getElementById('nrVoiceModeBadge');
+
+      if (mode === 'multi') {
+        if (btnMulti) btnMulti.classList.add('active');
+        if (btnSingle) btnSingle.classList.remove('active');
+        if (panelMulti) panelMulti.style.display = 'block';
+        if (panelSingle) panelSingle.style.display = 'none';
+        if (badge) {
+          badge.textContent = 'Mode 1: Đa giọng (Giới tính)';
+          badge.style.background = 'rgba(16,185,129,0.18)';
+          badge.style.color = '#10b981';
+        }
+      } else {
+        if (btnMulti) btnMulti.classList.remove('active');
+        if (btnSingle) btnSingle.classList.add('active');
+        if (panelMulti) panelMulti.style.display = 'none';
+        if (panelSingle) panelSingle.style.display = 'block';
+        if (badge) {
+          badge.textContent = 'Mode 2: 1 Voice duy nhất';
+          badge.style.background = 'rgba(56,189,248,0.18)';
+          badge.style.color = '#38bdf8';
+        }
+      }
+
+      updateGenderVoiceBadges();
+      if (typeof updateMultiVoiceUI === 'function') updateMultiVoiceUI();
+    }
+
+    function updateGenderVoiceBadges() {
+      const narratorSel = document.getElementById('selectVoiceNarrator');
+      const maleSel = document.getElementById('selectVoiceMale');
+      const femaleSel = document.getElementById('selectVoiceFemale');
+      const singleSel = document.getElementById('selectVoiceSingle');
+
+      const bNarrator = document.getElementById('nrVoiceNarratorBadge');
+      const bMale = document.getElementById('nrVoiceMaleBadge');
+      const bFemale = document.getElementById('nrVoiceFemaleBadge');
+      const bSingle = document.getElementById('nrVoiceSingleBadge');
+
+      if (narratorSel && bNarrator) {
+        const text = narratorSel.options[narratorSel.selectedIndex]?.textContent || 'Chưa chọn';
+        bNarrator.textContent = text.split('(')[0].replace('★', '').trim();
+      }
+      if (maleSel && bMale) {
+        const text = maleSel.options[maleSel.selectedIndex]?.textContent || 'Chưa chọn';
+        bMale.textContent = text.split('(')[0].replace('★', '').trim();
+      }
+      if (femaleSel && bFemale) {
+        const text = femaleSel.options[femaleSel.selectedIndex]?.textContent || 'Chưa chọn';
+        bFemale.textContent = text.split('(')[0].replace('★', '').trim();
+      }
+      if (singleSel && bSingle) {
+        const text = singleSel.options[singleSel.selectedIndex]?.textContent || 'Chưa chọn';
+        bSingle.textContent = text.split('(')[0].replace('★', '').trim();
+      }
+    }
+
     function getPairedMultiVoice(baseVoiceId, provider, targetGender, crowdRole = '') {
+      const mode = getVoiceMode();
+      if (mode === 'single') {
+        return getSingleVoice() || baseVoiceId;
+      }
+
+      // Mode 1: Đổi giọng theo giới tính (Người dùng tùy chọn gán giọng cho từng giới tính)
+      if (targetGender === 'female') {
+        const customFemale = localStorage.getItem('reader_voice_female');
+        if (customFemale) return customFemale;
+      } else if (targetGender === 'male') {
+        const customMale = localStorage.getItem('reader_voice_male');
+        if (customMale) return customMale;
+      } else if (targetGender === 'narration' || targetGender === 'neutral' || !targetGender) {
+        const customNarrator = localStorage.getItem('reader_voice_narrator');
+        if (customNarrator) return customNarrator;
+      }
+
       if (crowdRole === 'crowd_female_a') {
         return 'multi_female_richgirl_uranus_bigtts';
       }
@@ -12898,7 +13209,18 @@ body.zen-mode #nrFabAdd {
       }
       spokenText = spokenText.replace(/ {2,}/g, ' ').trim();
 
-      const effectiveVoiceId = (isMultiVoice && attr.isDialogue) ? getPairedMultiVoice(voiceId, provider, attr.gender) : voiceId;
+      let effectiveVoiceId = voiceId;
+      if (isMultiVoice) {
+        if (attr.isDialogue) {
+          effectiveVoiceId = getPairedMultiVoice(voiceId, provider, attr.gender);
+        } else {
+          const customNarrator = localStorage.getItem('reader_voice_narrator');
+          effectiveVoiceId = customNarrator || voiceId;
+        }
+      } else {
+        effectiveVoiceId = getSingleVoice() || voiceId;
+      }
+      const effectiveProvider = getProviderForVoiceId(effectiveVoiceId);
       const effectiveSpeed = currentSpeed * attr.speedFactor;
 
       const key = getAudioCacheKey(chIdx, sIdx, `${effectiveVoiceId}_${attr.emotion}`);
@@ -12914,7 +13236,7 @@ body.zen-mode #nrFabAdd {
             book_id: bookData ? bookData.id : null,
             voice_id: effectiveVoiceId,
             base_voice_id: voiceId,
-            provider: provider,
+            provider: effectiveProvider,
             speed: effectiveSpeed,
             bilingual_mode: currentBilingualMode,
             multi_voice: isMultiVoice,
@@ -13224,8 +13546,19 @@ body.zen-mode #nrFabAdd {
         }
       }
 
-      // 2. Giọng Online & Giọng Offline AI đã tải về
-      const effectiveVoiceId = (isMultiVoice && attr.isDialogue) ? getPairedMultiVoice(voiceId, provider, attr.gender, attr.crowdRole) : voiceId;
+      // 2. Giọng Online & Giọng Offline AI đã tải về (Hỗ trợ 2 Mode: Đa giọng giới tính vs 1 giọng duy nhất)
+      let effectiveVoiceId = voiceId;
+      if (isMultiVoice) {
+        if (attr.isDialogue) {
+          effectiveVoiceId = getPairedMultiVoice(voiceId, provider, attr.gender, attr.crowdRole);
+        } else {
+          const customNarrator = localStorage.getItem('reader_voice_narrator');
+          effectiveVoiceId = customNarrator || voiceId;
+        }
+      } else {
+        effectiveVoiceId = getSingleVoice() || voiceId;
+      }
+      const effectiveProvider = getProviderForVoiceId(effectiveVoiceId);
       const effectiveSpeed = currentSpeed * attr.speedFactor;
 
       const cacheKey = getAudioCacheKey(currentChapterIndex, idx, `${effectiveVoiceId}_${attr.emotion}`);
@@ -13244,7 +13577,7 @@ body.zen-mode #nrFabAdd {
               book_id: bookData ? bookData.id : null,
               voice_id: effectiveVoiceId,
               base_voice_id: voiceId,
-              provider: provider,
+              provider: effectiveProvider,
               speed: effectiveSpeed,
               bilingual_mode: currentBilingualMode,
               multi_voice: isMultiVoice,
@@ -14829,8 +15162,8 @@ body.zen-mode #nrFabAdd {
     // ==========================================
     const DEFAULT_OTA_3G_URL = 'https://rehab-survey-clusters-joins.trycloudflare.com';
     const DEFAULT_OTA_WIFI_URL = 'http://192.168.1.204:5000';
-    const CURRENT_APP_VERSION = 'v1.6.57';
-    const CURRENT_APP_BUILD = 217;
+    const CURRENT_APP_VERSION = 'v1.6.58';
+    const CURRENT_APP_BUILD = 218;
 
     async function autoSilentOtaCheck() {
       try {
@@ -15265,6 +15598,7 @@ body.zen-mode #nrFabAdd {
 
     window.addEventListener('DOMContentLoaded', () => {
       checkOtaStatusBadge();
+      updateVoiceModeUI();
       setTimeout(autoSilentOtaCheck, 2000);
       checkPreviousAppCrash();
       initAutoResume();
