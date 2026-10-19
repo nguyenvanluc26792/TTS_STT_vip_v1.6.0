@@ -12729,7 +12729,7 @@ body.zen-mode #nrFabAdd {
       if (isMultiVoice && attr.isDialogue) {
         spokenText = sanitizeDialogueForTTS(spokenText, attr);
       }
-      spokenText = spokenText.replace(/(?<!\d),\s*/g, ', ');
+      spokenText = spokenText.replace(/(?<!\d),\s*/g, ', - ').replace(/[.…~–—\s]+$/, '.');
 
       const effectiveVoiceId = (isMultiVoice && attr.isDialogue) ? getPairedMultiVoice(voiceId, provider, attr.gender) : voiceId;
       const effectiveSpeed = currentSpeed * attr.speedFactor;
@@ -12784,38 +12784,38 @@ body.zen-mode #nrFabAdd {
     }
 
     // =====================================================================
-    // BỘ ĐIỀU PHỐI KHOẢNG NGHỈ TỰ NHIÊN THEO NGỮ CẢNH (CONTEXTUAL PAUSE TUNER)
-    // - Giữa 2 câu cùng đoạn: ngắt siêu mượt 25ms (liền mạch như hơi thở, chống giật cục 100%)
-    // - Hết một đoạn văn (xuống dòng): ngắt 150ms chuyển ý tự nhiên
-    // - Hết chương: ngắt 500ms trước khi nạp chương tiếp theo
+    // BỘ ĐIỀU PHỐI KHOẢNG NGHỈ ĐỒNG NHẤT 100% (UNIFORM RHYTHM CONTROLLER)
+    // - Dấu phẩy: ngắt thở đều đặn, rõ ràng ~250ms với ', - '
+    // - Giữa 2 câu cùng đoạn: nghỉ tự nhiên 400ms
+    // - Giữa 2 đoạn văn (xuống dòng): nghỉ đúng chuẩn 1 giây (1000ms)
+    // - Bất kể giữa các đoạn có ký hiệu hoa văn, dấu gạch hay khoảng trắng trống
     // =====================================================================
     function advanceToNextSentenceWithContextualPause() {
       if (!isPlaying) return;
       const mySession = currentPlaybackSessionId;
-      const nextIdx = currentParagraphIndex + 1;
 
-      let pauseMs = 0;
-      if (nextIdx >= allSentences.length) {
-        pauseMs = 250;
-      } else if (sentenceMeta && sentenceMeta[currentParagraphIndex] && sentenceMeta[nextIdx]) {
+      // Tìm câu có nội dung đọc thực tế tiếp theo (bỏ qua mọi dòng ký hiệu rác như ***, ---, khoảng trắng trống)
+      let nextValidIdx = currentParagraphIndex + 1;
+      while (nextValidIdx < allSentences.length && isParagraphSkipped(allSentences[nextValidIdx])) {
+        nextValidIdx++;
+      }
+
+      let pauseMs = 400; // Giữa 2 câu trong cùng đoạn: nghỉ thở 400ms tự nhiên
+      if (nextValidIdx >= allSentences.length) {
+        pauseMs = 1000; // Hết chương: nghỉ chuẩn 1s trước khi sang chương mới
+      } else if (sentenceMeta && sentenceMeta[currentParagraphIndex] && sentenceMeta[nextValidIdx]) {
         const currPara = sentenceMeta[currentParagraphIndex].paraIndex;
-        const nextPara = sentenceMeta[nextIdx].paraIndex;
+        const nextPara = sentenceMeta[nextValidIdx].paraIndex;
         if (currPara !== undefined && nextPara !== undefined && currPara !== nextPara) {
-          pauseMs = 60;
+          pauseMs = 1000; // Chuyển sang đoạn văn mới: thời gian nghỉ đúng chuẩn 1s (1000ms) đều tăm tắp
         }
       }
 
-      if (pauseMs === 0) {
+      setTimeout(() => {
         if (isPlaying && mySession === currentPlaybackSessionId) {
-          nextParagraph();
+          playParagraph(nextValidIdx);
         }
-      } else {
-        setTimeout(() => {
-          if (isPlaying && mySession === currentPlaybackSessionId) {
-            nextParagraph();
-          }
-        }, pauseMs);
-      }
+      }, pauseMs);
     }
 
     // =====================================================================
@@ -12945,7 +12945,7 @@ body.zen-mode #nrFabAdd {
         }
       }
 
-      spokenText = spokenText.replace(/(?<!\d),\s*/g, ', ');
+      spokenText = spokenText.replace(/(?<!\d),\s*/g, ', - ').replace(/[.…~–—\s]+$/, '.');
 
       // 1. Giọng hệ thống máy Android (android_native)
       const isSystemNativeVoice = (provider === 'native' || voiceId === 'android_native');
@@ -14593,8 +14593,8 @@ body.zen-mode #nrFabAdd {
     // ==========================================
     const DEFAULT_OTA_3G_URL = 'https://rehab-survey-clusters-joins.trycloudflare.com';
     const DEFAULT_OTA_WIFI_URL = 'http://192.168.1.204:5000';
-    const CURRENT_APP_VERSION = 'v1.6.52';
-    const CURRENT_APP_BUILD = 212;
+    const CURRENT_APP_VERSION = 'v1.6.53';
+    const CURRENT_APP_BUILD = 213;
 
     function initOtaSettingsUI() {
       const input = document.getElementById('nrOtaServerInput');

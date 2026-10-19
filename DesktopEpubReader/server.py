@@ -225,14 +225,14 @@ def get_ota_version():
         stat = bundle_path.stat()
         return jsonify({
             "success": True,
-            "version": "v1.6.52",
-            "version_code": 212,
+            "version": "v1.6.53",
+            "version_code": 213,
             "size": stat.st_size,
             "updated_at": int(stat.st_mtime),
             "changelog": [
-                "🎵 Khắc phục dứt điểm giật cục & ngắt quãng âm thanh: Loại bỏ khoảng lặng gượng ép dấu phẩy, kết nối câu liền mạch mượt mà chuẩn tự nhiên",
-                "📱 Tinh chỉnh thanh trạng thái: Bỏ % pin để giải phóng không gian, chuyển cụm đệm audio sang sát lề phải tránh hoàn toàn bị che khuất bởi cụm camera 'viên thuốc'",
-                "🚀 Nâng cấp bộ tách câu thông minh: Không cắt vụn câu dài, giúp câu thoại và văn phong đọc truyền cảm, liền hơi"
+                "⏱️ Chuẩn hóa nhịp nghỉ giữa các đoạn đúng ~1 giây đều đặn, triệt tiêu hoàn toàn tình trạng lúc nhanh lúc chậm bất kể khoảng cách hay ký hiệu rác",
+                "✨ Tinh chỉnh khoảng ngắt dấu phẩy rành mạch, sâu lắng: Áp dụng nhịp thở tự nhiên đều đặn (~250ms) không bị nuốt chữ hay lướt quá nhanh",
+                "🛡️ Lọc bỏ ký hiệu phân cách rác: Chuyển đoạn mượt mà, liền mạch, đồng nhất 100% tiết tấu đọc sách"
             ]
         })
     return jsonify({"success": False}), 404
@@ -678,9 +678,10 @@ def apply_pronunciation_rules(text, rules=None):
     result = re.sub(r'(?<![\w\u00C0-\u1EF9])A(?![\w\u00C0-\u1EF9])', 'Ah', result)
     result = re.sub(r'(?<![\w\u00C0-\u1EF9])a(?![\w\u00C0-\u1EF9])', 'ah', result)
 
-    # 5. Tinh chỉnh nhịp ngắt nghỉ dấu câu tự nhiên
+    # 5. Tinh chỉnh nhịp ngắt nghỉ dấu câu tự nhiên và đều đặn
     result = re.sub(r'\s*([;:.!?…])\s*', r'\1 ', result)
-    result = re.sub(r'(?<!\d),\s*', ', ', result)
+    result = re.sub(r'(?<!\d),\s*', ', - ', result) # Nhịp ngắt thở đều đặn, rõ ràng ~250ms tại dấu phẩy
+    result = re.sub(r'[.…~–—\s]+$', '.', result) # Đuôi câu đồng nhất dấu chấm để tránh padding khoảng lặng lệch nhịp
     result = re.sub(r'[^\S\r\n]{3,}', '  ', result).strip()
 
     return result
