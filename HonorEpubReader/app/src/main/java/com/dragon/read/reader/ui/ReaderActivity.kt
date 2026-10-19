@@ -182,15 +182,19 @@ class ReaderActivity : ComponentActivity() {
         }
         setupMediaServiceListener()
 
+        // Giữ nguyên toàn bộ cache audio đệm chương để nghe offline không bị mất
         try {
-            // Dọn sạch toàn bộ cache audio cũ (bao gồm bất kỳ file demo 242KB nào còn sót lại)
-            cacheDir.listFiles()?.forEach { f ->
-                if (f.name.endsWith(".mp3") || f.name.endsWith(".wav") || f.name.startsWith("tts")) {
-                    f.delete()
+            // Chỉ xóa các file demo 242KB nếu có
+            val ttsDir = java.io.File(cacheDir, "tts_cache_v6")
+            if (ttsDir.exists()) {
+                ttsDir.listFiles()?.forEach { f ->
+                    if (f.length() in 240000L..245000L) {
+                        f.delete()
+                    }
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Lỗi xóa cache audio: ${e.message}")
+            Log.w(TAG, "Lỗi kiểm tra cache audio: ${e.message}")
         }
 
         rootLayout = FrameLayout(this).apply {

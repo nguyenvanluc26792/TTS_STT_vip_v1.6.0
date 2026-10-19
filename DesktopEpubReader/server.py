@@ -225,14 +225,14 @@ def get_ota_version():
         stat = bundle_path.stat()
         return jsonify({
             "success": True,
-            "version": "v1.6.53",
-            "version_code": 213,
+            "version": "v1.6.54",
+            "version_code": 214,
             "size": stat.st_size,
             "updated_at": int(stat.st_mtime),
             "changelog": [
-                "⏱️ Chuẩn hóa nhịp nghỉ giữa các đoạn đúng ~1 giây đều đặn, triệt tiêu hoàn toàn tình trạng lúc nhanh lúc chậm bất kể khoảng cách hay ký hiệu rác",
-                "✨ Tinh chỉnh khoảng ngắt dấu phẩy rành mạch, sâu lắng: Áp dụng nhịp thở tự nhiên đều đặn (~250ms) không bị nuốt chữ hay lướt quá nhanh",
-                "🛡️ Lọc bỏ ký hiệu phân cách rác: Chuyển đoạn mượt mà, liền mạch, đồng nhất 100% tiết tấu đọc sách"
+                "✨ Triệt tiêu hoàn toàn lỗi dấu phẩy đọc thành chữ 'đến': Thay thế bằng nhịp thở tự nhiên không phát âm từ thừa",
+                "⏱️ Đồng nhất 100% khoảng trống và nhịp ngắt đoạn văn: Tinh chỉnh thời gian chuyển đoạn mượt mà ~650ms, triệt tiêu dòng trống lệch khoảng cách",
+                "📶 Nâng cấp Đệm chương & Đọc Offline 100%: Bảo toàn vĩnh viễn cache âm thanh trên máy, tự động chuyển Giọng Google Offline khi mất mạng không bao giờ bị dừng"
             ]
         })
     return jsonify({"success": False}), 404
@@ -678,9 +678,9 @@ def apply_pronunciation_rules(text, rules=None):
     result = re.sub(r'(?<![\w\u00C0-\u1EF9])A(?![\w\u00C0-\u1EF9])', 'Ah', result)
     result = re.sub(r'(?<![\w\u00C0-\u1EF9])a(?![\w\u00C0-\u1EF9])', 'ah', result)
 
-    # 5. Tinh chỉnh nhịp ngắt nghỉ dấu câu tự nhiên và đều đặn
+    # 5. Tinh chỉnh nhịp ngắt nghỉ dấu câu tự nhiên và đều đặn (không đọc là 'đến')
     result = re.sub(r'\s*([;:.!?…])\s*', r'\1 ', result)
-    result = re.sub(r'(?<!\d),\s*', ', - ', result) # Nhịp ngắt thở đều đặn, rõ ràng ~250ms tại dấu phẩy
+    result = re.sub(r'(?<!\d),\s*(?:…|\.{3})?', ', ... ', result) # Nhịp ngắt thở đều đặn, tự nhiên ~200ms tại dấu phẩy
     result = re.sub(r'[.…~–—\s]+$', '.', result) # Đuôi câu đồng nhất dấu chấm để tránh padding khoảng lặng lệch nhịp
     result = re.sub(r'[^\S\r\n]{3,}', '  ', result).strip()
 

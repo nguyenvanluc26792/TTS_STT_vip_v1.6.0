@@ -423,14 +423,7 @@ class HonorLocalServer(
                     val skipFile = if (!safeId.isNullOrEmpty()) File(context.filesDir, "skip_rules_${safeId}.json") else File(context.filesDir, "skip_rules.json")
                     skipFile.writeText(contentToWrite, Charsets.UTF_8)
 
-                    // Xóa sạch file cache TTS cũ (.mp3) để TTS không phát lại audio đã chứa từ bị bỏ qua
-                    try {
-                        cacheDir.listFiles()?.forEach { f ->
-                            if (f.isFile && f.name.endsWith(".mp3")) {
-                                f.delete()
-                            }
-                        }
-                    } catch (e: Exception) {}
+                    // Không xóa sạch cache đệm chương của người dùng khi cập nhật skip rules
 
                     return jsonResponse("{\"success\":true,\"rules\":$contentToWrite,\"bookId\":\"$targetBookId\"}")
                 } catch (e: Exception) {
@@ -661,38 +654,54 @@ class HonorLocalServer(
                     text = text.trimEnd(' ', ',', ';', '…', '-', '–', '—') + "!"
                 }
 
-                // Tinh chỉnh nhịp ngắt nghỉ dấu câu tự nhiên và đều đặn
-                text = text.replace(Regex("(?<!\\d),\\s*"), ", - ")
+                // Tinh chỉnh nhịp ngắt nghỉ dấu câu tự nhiên và đều đặn (không đọc là 'đến')
+                text = text.replace(Regex("(?<!\\d),\\s*(?:…|\\.{3})?"), ", ... ")
                 text = text.replace(Regex("[.…~–—\\s]+$"), ".")
 
-                // Check cache sạch: đồng bộ khóa cache với Preloader và Web UI
+                // Check cache sạch: đồng bộ khóa cache đa tầng với Preloader và Web UI
                 val baseVoiceId = json.optString("base_voice_id", json.optString("voice_id", targetVoice)).let {
                     if (it.isEmpty() || it == "default") "BV074_streaming" else it
                 }
-                val cacheKey = md5("$baseVoiceId:$multiVoice:$emotion:$text")
-                val cacheFile = File(cacheDir, "$cacheKey.mp3")
-                if (cacheFile.exists()) {
-                    if (cacheFile.length() in 240000L..245000L) {
-                        cacheFile.delete() // Lập tức xóa nếu trùng kích thước file demo wav 242KB
-                    } else if (cacheFile.length() > 500) {
-                        val fis = FileInputStream(cacheFile)
-                        val resp = newFixedLengthResponse(Response.Status.OK, "audio/mpeg", fis, cacheFile.length())
-                        resp.addHeader("Cache-Control", "no-cache, no-store, must-revalidate")
-                        return resp
+                val cleanBaseId = baseVoiceId.removePrefix("offline_")
+                val cacheKeyCandidates = listOf(
+                    md5("$baseVoiceId:$multiVoice:$emotion:$text"),
+                    md5("$baseVoiceId:$multiVoice:normal:$text"),
+                    md5("$targetVoice:$multiVoice:$emotion:$text"),
+                    md5("$targetVoice:$multiVoice:normal:$text"),
+                    md5("$cleanBaseId:$multiVoice:normal:$text"),
+                    md5("$cleanBaseId:$multiVoice:$emotion:$text")
+                )
+                var matchedCacheFile: File? = null
+                for (k in cacheKeyCandidates) {
+                    val f = File(cacheDir, "$k.mp3")
+                    if (f.exists()) {
+                        if (f.length() in 240000L..245000L) {
+                            f.delete()
+                        } else if (f.length() > 500) {
+                            matchedCacheFile = f
+                            break
+                        }
                     }
+                }
+                if (matchedCacheFile != null) {
+                    val fis = FileInputStream(matchedCacheFile)
+                    val resp = newFixedLengthResponse(Response.Status.OK, "audio/mpeg", fis, matchedCacheFile.length())
+                    resp.addHeader("Cache-Control", "no-cache, no-store, must-revalidate")
+                    return resp
                 }
 
                 val audioBytes = synthesizeAudioUnified(text, targetVoice, multiVoice, isElevenLabs)
 
+                val primaryCacheFile = File(cacheDir, "${cacheKeyCandidates[0]}.mp3")
                 return if (audioBytes != null && audioBytes.isNotEmpty()) {
-                    try { cacheFile.writeBytes(audioBytes) } catch (e: Exception) {}
+                    try { primaryCacheFile.writeBytes(audioBytes) } catch (e: Exception) {}
                     val resp = newFixedLengthResponse(Response.Status.OK, "audio/mpeg", ByteArrayInputStream(audioBytes), audioBytes.size.toLong())
                     resp.addHeader("Cache-Control", "no-cache, no-store, must-revalidate")
                     resp.addHeader("Pragma", "no-cache")
                     resp.addHeader("Expires", "0")
                     return resp
                 } else {
-                    jsonResponse("{\"error\":\"Không thể sinh âm thanh TTS\"}", Response.Status.INTERNAL_ERROR)
+                    jsonResponse("{\"error\":\"offline_no_network\",\"fallback_native\":true}", Response.Status.SERVICE_UNAVAILABLE)
                 }
             } catch (e: Exception) {
                 return jsonResponse("{\"error\":\"${e.message}\"}", Response.Status.INTERNAL_ERROR)
@@ -1740,7 +1749,7 @@ class HonorLocalServer(
                    .replace(Regex("(?<![\\p{L}\\p{N}])a(?![\\p{L}\\p{N}])"), "ah")
 
         text = text.replace(Regex("\\s*([;:.!?…])\\s*"), "$1 ")
-                   .replace(Regex("(?<!\\d),\\s*"), ", - ")
+                   .replace(Regex("(?<!\\d),\\s*(?:…|\\.{3})?"), ", ... ")
                    .replace(Regex("[.…~–—\\s]+$"), ".")
                    .replace(Regex("[^\\S\\r\\n]{3,}"), "  ")
                    .trim()
@@ -1788,7 +1797,21 @@ class HonorLocalServer(
                 currentBookId = bId
                 currentChapter = chIdx
                 if (!vId.isNullOrEmpty()) voiceId = vId
-                if (!tVoice.isNullOrEmpty()) targetVoice = tVoice
+                val effectiveVoice = if (!vId.isNullOrEmpty()) {
+                    val clean = vId.removePrefix("offline_").lowercase()
+                    when {
+                        vId.startsWith("offline_") -> when {
+                            clean.contains("ngochuyen") || clean.contains("thanhphuong") -> "BV421_vivn_streaming"
+                            clean.contains("banmai") || clean.contains("phuongtrang") -> "multi_female_richgirl_uranus_bigtts"
+                            clean.contains("calmwoman") || clean.contains("maiphuong") || clean.contains("ngocngan") -> "vi_female_huong"
+                            else -> "BV075_streaming"
+                        }
+                        vId == "adam-my" || vId == "adam-us" -> "eleven_IRHApOXLvnW57QJPQH2P"
+                        vId == "adam-anh" || vId == "adam" -> "eleven_Gsndh0O5AnuI2Hj3YUlA"
+                        else -> tVoice ?: vId
+                    }
+                } else tVoice
+                if (!effectiveVoice.isNullOrEmpty()) targetVoice = effectiveVoice
                 if (mVoice != null) multiVoice = mVoice
                 if (emo != null) emotion = emo
                 if (e11 != null) isElevenLabs = e11
@@ -1942,12 +1965,15 @@ class HonorLocalServer(
                             if (emo == "cold" && !text.endsWith("!") && !text.endsWith("?")) {
                                 text = text.trimEnd(' ', ',', ';', '…', '-', '–', '—') + "!"
                             }
-                            text = text.replace(Regex("(?<!\\d),\\s*"), ", - ")
+                            text = text.replace(Regex("(?<!\\d),\\s*(?:…|\\.{3})?"), ", ... ")
                             text = text.replace(Regex("[.…~–—\\s]+$"), ".")
 
                             val cacheKey = md5("$vId:$mVoice:$emo:$text")
                             val cFile = File(cacheDir, "$cacheKey.mp3")
-                            if (cFile.exists() && cFile.length() > 500) {
+                            val altFile1 = File(cacheDir, "${md5("$tVoice:$mVoice:$emo:$text")}.mp3")
+                            val cleanBase = vId.removePrefix("offline_")
+                            val altFile2 = File(cacheDir, "${md5("$cleanBase:$mVoice:normal:$text")}.mp3")
+                            if ((cFile.exists() && cFile.length() > 500) || (altFile1.exists() && altFile1.length() > 500) || (altFile2.exists() && altFile2.length() > 500)) {
                                 alreadyCachedCount++
                             } else {
                                 missingList.add(MissingSent(sIdx, text, cFile))
@@ -2000,6 +2026,17 @@ class HonorLocalServer(
                                     val aBytes = synthesizeAudioUnified(item.text, tVoice, mVoice, e11)
                                     if (aBytes != null && aBytes.size > 500) {
                                         item.cacheFile.writeBytes(aBytes)
+                                        try {
+                                            val altKey1 = md5("$tVoice:$mVoice:$emo:${item.text}")
+                                            if (altKey1 != item.cacheFile.nameWithoutExtension) {
+                                                File(cacheDir, "$altKey1.mp3").writeBytes(aBytes)
+                                            }
+                                            val cleanBase = vId.removePrefix("offline_")
+                                            val altKey2 = md5("$cleanBase:$mVoice:normal:${item.text}")
+                                            if (altKey2 != item.cacheFile.nameWithoutExtension) {
+                                                File(cacheDir, "$altKey2.mp3").writeBytes(aBytes)
+                                            }
+                                        } catch (e: Exception) {}
                                     } else {
                                         try {
                                             item.cacheFile.writeBytes(getSilentMp3())
@@ -2042,11 +2079,15 @@ class HonorLocalServer(
                             if (emo == "cold" && !text.endsWith("!") && !text.endsWith("?")) {
                                 text = text.trimEnd(' ', ',', ';', '…', '-', '–', '—') + "!"
                             }
-                            text = text.replace(Regex("(?<!\\d),\\s*"), ", - ")
+                            text = text.replace(Regex("(?<!\\d),\\s*(?:…|\\.{3})?"), ", ... ")
                             text = text.replace(Regex("[.…~–—\\s]+$"), ".")
                             val cacheKey = md5("$vId:$mVoice:$emo:$text")
                             val cFile = File(cacheDir, "$cacheKey.mp3")
-                            if (!cFile.exists() || cFile.length() < 300) {
+                            val altFile1 = File(cacheDir, "${md5("$tVoice:$mVoice:$emo:$text")}.mp3")
+                            val cleanBase = vId.removePrefix("offline_")
+                            val altFile2 = File(cacheDir, "${md5("$cleanBase:$mVoice:normal:$text")}.mp3")
+                            val exists = (cFile.exists() && cFile.length() > 300) || (altFile1.exists() && altFile1.length() > 300) || (altFile2.exists() && altFile2.length() > 300)
+                            if (!exists) {
                                 chSuccess = false
                                 break
                             }

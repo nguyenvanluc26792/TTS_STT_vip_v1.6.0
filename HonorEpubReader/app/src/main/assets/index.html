@@ -3526,9 +3526,19 @@ body.zen-mode #nrFabAdd {
     }
     .honor-content .paragraph-item {
       color: #a3a3a3 !important;
+      margin-top: 0 !important;
       margin-bottom: var(--honor-paragraph-margin, 16px) !important;
       text-indent: 0 !important;
       letter-spacing: 0.2px;
+    }
+    .honor-content .paragraph-item:empty,
+    .paragraph-item:empty,
+    .paragraph-item.empty-para {
+      display: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      height: 0 !important;
+      min-height: 0 !important;
     }
     
     .honor-content .sentence-item.active,
@@ -11069,6 +11079,18 @@ body.zen-mode #nrFabAdd {
         return;
       }
 
+      // Chuẩn hóa và lọc sạch triệt để danh sách đoạn văn của chương: loại bỏ dòng trống, khoảng trắng rác
+      const rawParagraphs = Array.isArray(ch.paragraphs) ? ch.paragraphs : [];
+      const validParagraphs = [];
+      rawParagraphs.forEach(p => {
+        if (typeof p !== 'string') return;
+        const trimmed = p.trim();
+        if (trimmed.length > 0) {
+          validParagraphs.push(trimmed);
+        }
+      });
+      ch.paragraphs = validParagraphs;
+
       ch.paragraphs.forEach((p, pIdx) => {
         const skipped = isParagraphSkipped(p);
         const div = document.createElement('div');
@@ -12729,7 +12751,7 @@ body.zen-mode #nrFabAdd {
       if (isMultiVoice && attr.isDialogue) {
         spokenText = sanitizeDialogueForTTS(spokenText, attr);
       }
-      spokenText = spokenText.replace(/(?<!\d),\s*/g, ', - ').replace(/[.…~–—\s]+$/, '.');
+      spokenText = spokenText.replace(/(?<!\d),\s*(?:…|\.{3})?/g, ', ... ').replace(/[.…~–—\s]+$/, '.');
 
       const effectiveVoiceId = (isMultiVoice && attr.isDialogue) ? getPairedMultiVoice(voiceId, provider, attr.gender) : voiceId;
       const effectiveSpeed = currentSpeed * attr.speedFactor;
@@ -12800,14 +12822,14 @@ body.zen-mode #nrFabAdd {
         nextValidIdx++;
       }
 
-      let pauseMs = 400; // Giữa 2 câu trong cùng đoạn: nghỉ thở 400ms tự nhiên
+      let pauseMs = 350; // Giữa 2 câu trong cùng đoạn: nghỉ thở 350ms tự nhiên
       if (nextValidIdx >= allSentences.length) {
-        pauseMs = 1000; // Hết chương: nghỉ chuẩn 1s trước khi sang chương mới
+        pauseMs = 800; // Hết chương: nghỉ 800ms trước khi sang chương mới
       } else if (sentenceMeta && sentenceMeta[currentParagraphIndex] && sentenceMeta[nextValidIdx]) {
         const currPara = sentenceMeta[currentParagraphIndex].paraIndex;
         const nextPara = sentenceMeta[nextValidIdx].paraIndex;
         if (currPara !== undefined && nextPara !== undefined && currPara !== nextPara) {
-          pauseMs = 1000; // Chuyển sang đoạn văn mới: thời gian nghỉ đúng chuẩn 1s (1000ms) đều tăm tắp
+          pauseMs = 650; // Chuyển sang đoạn văn mới: thời gian nghỉ đều đặn chuẩn ~650ms
         }
       }
 
@@ -12945,7 +12967,38 @@ body.zen-mode #nrFabAdd {
         }
       }
 
-      spokenText = spokenText.replace(/(?<!\d),\s*/g, ', - ').replace(/[.…~–—\s]+$/, '.');
+      spokenText = spokenText.replace(/(?<!\d),\s*(?:…|\.{3})?/g, ', ... ').replace(/[.…~–—\s]+$/, '.');
+
+      function tryFallbackNative(fallbackText, fallbackSpeed, fallbackPitch) {
+        if (window.HonorBridge && window.HonorBridge.speakNativeWithPitch) {
+          setLoading(false);
+          updateMediaSession(ch.title, fallbackText);
+          const ok = window.HonorBridge.speakNativeWithPitch(fallbackText, fallbackSpeed, fallbackPitch || 1.0);
+          if (ok) return true;
+        }
+        if (window.HonorBridge && window.HonorBridge.speakNative) {
+          setLoading(false);
+          updateMediaSession(ch.title, fallbackText);
+          const ok = window.HonorBridge.speakNative(fallbackText, fallbackSpeed);
+          if (ok) return true;
+        }
+        if ('speechSynthesis' in window) {
+          setLoading(false);
+          try {
+            window.speechSynthesis.cancel();
+            const utt = new SpeechSynthesisUtterance(fallbackText);
+            utt.lang = 'vi-VN';
+            utt.rate = fallbackSpeed;
+            utt.pitch = fallbackPitch || 1.0;
+            utt.onend = () => { advanceToNextSentenceWithContextualPause(); };
+            utt.onerror = () => { advanceToNextSentenceWithContextualPause(); };
+            updateMediaSession(ch.title, fallbackText);
+            window.speechSynthesis.speak(utt);
+            return true;
+          } catch (_) {}
+        }
+        return false;
+      }
 
       // 1. Giọng hệ thống máy Android (android_native)
       const isSystemNativeVoice = (provider === 'native' || voiceId === 'android_native');
@@ -13041,12 +13094,27 @@ body.zen-mode #nrFabAdd {
             return;
           }
 
-          if (!res.ok) throw new Error('Lỗi server TTS (' + res.status + ')');
+          if (!res.ok) {
+            let isOfflineFallback = (res.status === 503 || res.status === 504 || res.status === 404);
+            try {
+              const errData = await res.json();
+              if (errData && errData.fallback_native) isOfflineFallback = true;
+            } catch (_) {}
+            if (isOfflineFallback && tryFallbackNative(spokenText, effectiveSpeed, currentPitch)) {
+              return;
+            }
+            throw new Error('Lỗi server TTS (' + res.status + ')');
+          }
           blob = await res.blob();
           if (blob.size < 300) throw new Error('Dữ liệu âm thanh nhận về quá ngắn');
         } catch (err) {
           console.error(`[Audio Error] Lỗi phát âm thanh Ch.${targetChapter + 1} Câu ${targetUnit + 1}:`, err);
           if (mySessionId !== currentPlaybackSessionId) return;
+
+          // Khi tắt internet hoặc không kết nối được server, lập tức đọc bằng giọng offline của máy không ngắt quãng
+          if (tryFallbackNative(spokenText, effectiveSpeed, currentPitch)) {
+            return;
+          }
 
           setLoading(false);
           setTimeout(() => {
@@ -14593,8 +14661,8 @@ body.zen-mode #nrFabAdd {
     // ==========================================
     const DEFAULT_OTA_3G_URL = 'https://rehab-survey-clusters-joins.trycloudflare.com';
     const DEFAULT_OTA_WIFI_URL = 'http://192.168.1.204:5000';
-    const CURRENT_APP_VERSION = 'v1.6.53';
-    const CURRENT_APP_BUILD = 213;
+    const CURRENT_APP_VERSION = 'v1.6.54';
+    const CURRENT_APP_BUILD = 214;
 
     function initOtaSettingsUI() {
       const input = document.getElementById('nrOtaServerInput');
