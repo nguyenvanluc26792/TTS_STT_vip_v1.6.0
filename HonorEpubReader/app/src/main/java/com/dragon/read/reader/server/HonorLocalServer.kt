@@ -605,18 +605,19 @@ class HonorLocalServer(
                     }
                 } else null
 
-                val sfxCleaned = text.replace(sfxRegex, " ")
-                    .replace(Regex("[\\s,;:!?…–—]+"), " ")
-                    .trim()
-
-                if (sfxCleaned.any { it.isLetterOrDigit() }) {
-                    text = sfxCleaned
-                } else if (detectedSfxType != null) {
-                    // Câu thuần túy là từ tượng thanh (ví dụ: "Oanh long!", "Ầm ầm ầm!", "Keng!", "Vút!", "Phanh! Phanh! Phanh!")
-                    val wavBytes = SfxAudioGenerator.generateWav(detectedSfxType, sfxMatches.size)
-                    val resp = newFixedLengthResponse(Response.Status.OK, "audio/wav", ByteArrayInputStream(wavBytes), wavBytes.size.toLong())
-                    resp.addHeader("Cache-Control", "no-cache, no-store, must-revalidate")
-                    return resp
+                if (detectedSfxType != null) {
+                    val sfxCleaned = text.replace(sfxRegex, " ")
+                        .replace(Regex("[\\s,;:!?…–—]+"), " ")
+                        .trim()
+                    if (!sfxCleaned.any { it.isLetterOrDigit() }) {
+                        // Câu thuần túy là từ tượng thanh (ví dụ: "Oanh long!", "Ầm ầm ầm!", "Keng!", "Vút!", "Phanh! Phanh! Phanh!")
+                        val wavBytes = SfxAudioGenerator.generateWav(detectedSfxType, sfxMatches.size)
+                        val resp = newFixedLengthResponse(Response.Status.OK, "audio/wav", ByteArrayInputStream(wavBytes), wavBytes.size.toLong())
+                        resp.addHeader("Cache-Control", "no-cache, no-store, must-revalidate")
+                        return resp
+                    } else {
+                        text = text.replace(sfxRegex, " ")
+                    }
                 }
 
                 if (text.isEmpty() || !text.any { it.isLetterOrDigit() }) {
@@ -655,9 +656,10 @@ class HonorLocalServer(
                 }
 
                 // Tinh chỉnh nhịp ngắt nghỉ dấu câu tự nhiên và đều đặn (chuẩn 1 dấu cách sau dấu phẩy)
-                text = text.replace(Regex("\\s*,\\s*(?:…|\\.{3})?"), ", ")
+                text = text.replace(Regex("[\\s\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF—–-]*[,，、﹐][\\s\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF—–-]*(?:…|\\.{3})?"), ", ")
                 text = text.replace(Regex(" {2,}"), " ")
                 text = text.replace(Regex("[.…~–—\\s]+$"), ".")
+                text = text.replace(Regex(" {2,}"), " ").trim()
 
                 // Check cache sạch: đồng bộ khóa cache đa tầng với Preloader và Web UI
                 val baseVoiceId = json.optString("base_voice_id", json.optString("voice_id", targetVoice)).let {
@@ -1749,10 +1751,11 @@ class HonorLocalServer(
                    .replace(Regex("(?<![\\p{L}\\p{N}])A(?![\\p{L}\\p{N}])"), "Ah")
                    .replace(Regex("(?<![\\p{L}\\p{N}])a(?![\\p{L}\\p{N}])"), "ah")
 
-        text = text.replace(Regex("\\s*([;:.!?…])\\s*"), "$1 ")
-                   .replace(Regex("\\s*,\\s*(?:…|\\.{3})?"), ", ")
+        text = text.replace(Regex("[\\s\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF—–-]*[,，、﹐][\\s\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF—–-]*(?:…|\\.{3})?"), ", ")
+                   .replace(Regex("\\s*([;:.!?…])\\s*"), "$1 ")
                    .replace(Regex(" {2,}"), " ")
                    .replace(Regex("[.…~–—\\s]+$"), ".")
+                   .replace(Regex(" {2,}"), " ")
                    .trim()
         return text
     }
@@ -1966,9 +1969,10 @@ class HonorLocalServer(
                             if (emo == "cold" && !text.endsWith("!") && !text.endsWith("?")) {
                                 text = text.trimEnd(' ', ',', ';', '…', '-', '–', '—') + "!"
                             }
-                            text = text.replace(Regex("\\s*,\\s*(?:…|\\.{3})?"), ", ")
+                            text = text.replace(Regex("[\\s\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF—–-]*[,，、﹐][\\s\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF—–-]*(?:…|\\.{3})?"), ", ")
                             text = text.replace(Regex(" {2,}"), " ")
                             text = text.replace(Regex("[.…~–—\\s]+$"), ".")
+                            text = text.replace(Regex(" {2,}"), " ").trim()
 
                             val cacheKey = md5("$vId:$mVoice:$emo:$text")
                             val cFile = File(cacheDir, "$cacheKey.mp3")
@@ -2081,9 +2085,10 @@ class HonorLocalServer(
                             if (emo == "cold" && !text.endsWith("!") && !text.endsWith("?")) {
                                 text = text.trimEnd(' ', ',', ';', '…', '-', '–', '—') + "!"
                             }
-                            text = text.replace(Regex("\\s*,\\s*(?:…|\\.{3})?"), ", ")
+                            text = text.replace(Regex("[\\s\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF—–-]*[,，、﹐][\\s\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF—–-]*(?:…|\\.{3})?"), ", ")
                             text = text.replace(Regex(" {2,}"), " ")
                             text = text.replace(Regex("[.…~–—\\s]+$"), ".")
+                            text = text.replace(Regex(" {2,}"), " ").trim()
                             val cacheKey = md5("$vId:$mVoice:$emo:$text")
                             val cFile = File(cacheDir, "$cacheKey.mp3")
                             val altFile1 = File(cacheDir, "${md5("$tVoice:$mVoice:$emo:$text")}.mp3")

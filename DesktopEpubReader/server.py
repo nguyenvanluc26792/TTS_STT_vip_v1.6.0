@@ -226,14 +226,14 @@ def get_ota_version():
         stat = bundle_path.stat()
         return jsonify({
             "success": True,
-            "version": "v1.6.55",
-            "version_code": 215,
+            "version": "v1.6.56",
+            "version_code": 216,
             "size": stat.st_size,
             "updated_at": int(stat.st_mtime),
             "changelog": [
-                "✨ Đồng nhất 100% nhịp nghỉ dấu phẩy: Dù văn bản gốc có 1 hay 2 dấu cách đều có thời gian nghỉ bằng nhau và chuẩn xác",
-                "⏱️ Đồng nhất khoảng cách và ngắt đoạn: Cách 1 dòng hay 2 dòng đều có khoảng nghỉ và bố cục bằng nhau chuẩn 1 dòng mượt mà (~350ms), triệt tiêu giật cục",
-                "📶 Bảo toàn đệm chương & Giọng Offline: Khi tắt Internet vẫn đọc trơn tru từ bộ nhớ đệm hoặc giọng máy không bị dừng"
+                "⚡ Giảm 30% thời gian dừng khi xuống dòng (~245ms): Chuyển đoạn nhanh và mượt mà hơn, triệt tiêu cảm giác chờ đợi",
+                "✨ Đồng nhất tuyệt đối nhịp nghỉ dấu phẩy: Dù văn bản gốc chứa 1 khoảng trắng, 2 khoảng trắng hay khoảng trắng đặc biệt đều có thời gian nghỉ bằng nhau 100%",
+                "🎯 Chuẩn hóa toàn diện mọi biến thể dấu phẩy và khoảng trắng: Triệt tiêu hoàn toàn dấu gạch/khoảng lặng dư thừa sau dấu phẩy"
             ]
         })
     return jsonify({"success": False}), 404
@@ -696,11 +696,11 @@ def apply_pronunciation_rules(text, rules=None):
 
     # 5. Tinh chỉnh nhịp ngắt nghỉ dấu câu tự nhiên và đều đặn:
     # Ép sau dấu phẩy CHỈ CÓ ĐÚNG 1 DẤU CÁCH DUY NHẤT (bằng nhau 100% giữa 1 vs 2 khoảng trắng)
+    result = re.sub(r'[\s\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF—–-]*[,，、﹐][\s\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF—–-]*(?:…|\.{3})?', ', ', result)
     result = re.sub(r'\s*([;:.!?…])\s*', r'\1 ', result)
-    result = re.sub(r'\s*,\s*(?:…|\.{3})?', ', ', result) # Chuẩn 1 dấu cách sau dấu phẩy, bằng nhau 100%
     result = re.sub(r' {2,}', ' ', result)
     result = re.sub(r'[.…~–—\s]+$', '.', result) # Đuôi câu đồng nhất dấu chấm
-    result = result.strip()
+    result = re.sub(r' {2,}', ' ', result).strip()
 
     return result
 
@@ -1085,11 +1085,13 @@ def is_interactive_active():
 def generate_capcut_audio(text, voice_id):
     if 'doc_lo' not in _capcut_ns:
         raise Exception("Chưa khởi tạo được module CapCut")
+    clean_text = re.sub(r'[\s\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF—–-]*[,，、﹐][\s\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF—–-]*(?:…|\.{3})?', ', ', text)
+    clean_text = re.sub(r' {2,}', ' ', clean_text).strip()
     last_err = None
     for attempt in range(3):
         try:
             with capcut_tts_lock:
-                res = _capcut_ns['doc_lo']([text], voice_id)
+                res = _capcut_ns['doc_lo']([clean_text], voice_id)
             if not res or not res[0]:
                 raise Exception("CapCut không trả về đường dẫn âm thanh")
             audio_url = res[0]

@@ -114,7 +114,9 @@ object CapCutTtsHelper {
     }
 
     fun synthesize(text: String, voiceId: String, isElevenLabs: Boolean = false): ByteArray? {
-        val cleanText = text.trim()
+        var cleanText = text.replace(Regex("[\\s\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF—–-]*[,，、﹐][\\s\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF—–-]*(?:…|\\.{3})?"), ", ")
+                            .replace(Regex(" {2,}"), " ")
+                            .trim()
         if (cleanText.isEmpty()) return null
 
         val deviceId = generateDeviceId()

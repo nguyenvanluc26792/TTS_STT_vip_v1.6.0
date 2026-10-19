@@ -7184,10 +7184,12 @@ body.zen-mode #nrFabAdd {
                .replace(/(?<![\p{L}\p{N}])[Ôô](?![\p{L}\p{N}])/gu, 'Ôh');
 
       // Dọn dẹp dấu câu trơ trọi, biểu tượng và khoảng trắng dư thừa
-      res = res.replace(/\s*([;:.!?…])\s*/g, '$1 ')
-               .replace(/(?<=[^\W\d_]),\s*(?=[^\W\d_“"«])/gu, ', — ') // Chuẩn hóa nhịp nghỉ thở sâu lắng giữa các vế câu (~300ms)
+      res = res.replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '')
+               .replace(/[\t\xa0\u1680\u2000-\u200a\u202f\u205f\u3000]+/g, ' ')
+               .replace(/[\s\u00A0\u1680\u2000-\u200a\u202f\u205f\u3000—–-]*[,，、﹐][\s\u00A0\u1680\u2000-\u200a\u202f\u205f\u3000—–-]*(?:…|\.{3})?/g, ', ')
+               .replace(/\s*([;:.!?…])\s*/g, '$1 ')
+               .replace(/ {2,}/g, ' ')
                .replace(/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/gu, '')
-               .replace(/[^\S\r\n]{3,}/g, '  ')
                .trim();
 
       return res;
@@ -11746,12 +11748,12 @@ body.zen-mode #nrFabAdd {
       s = s.replace(/[\t\xa0\u1680\u2000-\u200a\u202f\u205f\u3000]+/g, ' ');
       s = s.replace(/^[-–—―]+\s*/gm, '- ');
       s = s.replace(/\s+([,.;:!?\)\]”’»])/g, '$1');
-      s = s.replace(/,{2,}/g, ',');
+      s = s.replace(/[,，、﹐]{2,}/g, ',');
       s = s.replace(/\.{2,}|…+/g, '...');
       // Micro-Clause Smoothing: xóa dấu phẩy sau từ nối ngắn đầu câu để giọng đọc lướt mượt vào chủ ngữ
       s = s.replace(/(^|[-–—\n]\s*|[.!?…]\s+)(Vậy mà|Bất quá|Thậm chí|Hiện giờ|Quả nhiên|Không ngờ),\s*/g, '$1$2 ');
       // Ép sau dấu phẩy CHỈ CÓ ĐÚNG 1 DẤU CÁCH DUY NHẤT (bằng nhau 100% giữa 1 vs 2 khoảng trắng)
-      s = s.replace(/\s*,\s*/g, ', ');
+      s = s.replace(/[\s\u00A0\u1680\u2000-\u200a\u202f\u205f\u3000—–-]*[,，、﹐][\s\u00A0\u1680\u2000-\u200a\u202f\u205f\u3000—–-]*(?:…|\.{3})?/g, ', ');
       s = s.replace(/([.;:!?])\s*/g, '$1 ');
       s = s.replace(/ {2,}/g, ' ');
       // Chuẩn hóa thán từ & tên riêng convert hay gặp
@@ -12887,13 +12889,14 @@ body.zen-mode #nrFabAdd {
       const isTrailingComma = /,\s*$/.test(spokenText);
       spokenText = spokenText.replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '');
       spokenText = spokenText.replace(/[\t\xa0\u1680\u2000-\u200a\u202f\u205f\u3000]+/g, ' ');
-      spokenText = spokenText.replace(/\s*,\s*(?:…|\.{3})?/g, ', ');
+      spokenText = spokenText.replace(/[\s\u00A0\u1680\u2000-\u200a\u202f\u205f\u3000—–-]*[,，、﹐][\s\u00A0\u1680\u2000-\u200a\u202f\u205f\u3000—–-]*(?:…|\.{3})?/g, ', ');
       spokenText = spokenText.replace(/ {2,}/g, ' ');
       if (isTrailingComma) {
         spokenText = spokenText.replace(/[.…~–—\s]+$/, ', ');
       } else {
         spokenText = spokenText.replace(/[.…~–—\s]+$/, '.');
       }
+      spokenText = spokenText.replace(/ {2,}/g, ' ').trim();
 
       const effectiveVoiceId = (isMultiVoice && attr.isDialogue) ? getPairedMultiVoice(voiceId, provider, attr.gender) : voiceId;
       const effectiveSpeed = currentSpeed * attr.speedFactor;
@@ -12979,11 +12982,11 @@ body.zen-mode #nrFabAdd {
         const nextPara = sentenceMeta[nextValidIdx].paraIndex;
         if (currPara !== undefined && nextPara !== undefined && currPara !== nextPara) {
           if (isConsecutiveDialogue) {
-            pauseMs = 180; // Chuyển thoại '-' sang thoại '-' (đám đông bàn tán / đối thoại): 180ms
+            pauseMs = 125; // Chuyển thoại '-' sang thoại '-' (đám đông bàn tán / đối thoại): 125ms (~70%)
           } else {
-            // ĐỒNG NHẤT 100% KHOẢNG NGHỈ GIỮA CÁC ĐOẠN:
-            // Bất kể giữa các đoạn cách 1 dòng hay 2 dòng trống, thời gian nghỉ luôn đồng nhất chuẩn 350ms!
-            pauseMs = 350;
+            // ĐỒNG NHẤT 100% KHOẢNG NGHỈ KHI XUỐNG DÒNG / CHUYỂN ĐOẠN:
+            // Giảm còn 70% hiện tại: 350ms * 0.7 = 245ms
+            pauseMs = 245;
           }
         }
       }
@@ -13125,13 +13128,14 @@ body.zen-mode #nrFabAdd {
       const isTrailingComma = /,\s*$/.test(spokenText);
       spokenText = spokenText.replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '');
       spokenText = spokenText.replace(/[\t\xa0\u1680\u2000-\u200a\u202f\u205f\u3000]+/g, ' ');
-      spokenText = spokenText.replace(/\s*,\s*(?:…|\.{3})?/g, ', '); // Chuẩn 1 khoảng trắng duy nhất sau dấu phẩy (bằng nhau 100%)
+      spokenText = spokenText.replace(/[\s\u00A0\u1680\u2000-\u200a\u202f\u205f\u3000—–-]*[,，、﹐][\s\u00A0\u1680\u2000-\u200a\u202f\u205f\u3000—–-]*(?:…|\.{3})?/g, ', ');
       spokenText = spokenText.replace(/ {2,}/g, ' ');
       if (isTrailingComma) {
         spokenText = spokenText.replace(/[.…~–—\s]+$/, ', '); // Mẹo Anti-Downstep: giữ nguyên độ lơ lửng tự nhiên
       } else {
         spokenText = spokenText.replace(/[.…~–—\s]+$/, '.');
       }
+      spokenText = spokenText.replace(/ {2,}/g, ' ').trim();
 
       function tryFallbackNative(fallbackText, fallbackSpeed, fallbackPitch) {
         if (window.HonorBridge && window.HonorBridge.speakNativeWithPitch) {
@@ -14825,8 +14829,8 @@ body.zen-mode #nrFabAdd {
     // ==========================================
     const DEFAULT_OTA_3G_URL = 'https://rehab-survey-clusters-joins.trycloudflare.com';
     const DEFAULT_OTA_WIFI_URL = 'http://192.168.1.204:5000';
-    const CURRENT_APP_VERSION = 'v1.6.55';
-    const CURRENT_APP_BUILD = 215;
+    const CURRENT_APP_VERSION = 'v1.6.56';
+    const CURRENT_APP_BUILD = 216;
 
     function initOtaSettingsUI() {
       const input = document.getElementById('nrOtaServerInput');

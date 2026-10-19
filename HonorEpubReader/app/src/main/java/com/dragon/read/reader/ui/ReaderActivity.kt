@@ -1674,7 +1674,10 @@ class ReaderActivity : ComponentActivity() {
                         val params = android.os.Bundle().apply {
                             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, uttId)
                         }
-                        val res = textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, params, uttId)
+                        val cleanText = text.replace(Regex("[\\s\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF—–-]*[,，、﹐][\\s\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF—–-]*(?:…|\\.{3})?"), ", ")
+                                            .replace(Regex(" {2,}"), " ")
+                                            .trim()
+                        val res = textToSpeech?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, uttId)
                         if (res != TextToSpeech.SUCCESS) {
                             Log.w(TAG, "textToSpeech.speak error code: $res")
                             runOnUiThread {
@@ -1711,7 +1714,10 @@ class ReaderActivity : ComponentActivity() {
                         val params = android.os.Bundle().apply {
                             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, uttId)
                         }
-                        val res = textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, params, uttId)
+                        val cleanText = text.replace(Regex("[\\s\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF—–-]*[,，、﹐][\\s\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF—–-]*(?:…|\\.{3})?"), ", ")
+                                            .replace(Regex(" {2,}"), " ")
+                                            .trim()
+                        val res = textToSpeech?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, uttId)
                         if (res != TextToSpeech.SUCCESS) {
                             Log.w(TAG, "textToSpeech.speak error code: $res")
                             runOnUiThread {
