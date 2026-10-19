@@ -11083,15 +11083,20 @@ body.zen-mode #nrFabAdd {
         return;
       }
 
-      // Chuẩn hóa và lọc sạch triệt để danh sách đoạn văn của chương: loại bỏ dòng trống, khoảng trắng rác
+      // Chuẩn hóa và lọc sạch triệt để danh sách đoạn văn của chương:
+      // Tách triệt để theo xuống dòng: mọi đoạn văn dù cách 1 dòng hay 2 dòng hay 3 dòng
+      // đều được chuẩn hóa thành các đoạn văn độc lập đồng nhất!
       const rawParagraphs = Array.isArray(ch.paragraphs) ? ch.paragraphs : [];
       const validParagraphs = [];
-      rawParagraphs.forEach(p => {
-        if (typeof p !== 'string') return;
-        const cleaned = sanitizeConvertText(p);
-        if (cleaned.length > 0) {
-          validParagraphs.push(cleaned);
-        }
+      rawParagraphs.forEach(rawP => {
+        if (typeof rawP !== 'string') return;
+        const lines = rawP.split(/[\r\n]+/);
+        lines.forEach(line => {
+          const cleaned = sanitizeConvertText(line);
+          if (cleaned.length > 0 && /[\p{L}\p{N}]/u.test(cleaned)) {
+            validParagraphs.push(cleaned);
+          }
+        });
       });
       ch.paragraphs = validParagraphs;
 
@@ -11745,8 +11750,9 @@ body.zen-mode #nrFabAdd {
       s = s.replace(/\.{2,}|…+/g, '...');
       // Micro-Clause Smoothing: xóa dấu phẩy sau từ nối ngắn đầu câu để giọng đọc lướt mượt vào chủ ngữ
       s = s.replace(/(^|[-–—\n]\s*|[.!?…]\s+)(Vậy mà|Bất quá|Thậm chí|Hiện giờ|Quả nhiên|Không ngờ),\s*/g, '$1$2 ');
-      // Ép sau dấu [,.;:!?] chỉ có đúng 1 khoảng cách duy nhất
-      s = s.replace(/([,.;:!?])\s*/g, '$1 ');
+      // Ép sau dấu phẩy CHỈ CÓ ĐÚNG 1 DẤU CÁCH DUY NHẤT (bằng nhau 100% giữa 1 vs 2 khoảng trắng)
+      s = s.replace(/\s*,\s*/g, ', ');
+      s = s.replace(/([.;:!?])\s*/g, '$1 ');
       s = s.replace(/ {2,}/g, ' ');
       // Chuẩn hóa thán từ & tên riêng convert hay gặp
       s = s.replace(/\bah\b/gi, 'a');
@@ -12878,7 +12884,16 @@ body.zen-mode #nrFabAdd {
       if (isMultiVoice && attr.isDialogue) {
         spokenText = sanitizeDialogueForTTS(spokenText, attr);
       }
-      spokenText = spokenText.replace(/(?<!\d),\s*(?:…|\.{3})?/g, ', ... ').replace(/[.…~–—\s]+$/, '.');
+      const isTrailingComma = /,\s*$/.test(spokenText);
+      spokenText = spokenText.replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '');
+      spokenText = spokenText.replace(/[\t\xa0\u1680\u2000-\u200a\u202f\u205f\u3000]+/g, ' ');
+      spokenText = spokenText.replace(/\s*,\s*(?:…|\.{3})?/g, ', ');
+      spokenText = spokenText.replace(/ {2,}/g, ' ');
+      if (isTrailingComma) {
+        spokenText = spokenText.replace(/[.…~–—\s]+$/, ', ');
+      } else {
+        spokenText = spokenText.replace(/[.…~–—\s]+$/, '.');
+      }
 
       const effectiveVoiceId = (isMultiVoice && attr.isDialogue) ? getPairedMultiVoice(voiceId, provider, attr.gender) : voiceId;
       const effectiveSpeed = currentSpeed * attr.speedFactor;
@@ -12954,11 +12969,11 @@ body.zen-mode #nrFabAdd {
       const isClauseSplit = /[,…]\s*$/.test(currText);
       const isConsecutiveDialogue = /^[-–—―]/.test(currText) && /^[-–—―]/.test(nextText);
 
-      let pauseMs = 260; // Giữa 2 câu trong cùng đoạn: nghỉ thở 260ms tự nhiên
+      let pauseMs = 200; // Giữa 2 câu trong cùng đoạn: nghỉ 200ms tự nhiên
       if (nextValidIdx >= allSentences.length) {
-        pauseMs = 700; // Hết chương: nghỉ 700ms trước khi sang chương mới
+        pauseMs = 600; // Hết chương: nghỉ 600ms trước khi sang chương mới
       } else if (isClauseSplit) {
-        pauseMs = 80; // Mệnh đề trong câu dài: ngắt siêu ngắn ~80ms để liền mạch như 1 câu
+        pauseMs = 60; // Mệnh đề trong câu dài: ngắt siêu ngắn 60ms để liền mạch như 1 câu
       } else if (sentenceMeta && sentenceMeta[currentParagraphIndex] && sentenceMeta[nextValidIdx]) {
         const currPara = sentenceMeta[currentParagraphIndex].paraIndex;
         const nextPara = sentenceMeta[nextValidIdx].paraIndex;
@@ -12966,7 +12981,9 @@ body.zen-mode #nrFabAdd {
           if (isConsecutiveDialogue) {
             pauseMs = 180; // Chuyển thoại '-' sang thoại '-' (đám đông bàn tán / đối thoại): 180ms
           } else {
-            pauseMs = 450; // Chuyển sang đoạn kể chuyện mới: 450ms (vừa vặn, không bị dài lê thê)
+            // ĐỒNG NHẤT 100% KHOẢNG NGHỈ GIỮA CÁC ĐOẠN:
+            // Bất kể giữa các đoạn cách 1 dòng hay 2 dòng trống, thời gian nghỉ luôn đồng nhất chuẩn 350ms!
+            pauseMs = 350;
           }
         }
       }
@@ -13105,10 +13122,13 @@ body.zen-mode #nrFabAdd {
         }
       }
 
-      const isTrailingComma = /[,…]\s*$/.test(spokenText);
-      spokenText = spokenText.replace(/(?<!\d),\s*(?:…|\.{3})?/g, ', ... ');
+      const isTrailingComma = /,\s*$/.test(spokenText);
+      spokenText = spokenText.replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '');
+      spokenText = spokenText.replace(/[\t\xa0\u1680\u2000-\u200a\u202f\u205f\u3000]+/g, ' ');
+      spokenText = spokenText.replace(/\s*,\s*(?:…|\.{3})?/g, ', '); // Chuẩn 1 khoảng trắng duy nhất sau dấu phẩy (bằng nhau 100%)
+      spokenText = spokenText.replace(/ {2,}/g, ' ');
       if (isTrailingComma) {
-        spokenText = spokenText.replace(/[.…~–—\s]+$/, ', ... '); // Mẹo Anti-Downstep: giữ nguyên độ lơ lửng tự nhiên
+        spokenText = spokenText.replace(/[.…~–—\s]+$/, ', '); // Mẹo Anti-Downstep: giữ nguyên độ lơ lửng tự nhiên
       } else {
         spokenText = spokenText.replace(/[.…~–—\s]+$/, '.');
       }
@@ -14805,8 +14825,8 @@ body.zen-mode #nrFabAdd {
     // ==========================================
     const DEFAULT_OTA_3G_URL = 'https://rehab-survey-clusters-joins.trycloudflare.com';
     const DEFAULT_OTA_WIFI_URL = 'http://192.168.1.204:5000';
-    const CURRENT_APP_VERSION = 'v1.6.54';
-    const CURRENT_APP_BUILD = 214;
+    const CURRENT_APP_VERSION = 'v1.6.55';
+    const CURRENT_APP_BUILD = 215;
 
     function initOtaSettingsUI() {
       const input = document.getElementById('nrOtaServerInput');

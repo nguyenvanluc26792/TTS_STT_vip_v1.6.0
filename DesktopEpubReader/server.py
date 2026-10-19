@@ -226,14 +226,14 @@ def get_ota_version():
         stat = bundle_path.stat()
         return jsonify({
             "success": True,
-            "version": "v1.6.54",
-            "version_code": 214,
+            "version": "v1.6.55",
+            "version_code": 215,
             "size": stat.st_size,
             "updated_at": int(stat.st_mtime),
             "changelog": [
-                "✨ Triệt tiêu hoàn toàn lỗi dấu phẩy đọc thành chữ 'đến': Thay thế bằng nhịp thở tự nhiên không phát âm từ thừa",
-                "⏱️ Đồng nhất 100% khoảng trống và nhịp ngắt đoạn văn: Tinh chỉnh thời gian chuyển đoạn mượt mà ~650ms, triệt tiêu dòng trống lệch khoảng cách",
-                "📶 Nâng cấp Đệm chương & Đọc Offline 100%: Bảo toàn vĩnh viễn cache âm thanh trên máy, tự động chuyển Giọng Google Offline khi mất mạng không bao giờ bị dừng"
+                "✨ Đồng nhất 100% nhịp nghỉ dấu phẩy: Dù văn bản gốc có 1 hay 2 dấu cách đều có thời gian nghỉ bằng nhau và chuẩn xác",
+                "⏱️ Đồng nhất khoảng cách và ngắt đoạn: Cách 1 dòng hay 2 dòng đều có khoảng nghỉ và bố cục bằng nhau chuẩn 1 dòng mượt mà (~350ms), triệt tiêu giật cục",
+                "📶 Bảo toàn đệm chương & Giọng Offline: Khi tắt Internet vẫn đọc trơn tru từ bộ nhớ đệm hoặc giọng máy không bị dừng"
             ]
         })
     return jsonify({"success": False}), 404
@@ -694,11 +694,13 @@ def apply_pronunciation_rules(text, rules=None):
     result = re.sub(r'(?<![\w\u00C0-\u1EF9])A(?![\w\u00C0-\u1EF9])', 'Ah', result)
     result = re.sub(r'(?<![\w\u00C0-\u1EF9])a(?![\w\u00C0-\u1EF9])', 'ah', result)
 
-    # 5. Tinh chỉnh nhịp ngắt nghỉ dấu câu tự nhiên và đều đặn (không đọc là 'đến')
+    # 5. Tinh chỉnh nhịp ngắt nghỉ dấu câu tự nhiên và đều đặn:
+    # Ép sau dấu phẩy CHỈ CÓ ĐÚNG 1 DẤU CÁCH DUY NHẤT (bằng nhau 100% giữa 1 vs 2 khoảng trắng)
     result = re.sub(r'\s*([;:.!?…])\s*', r'\1 ', result)
-    result = re.sub(r'(?<!\d),\s*(?:…|\.{3})?', ', ... ', result) # Nhịp ngắt thở đều đặn, tự nhiên ~200ms tại dấu phẩy
-    result = re.sub(r'[.…~–—\s]+$', '.', result) # Đuôi câu đồng nhất dấu chấm để tránh padding khoảng lặng lệch nhịp
-    result = re.sub(r'[^\S\r\n]{3,}', '  ', result).strip()
+    result = re.sub(r'\s*,\s*(?:…|\.{3})?', ', ', result) # Chuẩn 1 dấu cách sau dấu phẩy, bằng nhau 100%
+    result = re.sub(r' {2,}', ' ', result)
+    result = re.sub(r'[.…~–—\s]+$', '.', result) # Đuôi câu đồng nhất dấu chấm
+    result = result.strip()
 
     return result
 
