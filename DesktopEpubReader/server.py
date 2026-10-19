@@ -11,6 +11,7 @@ import threading
 import time
 from pathlib import Path
 import re
+import unicodedata
 
 if sys.platform == "win32":
     try:
@@ -612,7 +613,22 @@ def apply_pronunciation_rules(text, rules=None):
         rules = get_pronunciation_rules()
 
     import re
-    result = text
+    # 0. Chuẩn hóa Unicode NFC & Xóa sạch ký tự ẩn, khoảng trắng toàn phần của truyện convert
+    result = unicodedata.normalize("NFC", text)
+    result = re.sub(r"[\u200B-\u200D\uFEFF\u00AD]", "", result)
+    result = re.sub(r"[\t\xa0\u1680\u2000-\u200a\u202f\u205f\u3000]+", " ", result)
+    result = re.sub(r"\s+([,.;:!?\)\]”’»])", r"\1", result)
+    result = re.sub(r",{2,}", ",", result)
+    result = re.sub(r"\.{2,}|…+", "...", result)
+    # Micro-Clause Smoothing: Xóa dấu phẩy sau các từ nối ngắn 2 âm tiết đầu câu để AI lướt mượt vào chủ ngữ
+    result = re.sub(r"(?i)(^|[-–—\n]\s*|[.!?…]\s+)(Vậy mà|Bất quá|Thậm chí|Hiện giờ|Quả nhiên|Không ngờ),\s*", r"\1\2 ", result)
+    # Ép sau dấu câu [, . ; : ! ?] chỉ có đúng 1 dấu cách duy nhất (loại bỏ triệt để 1 vs 2 khoảng trắng sau dấu phẩy)
+    result = re.sub(r"([,.;:!?])\s*", r"\1 ", result)
+    result = re.sub(r" {2,}", " ", result)
+    # Chuẩn hóa từ cảm thán & tên riêng convert hay gặp
+    result = re.sub(r"(?i)\bah\b", "a", result)
+    result = re.sub(r"(?i)\bưm\b", "ừm", result)
+    result = re.sub(r"\blô giáo quan\b", "Lô giáo quan", result)
 
     # 1. Áp dụng quy tắc từ bảng phát âm (pronunciation_rules.json)
     if rules:

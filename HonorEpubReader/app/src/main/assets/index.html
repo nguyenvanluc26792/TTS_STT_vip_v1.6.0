@@ -10843,7 +10843,7 @@ body.zen-mode #nrFabAdd {
 
     function splitIntoSentences(text) {
       if (!text) return [];
-      text = text.trim().replace(/\.{3,}/g, '…');
+      text = sanitizeConvertText(text).replace(/\.{3,}/g, '…');
       if (!text) return [];
 
       // Tránh ngắt câu ở các tên miền web và địa chỉ (ví dụ: banlong.us, banlong. us, truyenfull.vn, .com, v.v.)
@@ -10889,19 +10889,23 @@ body.zen-mode #nrFabAdd {
           buffer = '';
         }
 
-        // Chỉ tách câu nếu thực sự quá dài bất thường (> 450 ký tự không có dấu chấm)
-        if (part.length > 450) {
-          const subParts = part.split(/([,;:—]\s+)/);
-          let subBuf = '';
-          for (const s of subParts) {
-            if (subBuf.length + s.length > 160 && subBuf.length > 30) {
-              rawSentences.push(subBuf.trim());
-              subBuf = s;
+        // BALANCED BREATH-GROUP SPLITTING (> 135 ký tự có nhiều dấu phẩy)
+        // Chống quá tải Duration Predictor & lỗi khựng ngắt nhịp của TTS
+        // Mẹo Anti-Downstep: Mệnh đề 1 kết thúc bằng dấu phẩy, tuyệt đối KHÔNG thêm dấu chấm!
+        if (part.length > 135 && /,\s+/.test(part)) {
+          const clauses = part.split(/(?<=[,])\s+/);
+          let currentClauseGroup = '';
+          for (let c = 0; c < clauses.length; c++) {
+            const clause = clauses[c].trim();
+            if (!clause) continue;
+            if (currentClauseGroup && (currentClauseGroup.length + clause.length > 120)) {
+              rawSentences.push(currentClauseGroup);
+              currentClauseGroup = clause;
             } else {
-              subBuf += s;
+              currentClauseGroup += (currentClauseGroup ? ' ' : '') + clause;
             }
           }
-          if (subBuf.trim()) rawSentences.push(subBuf.trim());
+          if (currentClauseGroup) rawSentences.push(currentClauseGroup);
         } else {
           rawSentences.push(part);
         }
@@ -11084,12 +11088,15 @@ body.zen-mode #nrFabAdd {
       const validParagraphs = [];
       rawParagraphs.forEach(p => {
         if (typeof p !== 'string') return;
-        const trimmed = p.trim();
-        if (trimmed.length > 0) {
-          validParagraphs.push(trimmed);
+        const cleaned = sanitizeConvertText(p);
+        if (cleaned.length > 0) {
+          validParagraphs.push(cleaned);
         }
       });
       ch.paragraphs = validParagraphs;
+
+      // QUÉT TRƯỚC TOÀN CHƯƠNG LƯỢT 1: Khóa cứng giới tính nhân vật trước khi phát âm thanh
+      pass1PreScanChapter(ch.paragraphs);
 
       ch.paragraphs.forEach((p, pIdx) => {
         const skipped = isParagraphSkipped(p);
@@ -11718,24 +11725,134 @@ body.zen-mode #nrFabAdd {
     }
 
     // =====================================================================
+    // BỘ LỌC CHUẨN HÓA VĂN BẢN TRUYỆN CONVERT & TIỂU THUYẾT (SANITY ENGINE)
+    // - Chuẩn hóa Unicode dựng sẵn NFC
+    // - Xóa sạch ký tự khoảng trắng vô hình, Zero-width space, BOM
+    // - Biến mọi khoảng trắng lạ (\u3000 tiếng Trung, \u00A0 non-breaking) thành khoảng trắng thường
+    // - Chuẩn hóa gạch đầu dòng đối thoại "- "
+    // - Micro-Clause Smoothing: Xóa dấu phẩy sau các từ nối ngắn 2 âm tiết đầu câu (Vậy mà, Bất quá, ...)
+    // - Ép sau dấu câu [,.;:!?] chỉ có đúng 1 dấu cách duy nhất (xóa triệt để khoảng cách kép sau dấu phẩy)
+    // - Chuẩn hóa phát âm thán từ và tên riêng
+    // =====================================================================
+    function sanitizeConvertText(text) {
+      if (!text || typeof text !== 'string') return '';
+      let s = text.normalize('NFC');
+      s = s.replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '');
+      s = s.replace(/[\t\xa0\u1680\u2000-\u200a\u202f\u205f\u3000]+/g, ' ');
+      s = s.replace(/^[-–—―]+\s*/gm, '- ');
+      s = s.replace(/\s+([,.;:!?\)\]”’»])/g, '$1');
+      s = s.replace(/,{2,}/g, ',');
+      s = s.replace(/\.{2,}|…+/g, '...');
+      // Micro-Clause Smoothing: xóa dấu phẩy sau từ nối ngắn đầu câu để giọng đọc lướt mượt vào chủ ngữ
+      s = s.replace(/(^|[-–—\n]\s*|[.!?…]\s+)(Vậy mà|Bất quá|Thậm chí|Hiện giờ|Quả nhiên|Không ngờ),\s*/g, '$1$2 ');
+      // Ép sau dấu [,.;:!?] chỉ có đúng 1 khoảng cách duy nhất
+      s = s.replace(/([,.;:!?])\s*/g, '$1 ');
+      s = s.replace(/ {2,}/g, ' ');
+      // Chuẩn hóa thán từ & tên riêng convert hay gặp
+      s = s.replace(/\bah\b/gi, 'a');
+      s = s.replace(/\bưm\b/gi, 'ừm');
+      s = s.replace(/\blô giáo quan\b/g, 'Lô giáo quan');
+      return s.trim();
+    }
+
+    // =====================================================================
+    // HỆ THỐNG PHÁT HIỆN HỘI THOẠI ĐÁM ĐÔNG & LUÂN PHIÊN GIỌNG ĐỌC QUẦN CHÚNG
+    // (CROWD GOSSIP DETECTION & VOICE ROTATION)
+    // Tự động xoay vòng 3 giọng: Nam thanh niên hóng hớt, Nam trầm bình phẩm, Nữ xì xào kịch tính
+    // =====================================================================
+    let crowdVoiceRotationIndex = 0;
+    const CROWD_VOICE_TYPES = ['crowd_male_a', 'crowd_male_b', 'crowd_female_a'];
+
+    function isCrowdGossipLine(trimmedText, lowerText) {
+      if (!trimmedText) return false;
+      const isDash = /^[-–—―]/.test(trimmedText);
+      if (!isDash) return false;
+
+      // 1. Tín hiệu mở đầu tin đồn / bàn luận đám đông hóng hớt (Gossip Starters)
+      const gossipStarters = /^[-–—―]\s*(?:nghe nói|bất quá|không ngờ|chuyện gì xảy ra|đúng vậy|chậc chậc|ngươi buổi sáng không tới|thật sự là báo ứng|lưu lực kia|lưu lỵ kia|lâm tiêu kia|ai mà ngờ|có người nói|nghe đồn|ngươi có biết)/i;
+      if (gossipStarters.test(trimmedText)) return true;
+
+      // 2. Nhắc tới tên các nhân vật ở ngôi thứ 3 (hắn, nàng, bọn họ, tên kia) kèm bình phẩm
+      const hasThirdPerson = /\b(hắn|nàng|tên kia|bọn họ|y|gã)\b/i.test(lowerText);
+      const mentionsKnownChar = /\b(lưu lực|lưu lỵ|lâm tiêu|lô giáo quan|tổng giáo quan|giáo quan|trợ lý giáo quan)\b/i.test(lowerText);
+      const hasCombatAggro = /\b(bản công tử|bản thiếu|bản cô nương|chết đi|ngươi dám|cút|hỗn xược|tìm cái chết|nạp mạng)\b/i.test(lowerText);
+
+      if (hasThirdPerson && mentionsKnownChar && !hasCombatAggro) {
+        return true;
+      }
+      return false;
+    }
+
+    // =====================================================================
+    // BỘ QUÉT TRƯỚC TOÀN CHƯƠNG 2 LƯỢT (TWO-PASS CHAPTER PRE-SCAN)
+    // Lượt 1: Quét toàn bộ văn bản để khóa giới tính nhân vật trước khi bắt đầu đọc
+    // Tầng 1: Cấu trúc Quan hệ & Danh xưng Đồng vị (Trọng số +/- 100 tuyệt đối)
+    // Tầng 4: Phân giải danh xưng chức vụ trung tính (giáo quan, trợ lý giáo quan, trưởng lão)
+    // =====================================================================
+    function pass1PreScanChapter(paragraphs) {
+      if (!Array.isArray(paragraphs) || paragraphs.length === 0) return;
+      try {
+        const fullChapterText = paragraphs.join('\n');
+        
+        // 1. Mẫu quan hệ đồng vị Nữ: "tỷ tỷ của hắn Lưu Lỵ", "muội muội của ta Diệp Tuyết"
+        const femaleKinshipRegex = /\b(?:tỷ tỷ|đại tỷ|nhị tỷ|tam tỷ|muội muội|tiểu muội|biểu tỷ|biểu muội|sư tỷ|sư muội|mẫu thân|mẹ|nương|thê tử|vợ|vị hôn thê|nữ nhi|con gái|cháu gái|tôn nữ|nha hoàn|thị nữ|tiện tỳ|hồng nhan|mỹ nữ|thiếu nữ|cô gái)\s+(?:của\s+[\w\s]{1,15}\s+)?(?:là\s+)?([A-ZÀ-Ỹ][a-zà-ỹ]+(?:\s+[A-ZÀ-Ỹ][a-zà-ỹ]+){0,2})\b/g;
+        let match;
+        while ((match = femaleKinshipRegex.exec(fullChapterText)) !== null) {
+          const rawName = match[1].trim();
+          if (rawName && rawName.length >= 2 && !['Người', 'Ta', 'Hắn', 'Nàng', 'Chúng Ta'].includes(rawName)) {
+            const cleanName = rawName.replace(/\s+(?:trợ lý giáo quan|tổng giáo quan|giáo quan|trưởng lão|chấp sự)$/i, '').trim();
+            saveCharacterToRegistry(cleanName, 'female', 1.0, 'Đồng vị thân tộc (Tỷ tỷ/Muội muội)');
+          }
+        }
+
+        // 2. Mẫu quan hệ đồng vị Nam: "đệ đệ của nàng Lưu Lực", "sư huynh của ta Tiêu Viêm"
+        const maleKinshipRegex = /\b(?:ca ca|đại ca|nhị ca|tam ca|đệ đệ|biểu ca|biểu đệ|sư huynh|sư đệ|phụ thân|cha|phụ hoàng|nghĩa phụ|sư phụ|sư tôn|trượng phu|phu quân|nhi tử|con trai|cháu trai|tôn tử|gia đinh|thiếu niên|thanh niên|đại hán|lão giả)\s+(?:của\s+[\w\s]{1,15}\s+)?(?:là\s+)?([A-ZÀ-Ỹ][a-zà-ỹ]+(?:\s+[A-ZÀ-Ỹ][a-zà-ỹ]+){0,2})\b/g;
+        while ((match = maleKinshipRegex.exec(fullChapterText)) !== null) {
+          const rawName = match[1].trim();
+          if (rawName && rawName.length >= 2 && !['Người', 'Ta', 'Hắn', 'Nàng', 'Chúng Ta'].includes(rawName)) {
+            const cleanName = rawName.replace(/\s+(?:trợ lý giáo quan|tổng giáo quan|giáo quan|trưởng lão|chấp sự)$/i, '').trim();
+            saveCharacterToRegistry(cleanName, 'male', 1.0, 'Đồng vị thân tộc (Huynh đệ/Phụ thân)');
+          }
+        }
+
+        // 3. Phân giải chức vụ trung tính nghiêng Nam: "Lô giáo quan" (không có manh mối Nữ) -> Mặc định Nam
+        const neutralTitleRegex = /\b([A-ZÀ-Ỹ][a-zà-ỹ]+)\s+(?:giáo quan|tổng giáo quan|trưởng lão|tông chủ|gia chủ|đường chủ)\b/g;
+        while ((match = neutralTitleRegex.exec(fullChapterText)) !== null) {
+          const titleName = match[1].trim();
+          const reg = loadCharacterRegistry();
+          if (!reg[titleName]) {
+            const givenNameLower = titleName.toLowerCase();
+            if (!FEMALE_NAME_KEYWORDS.includes(givenNameLower)) {
+              saveCharacterToRegistry(titleName, 'male', 0.85, 'Chức vụ trung tính (Giáo quan/Trưởng lão)');
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[pass1PreScanChapter Error]', e);
+      }
+    }
+
+    // =====================================================================
     // HỆ THỐNG XÁC ĐỊNH GIỚI TÍNH NHÂN VẬT ĐA TẦNG & SỔ TAY NHÂN VẬT (DYNAMIC STATE REGISTRY)
     // CÔNG THỨC TRỌNG SỐ: S_gender = w1·Pronoun + w2·Title + w3·LexicalName + w4·DialogueContext
     // =====================================================================
     let lastDialogueGender = 'male';
 
     const FEMALE_NAME_KEYWORDS = [
-      'tuyết', 'liên', 'như', 'yến', 'nhược', 'mộng', 'tiên', 'linh', 'cầm',
-      'nghiên', 'thiến', 'điệp', 'mai', 'lan', 'cúc', 'trúc', 'hương', 'vy', 'my', 'thảo',
-      'uyên', 'uyển', 'diễm', 'trâm', 'quỳnh', 'châu', 'tú', 'phượng',
-      'thục', 'huyên', 'thiền', 'nga', 'loan', 'kiều', 'hân', 'thùy', 'trang',
-      'hằng', 'huyền', 'nhạn', 'khuê', 'oanh', 'bích', 'thúy', 'nhã'
+      'lỵ', 'dao', 'nguyệt', 'sương', 'phượng', 'loan', 'oanh', 'quỳnh', 'thư', 'viện',
+      'san', 'chỉ', 'lăng', 'ngọc', 'nhi', 'nhiên', 'tuyết', 'liên', 'như', 'yến',
+      'nhược', 'mộng', 'tiên', 'linh', 'cầm', 'nghiên', 'thiến', 'điệp', 'mai', 'lan',
+      'cúc', 'trúc', 'hương', 'vy', 'my', 'thảo', 'uyên', 'uyển', 'diễm', 'trâm',
+      'châu', 'tú', 'thục', 'huyên', 'thiền', 'nga', 'kiều', 'hân', 'thùy', 'trang',
+      'hằng', 'huyền', 'nhạn', 'khuê', 'bích', 'thúy', 'nhã'
     ];
 
     const MALE_NAME_KEYWORDS = [
-      'phong', 'viêm', 'hàn', 'phàm', 'hạo', 'kiệt', 'dũng', 'cường', 'tuấn',
-      'khang', 'thắng', 'vĩnh', 'đức', 'tráng', 'mãnh', 'thạch', 'trần', 'bá',
-      'lâm', 'quang', 'hoàng', 'bảo', 'huy', 'minh', 'sơn', 'long', 'thiên',
-      'trung', 'hiếu', 'nghĩa', 'trí', 'trọng', 'hùng', 'ngạo', 'cương'
+      'lực', 'tiêu', 'viêm', 'hàn', 'lập', 'động', 'phàm', 'chiến', 'bá', 'long',
+      'hổ', 'bằng', 'lôi', 'phong', 'thiên', 'hạo', 'kiệt', 'quân', 'hùng', 'cường',
+      'đằng', 'mặc', 'sơn', 'hải', 'chấn', 'cương', 'dũng', 'tuấn', 'khang', 'thắng',
+      'vĩnh', 'đức', 'tráng', 'mãnh', 'thạch', 'trần', 'lâm', 'quang', 'hoàng', 'bảo',
+      'huy', 'minh', 'trung', 'hiếu', 'nghĩa', 'trí', 'trọng', 'ngạo'
     ];
 
     const MALE_PRONOUNS = ['hắn', 'y', 'gã', 'lão', 'tên này', 'tiểu tử này', 'chàng', 'nam tử này', 'hắn ta'];
@@ -12314,7 +12431,17 @@ body.zen-mode #nrFabAdd {
       return cleaned;
     }
 
-    function getPairedMultiVoice(baseVoiceId, provider, targetGender) {
+    function getPairedMultiVoice(baseVoiceId, provider, targetGender, crowdRole = '') {
+      if (crowdRole === 'crowd_female_a') {
+        return 'multi_female_richgirl_uranus_bigtts';
+      }
+      if (crowdRole === 'crowd_male_b') {
+        return 'BV075_streaming';
+      }
+      if (crowdRole === 'crowd_male_a') {
+        return 'BV074_streaming';
+      }
+
       if (targetGender === 'narration' || targetGender === 'neutral' || !targetGender) {
         return baseVoiceId;
       }
@@ -12685,7 +12812,7 @@ body.zen-mode #nrFabAdd {
       };
     })();
 
-    const SFX_WORDS_RAW = '(?:oanh\\s+long(?:\\s+long)?|oành(?:\\s+oành)?|oanh\\s+tạc|oanh\\s+kích|oanh\\s+ầm|xuy(?:\\s+xuy){1,2}|xuy(?=[!?.…~–—]|(?:\\s+một\\s+tiếng))|phanh(?:\\s+phanh)?|ầm(?:\\s+ầm){1,2}|ầm\\s+vang|ầm\\s+ào|đùng\\s+đoàng|đùng(?:\\s+đùng)?|đoàng(?:\\s+đoàng)?|bùm(?:\\s+bùm)?|nổ\\s+tung|rầm(?:\\s+rầm)?|bịch(?:\\s+bịch)?|huỵch(?:\\s+huỵch)?|bộp(?:\\s+bộp)?|bốp(?:\\s+bốp)?|chát(?:\\s+chát)?(?![a-zA-Z0-9à-ỹÀ-Ỹ\\s]*(?:chúa|ngắt))|rắc(?:\\s+rắc)?|bành\\s+bành|leng\\s+keng|keng(?:\\s+keng)?|choang(?:\\s+choang)?|xoảng(?:\\s+xoảng)?|xủng\\s+xoảng|boong(?:\\s+boong)?|coong(?:\\s+coong)?|vun\\s+vút|vút(?:\\s+vút)?|vèo(?:\\s+vèo)?|xẹt(?:\\s+xẹt)?|xoẹt(?:\\s+xoẹt)?|chéo(?:\\s+chéo)?|vù(?:\\s+vù)?|phù(?:\\s+phù)?(?![a-zA-Z0-9à-ỹÀ-Ỹ\\s]*(?:hợp|thủy|hộ|du|hiệu|chú)))';
+    const SFX_WORDS_RAW = '(?:oanh\\s+long(?:\\s+long)?|oành(?:\\s+oành)?|oanh\\s+tạc|oanh\\s+kích|oanh\\s+ầm|xuy(?:\\s+xuy){1,2}|xuy(?=[!?.…~–—]|(?:\\s+một\\s+tiếng))|phanh(?:\\s+phanh)?|(?:(?<!chửi\\s+|la\\s+|hét\\s+|quát\\s+|kêu\\s+|náo\\s+)ầm(?:\\s+ầm){1,2}(?!\\s+lên|\\s+ĩ))|ầm\\s+vang|ầm\\s+ào|đùng\\s+đoàng|đùng(?:\\s+đùng)?|đoàng(?:\\s+đoàng)?|bùm(?:\\s+bùm)?|nổ\\s+tung|rầm(?:\\s+rầm)?|bịch(?:\\s+bịch)?|huỵch(?:\\s+huỵch)?|bộp(?:\\s+bộp)?|bốp(?:\\s+bốp)?|chát(?:\\s+chát)?(?![a-zA-Z0-9à-ỹÀ-Ỹ\\s]*(?:chúa|ngắt))|rắc(?:\\s+rắc)?|bành\\s+bành|leng\\s+keng|keng(?:\\s+keng)?|choang(?:\\s+choang)?|xoảng(?:\\s+xoảng)?|xủng\\s+xoảng|boong(?:\\s+boong)?|coong(?:\\s+coong)?|vun\\s+vút|vút(?:\\s+vút)?|vèo(?:\\s+vèo)?|xẹt(?:\\s+xẹt)?|xoẹt(?:\\s+xoẹt)?|chéo(?:\\s+chéo)?|vù(?:\\s+vù)?|phù(?:\\s+phù)?(?![a-zA-Z0-9à-ỹÀ-Ỹ\\s]*(?:hợp|thủy|hộ|du|hiệu|chú)))';
 
     function getSfxGlobalRegex() {
       try {
@@ -12822,14 +12949,25 @@ body.zen-mode #nrFabAdd {
         nextValidIdx++;
       }
 
-      let pauseMs = 350; // Giữa 2 câu trong cùng đoạn: nghỉ thở 350ms tự nhiên
+      const currText = (allSentences && allSentences[currentParagraphIndex]) ? allSentences[currentParagraphIndex].trim() : '';
+      const nextText = (allSentences && allSentences[nextValidIdx]) ? allSentences[nextValidIdx].trim() : '';
+      const isClauseSplit = /[,…]\s*$/.test(currText);
+      const isConsecutiveDialogue = /^[-–—―]/.test(currText) && /^[-–—―]/.test(nextText);
+
+      let pauseMs = 260; // Giữa 2 câu trong cùng đoạn: nghỉ thở 260ms tự nhiên
       if (nextValidIdx >= allSentences.length) {
-        pauseMs = 800; // Hết chương: nghỉ 800ms trước khi sang chương mới
+        pauseMs = 700; // Hết chương: nghỉ 700ms trước khi sang chương mới
+      } else if (isClauseSplit) {
+        pauseMs = 80; // Mệnh đề trong câu dài: ngắt siêu ngắn ~80ms để liền mạch như 1 câu
       } else if (sentenceMeta && sentenceMeta[currentParagraphIndex] && sentenceMeta[nextValidIdx]) {
         const currPara = sentenceMeta[currentParagraphIndex].paraIndex;
         const nextPara = sentenceMeta[nextValidIdx].paraIndex;
         if (currPara !== undefined && nextPara !== undefined && currPara !== nextPara) {
-          pauseMs = 650; // Chuyển sang đoạn văn mới: thời gian nghỉ đều đặn chuẩn ~650ms
+          if (isConsecutiveDialogue) {
+            pauseMs = 180; // Chuyển thoại '-' sang thoại '-' (đám đông bàn tán / đối thoại): 180ms
+          } else {
+            pauseMs = 450; // Chuyển sang đoạn kể chuyện mới: 450ms (vừa vặn, không bị dài lê thê)
+          }
         }
       }
 
@@ -12967,7 +13105,13 @@ body.zen-mode #nrFabAdd {
         }
       }
 
-      spokenText = spokenText.replace(/(?<!\d),\s*(?:…|\.{3})?/g, ', ... ').replace(/[.…~–—\s]+$/, '.');
+      const isTrailingComma = /[,…]\s*$/.test(spokenText);
+      spokenText = spokenText.replace(/(?<!\d),\s*(?:…|\.{3})?/g, ', ... ');
+      if (isTrailingComma) {
+        spokenText = spokenText.replace(/[.…~–—\s]+$/, ', ... '); // Mẹo Anti-Downstep: giữ nguyên độ lơ lửng tự nhiên
+      } else {
+        spokenText = spokenText.replace(/[.…~–—\s]+$/, '.');
+      }
 
       function tryFallbackNative(fallbackText, fallbackSpeed, fallbackPitch) {
         if (window.HonorBridge && window.HonorBridge.speakNativeWithPitch) {
@@ -13057,7 +13201,7 @@ body.zen-mode #nrFabAdd {
       }
 
       // 2. Giọng Online & Giọng Offline AI đã tải về
-      const effectiveVoiceId = (isMultiVoice && attr.isDialogue) ? getPairedMultiVoice(voiceId, provider, attr.gender) : voiceId;
+      const effectiveVoiceId = (isMultiVoice && attr.isDialogue) ? getPairedMultiVoice(voiceId, provider, attr.gender, attr.crowdRole) : voiceId;
       const effectiveSpeed = currentSpeed * attr.speedFactor;
 
       const cacheKey = getAudioCacheKey(currentChapterIndex, idx, `${effectiveVoiceId}_${attr.emotion}`);
