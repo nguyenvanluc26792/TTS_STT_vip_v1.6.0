@@ -3265,11 +3265,15 @@ body.zen-mode #nrFabAdd {
       letter-spacing: 0.3px;
       display: inline-flex;
       align-items: center;
-      gap: 5px;
+      gap: 6px;
       user-select: none;
-      pointer-events: none;
+      pointer-events: auto !important;
       opacity: 0.95;
-      margin-right: 4px; /* Xịch vào trong một chút tránh bị viền cong mép phải che khuất */
+      margin-right: 0;
+    }
+
+    #honorTopBatteryPercent {
+      display: none !important;
     }
 
     body.honor-light-mode .honor-status-top-left,
@@ -3290,7 +3294,8 @@ body.zen-mode #nrFabAdd {
       pointer-events: auto !important;
       user-select: none;
       -webkit-tap-highlight-color: transparent;
-      margin-right: 8px;
+      margin-right: 0;
+      margin-left: 2px;
     }
     body.honor-light-mode .honor-top-audio-buffer {
       color: #0284c7;
@@ -5248,9 +5253,8 @@ body.zen-mode #nrFabAdd {
       <div id="honorReaderTopStatus" class="honor-status-top" onclick="toggleHonorOverlay()">
         <span id="honorTopChapterBadge" class="honor-status-top-left" onclick="event.stopPropagation(); toggleChapterDrawer();" title="Bấm để mở danh sách chương">C1 • 📖 30/30</span>
         <div id="honorTopBatteryWrap" class="honor-status-top-right">
+          <span id="honorTopBatteryIcon" class="honor-battery-icon" title="Dung lượng pin"><span id="honorTopBatteryLevel" style="width: 80%;"></span></span>
           <span id="honorTopAudioBufferWrap" class="honor-top-audio-buffer" onclick="event.stopPropagation(); if (typeof togglePreloader === 'function') togglePreloader();" title="Bấm để bật/tắt đệm trước âm thanh">🔊 0/30</span>
-          <span id="honorTopBatteryPercent">--%</span>
-          <span id="honorTopBatteryIcon" class="honor-battery-icon"><span id="honorTopBatteryLevel" style="width: 80%;"></span></span>
         </div>
       </div>
 
@@ -10875,8 +10879,8 @@ body.zen-mode #nrFabAdd {
           buffer = '';
         }
 
-        // Nếu một câu quá dài (> 220 ký tự không có dấu chấm), tách tiếp theo dấu phẩy / chấm phẩy
-        if (part.length > 220) {
+        // Chỉ tách câu nếu thực sự quá dài bất thường (> 450 ký tự không có dấu chấm)
+        if (part.length > 450) {
           const subParts = part.split(/([,;:—]\s+)/);
           let subBuf = '';
           for (const s of subParts) {
@@ -12725,7 +12729,7 @@ body.zen-mode #nrFabAdd {
       if (isMultiVoice && attr.isDialogue) {
         spokenText = sanitizeDialogueForTTS(spokenText, attr);
       }
-      spokenText = spokenText.replace(/(?<!\d),\s*(?!——)/g, ', —— ');
+      spokenText = spokenText.replace(/(?<!\d),\s*/g, ', ');
 
       const effectiveVoiceId = (isMultiVoice && attr.isDialogue) ? getPairedMultiVoice(voiceId, provider, attr.gender) : voiceId;
       const effectiveSpeed = currentSpeed * attr.speedFactor;
@@ -12790,22 +12794,28 @@ body.zen-mode #nrFabAdd {
       const mySession = currentPlaybackSessionId;
       const nextIdx = currentParagraphIndex + 1;
 
-      let pauseMs = 60;
+      let pauseMs = 0;
       if (nextIdx >= allSentences.length) {
-        pauseMs = 500;
+        pauseMs = 250;
       } else if (sentenceMeta && sentenceMeta[currentParagraphIndex] && sentenceMeta[nextIdx]) {
         const currPara = sentenceMeta[currentParagraphIndex].paraIndex;
         const nextPara = sentenceMeta[nextIdx].paraIndex;
         if (currPara !== undefined && nextPara !== undefined && currPara !== nextPara) {
-          pauseMs = 200;
+          pauseMs = 60;
         }
       }
 
-      setTimeout(() => {
+      if (pauseMs === 0) {
         if (isPlaying && mySession === currentPlaybackSessionId) {
           nextParagraph();
         }
-      }, pauseMs);
+      } else {
+        setTimeout(() => {
+          if (isPlaying && mySession === currentPlaybackSessionId) {
+            nextParagraph();
+          }
+        }, pauseMs);
+      }
     }
 
     // =====================================================================
@@ -12935,9 +12945,7 @@ body.zen-mode #nrFabAdd {
         }
       }
 
-      // Tinh chỉnh nhịp ngắt nghỉ dấu phẩy (Comma Prosody & Breath Enhancer):
-      // Bổ sung nhịp ngắt hơi biểu cảm sâu lắng (~1000ms) giữa các vế câu ngăn cách bởi dấu phẩy
-      spokenText = spokenText.replace(/(?<!\d),\s*(?!——)/g, ', —— ');
+      spokenText = spokenText.replace(/(?<!\d),\s*/g, ', ');
 
       // 1. Giọng hệ thống máy Android (android_native)
       const isSystemNativeVoice = (provider === 'native' || voiceId === 'android_native');
@@ -14585,8 +14593,8 @@ body.zen-mode #nrFabAdd {
     // ==========================================
     const DEFAULT_OTA_3G_URL = 'https://rehab-survey-clusters-joins.trycloudflare.com';
     const DEFAULT_OTA_WIFI_URL = 'http://192.168.1.204:5000';
-    const CURRENT_APP_VERSION = 'v1.6.51';
-    const CURRENT_APP_BUILD = 211;
+    const CURRENT_APP_VERSION = 'v1.6.52';
+    const CURRENT_APP_BUILD = 212;
 
     function initOtaSettingsUI() {
       const input = document.getElementById('nrOtaServerInput');

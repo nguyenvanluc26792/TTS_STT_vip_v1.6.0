@@ -225,15 +225,14 @@ def get_ota_version():
         stat = bundle_path.stat()
         return jsonify({
             "success": True,
-            "version": "v1.6.51",
-            "version_code": 211,
+            "version": "v1.6.52",
+            "version_code": 212,
             "size": stat.st_size,
             "updated_at": int(stat.st_mtime),
             "changelog": [
-                "⚡ Thiết kế lại toàn diện bộ đệm audio 30 chương: Hỗ trợ chạy nền liên tục với Foreground Service & WakeLock cho đến khi đủ 30 chương",
-                "🚀 Tăng tốc tải trước âm thanh gấp 3 lần với bộ xử lý đa luồng song song và tự động nạp thêm chương truyện web",
-                "📊 Hiển thị tiến độ đệm audio trực quan theo thời gian thực trên thanh trạng thái: 🔄 X/30 (CX: Y/Z) và 🎧 30/30 khi hoàn tất",
-                "⏭️ Sửa dứt điểm lỗi kẹt chuyển chương: Bấm Next Media hoặc lật trang ở cuối chương tự động nhảy sang chương kế tiếp trơn tru"
+                "🎵 Khắc phục dứt điểm giật cục & ngắt quãng âm thanh: Loại bỏ khoảng lặng gượng ép dấu phẩy, kết nối câu liền mạch mượt mà chuẩn tự nhiên",
+                "📱 Tinh chỉnh thanh trạng thái: Bỏ % pin để giải phóng không gian, chuyển cụm đệm audio sang sát lề phải tránh hoàn toàn bị che khuất bởi cụm camera 'viên thuốc'",
+                "🚀 Nâng cấp bộ tách câu thông minh: Không cắt vụn câu dài, giúp câu thoại và văn phong đọc truyền cảm, liền hơi"
             ]
         })
     return jsonify({"success": False}), 404
@@ -679,10 +678,9 @@ def apply_pronunciation_rules(text, rules=None):
     result = re.sub(r'(?<![\w\u00C0-\u1EF9])A(?![\w\u00C0-\u1EF9])', 'Ah', result)
     result = re.sub(r'(?<![\w\u00C0-\u1EF9])a(?![\w\u00C0-\u1EF9])', 'ah', result)
 
-    # 5. Tinh chỉnh nhịp ngắt nghỉ dấu phẩy (Comma Prosody & Breath Enhancer):
-    # Chuẩn hóa toàn bộ dấu phẩy giữa các vế câu thành ', —— ' để tạo nhịp nghỉ thở sâu lắng, rành mạch
+    # 5. Tinh chỉnh nhịp ngắt nghỉ dấu câu tự nhiên
     result = re.sub(r'\s*([;:.!?…])\s*', r'\1 ', result)
-    result = re.sub(r'(?<!\d),\s*(?!——)', ', —— ', result)
+    result = re.sub(r'(?<!\d),\s*', ', ', result)
     result = re.sub(r'[^\S\r\n]{3,}', '  ', result).strip()
 
     return result

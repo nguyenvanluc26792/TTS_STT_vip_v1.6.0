@@ -661,9 +661,8 @@ class HonorLocalServer(
                     text = text.trimEnd(' ', ',', ';', '…', '-', '–', '—') + "!"
                 }
 
-                // Tinh chỉnh nhịp ngắt nghỉ dấu phẩy (Comma Prosody & Breath Enhancer):
-                // Bổ sung nhịp ngắt hơi biểu cảm sâu lắng (~300ms) giữa các vế câu ngăn cách bởi dấu phẩy
-                text = text.replace(Regex("(?<!\\d),\\s*(?!——)"), ", —— ")
+                // Tinh chỉnh dấu câu tự nhiên
+                text = text.replace(Regex("(?<!\\d),\\s*"), ", ")
 
                 // Check cache sạch: đồng bộ khóa cache với Preloader và Web UI
                 val baseVoiceId = json.optString("base_voice_id", json.optString("voice_id", targetVoice)).let {
@@ -1427,7 +1426,8 @@ class HonorLocalServer(
                 buffer = ""
             }
 
-            if (part.length > 220) {
+            // Chỉ tách câu nếu thực sự quá dài bất thường (> 450 ký tự không có dấu chấm)
+            if (part.length > 450) {
                 val subParts = part.split(Regex("(?<=[,;:—])\\s+"))
                 var subBuf = ""
                 for (s in subParts) {
@@ -1739,7 +1739,7 @@ class HonorLocalServer(
                    .replace(Regex("(?<![\\p{L}\\p{N}])a(?![\\p{L}\\p{N}])"), "ah")
 
         text = text.replace(Regex("\\s*([;:.!?…])\\s*"), "$1 ")
-                   .replace(Regex("(?<!\\d),\\s*(?!——)"), ", —— ")
+                   .replace(Regex("(?<!\\d),\\s*"), ", ")
                    .replace(Regex("[^\\S\\r\\n]{3,}"), "  ")
                    .trim()
         return text
@@ -1940,7 +1940,7 @@ class HonorLocalServer(
                             if (emo == "cold" && !text.endsWith("!") && !text.endsWith("?")) {
                                 text = text.trimEnd(' ', ',', ';', '…', '-', '–', '—') + "!"
                             }
-                            text = text.replace(Regex("(?<!\\d),\\s*(?!——)"), ", —— ")
+                            text = text.replace(Regex("(?<!\\d),\\s*"), ", ")
 
                             val cacheKey = md5("$vId:$mVoice:$emo:$text")
                             val cFile = File(cacheDir, "$cacheKey.mp3")
@@ -2039,7 +2039,7 @@ class HonorLocalServer(
                             if (emo == "cold" && !text.endsWith("!") && !text.endsWith("?")) {
                                 text = text.trimEnd(' ', ',', ';', '…', '-', '–', '—') + "!"
                             }
-                            text = text.replace(Regex("(?<!\\d),\\s*(?!——)"), ", —— ")
+                            text = text.replace(Regex("(?<!\\d),\\s*"), ", ")
                             val cacheKey = md5("$vId:$mVoice:$emo:$text")
                             val cFile = File(cacheDir, "$cacheKey.mp3")
                             if (!cFile.exists() || cFile.length() < 300) {
