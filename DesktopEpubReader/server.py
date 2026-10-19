@@ -226,8 +226,8 @@ def get_ota_version():
         stat = bundle_path.stat()
         return jsonify({
             "success": True,
-            "version": "v1.6.56",
-            "version_code": 216,
+            "version": "v1.6.57",
+            "version_code": 217,
             "size": stat.st_size,
             "updated_at": int(stat.st_mtime),
             "changelog": [
@@ -1242,6 +1242,9 @@ def synthesize_audio_smart(spoken_text, voice_id, provider, speed=1.0, bilingual
 
     # 2. Tự động loại bỏ chữ tiếng Hán khỏi câu để không gây lỗi cho AI tiếng Việt
     clean_text = re.sub(r'[\u4e00-\u9fff]+', '', spoken_text).strip()
+    # Chuẩn hóa tuyệt đối nhịp nghỉ dấu phẩy: Mọi dấu phẩy đều chỉ có đúng 1 dấu cách duy nhất
+    clean_text = re.sub(r'[\s\u00A0\u1680\u2000-\u200a\u202f\u205f\u3000—–-]*[,，、﹐][\s\u00A0\u1680\u2000-\u200a\u202f\u205f\u3000—–-]*(?:…|\.{3})?', ', ', clean_text)
+    clean_text = re.sub(r'\s+', ' ', clean_text).strip()
     if not clean_text:
         return None
 
@@ -1500,6 +1503,9 @@ def get_tts():
 
         spoken_text = apply_pronunciation_rules(filtered_text)
         spoken_text = bilingual.convert_symbols_to_spoken_text(spoken_text)
+        # Đồng nhất tuyệt đối dấu phẩy và khoảng trắng trước khi tính cache hash
+        spoken_text = re.sub(r'[\s\u00A0\u1680\u2000-\u200a\u202f\u205f\u3000—–-]*[,，、﹐][\s\u00A0\u1680\u2000-\u200a\u202f\u205f\u3000—–-]*(?:…|\.{3})?', ', ', spoken_text)
+        spoken_text = re.sub(r'\s+', ' ', spoken_text).strip()
         words_ver = bilingual.get_custom_words_version()
         cache_key = hashlib.md5(f"v2_breath:{provider}:{voice_id}:{speed}:{emotion}:{bilingual_mode}:{words_ver}:{spoken_text}".encode('utf-8')).hexdigest()
 

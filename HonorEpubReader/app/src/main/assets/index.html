@@ -12972,21 +12972,21 @@ body.zen-mode #nrFabAdd {
       const isClauseSplit = /[,…]\s*$/.test(currText);
       const isConsecutiveDialogue = /^[-–—―]/.test(currText) && /^[-–—―]/.test(nextText);
 
-      let pauseMs = 200; // Giữa 2 câu trong cùng đoạn: nghỉ 200ms tự nhiên
+      let pauseMs = 120; // Giữa 2 câu trong cùng đoạn: 120ms
       if (nextValidIdx >= allSentences.length) {
-        pauseMs = 600; // Hết chương: nghỉ 600ms trước khi sang chương mới
+        pauseMs = 400; // Hết chương: 400ms
       } else if (isClauseSplit) {
-        pauseMs = 60; // Mệnh đề trong câu dài: ngắt siêu ngắn 60ms để liền mạch như 1 câu
+        pauseMs = 45; // Mệnh đề trong câu dài: ngắt 45ms siêu liền mạch
       } else if (sentenceMeta && sentenceMeta[currentParagraphIndex] && sentenceMeta[nextValidIdx]) {
         const currPara = sentenceMeta[currentParagraphIndex].paraIndex;
         const nextPara = sentenceMeta[nextValidIdx].paraIndex;
         if (currPara !== undefined && nextPara !== undefined && currPara !== nextPara) {
           if (isConsecutiveDialogue) {
-            pauseMs = 125; // Chuyển thoại '-' sang thoại '-' (đám đông bàn tán / đối thoại): 125ms (~70%)
+            pauseMs = 80; // Chuyển thoại '-' sang thoại '-': 80ms
           } else {
             // ĐỒNG NHẤT 100% KHOẢNG NGHỈ KHI XUỐNG DÒNG / CHUYỂN ĐOẠN:
-            // Giảm còn 70% hiện tại: 350ms * 0.7 = 245ms
-            pauseMs = 245;
+            // Xuống dòng chuyển đoạn: siêu mượt và dứt khoát 140ms
+            pauseMs = 140;
           }
         }
       }
@@ -14829,8 +14829,61 @@ body.zen-mode #nrFabAdd {
     // ==========================================
     const DEFAULT_OTA_3G_URL = 'https://rehab-survey-clusters-joins.trycloudflare.com';
     const DEFAULT_OTA_WIFI_URL = 'http://192.168.1.204:5000';
-    const CURRENT_APP_VERSION = 'v1.6.56';
-    const CURRENT_APP_BUILD = 216;
+    const CURRENT_APP_VERSION = 'v1.6.57';
+    const CURRENT_APP_BUILD = 217;
+
+    async function autoSilentOtaCheck() {
+      try {
+        const configuredServer = (localStorage.getItem('honor_ota_server') || localStorage.getItem('honor_pc_server') || '').trim().replace(/\/+$/, '');
+        const serverCandidates = [];
+        if (configuredServer) serverCandidates.push(configuredServer);
+        if (!serverCandidates.includes(DEFAULT_OTA_3G_URL)) serverCandidates.push(DEFAULT_OTA_3G_URL);
+        if (!serverCandidates.includes(DEFAULT_OTA_WIFI_URL)) serverCandidates.push(DEFAULT_OTA_WIFI_URL);
+
+        for (const srv of serverCandidates) {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 4000);
+            const res = await fetch(srv + '/api/ota/version?t=' + Date.now(), { signal: controller.signal });
+            clearTimeout(timeoutId);
+            if (!res.ok) continue;
+            const data = await res.json();
+            if (!data || !data.success) continue;
+
+            const serverCode = data.version_code || 0;
+            const serverVer = data.version || '';
+            if (serverCode > CURRENT_APP_BUILD) {
+              console.log('[AutoSilentOTA] Tim thay ban moi:', serverVer, 'Code:', serverCode);
+              const bundleCtrl = new AbortController();
+              const bundleTimeout = setTimeout(() => bundleCtrl.abort(), 12000);
+              const bundleRes = await fetch(srv + '/api/ota/bundle?t=' + Date.now(), { signal: bundleCtrl.signal });
+              clearTimeout(bundleTimeout);
+              if (bundleRes.ok) {
+                const htmlContent = await bundleRes.text();
+                if (htmlContent && htmlContent.length > 50000 && htmlContent.includes('<html')) {
+                  const updateRes = await fetch('/api/ota/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ html_content: htmlContent })
+                  });
+                  const d = await updateRes.json();
+                  if (d && d.success) {
+                    if (typeof showHonorToast === 'function') {
+                      showHonorToast('⚡ Đã tự động cập nhật lên ' + serverVer + '!');
+                    }
+                    setTimeout(() => {
+                      window.location.reload(true);
+                    }, 1200);
+                    return;
+                  }
+                }
+              }
+            }
+            break;
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
 
     function initOtaSettingsUI() {
       const input = document.getElementById('nrOtaServerInput');
@@ -15212,6 +15265,7 @@ body.zen-mode #nrFabAdd {
 
     window.addEventListener('DOMContentLoaded', () => {
       checkOtaStatusBadge();
+      setTimeout(autoSilentOtaCheck, 2000);
       checkPreviousAppCrash();
       initAutoResume();
       setTimeout(updateEyeButtonState, 500);

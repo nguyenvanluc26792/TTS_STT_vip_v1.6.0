@@ -561,7 +561,8 @@ def parse_contextual_story_segments(text):
             clean_text = pruned_text
             
         # Tinh chỉnh nhịp ngắt nghỉ dấu phẩy (Comma Prosody & Breath Enhancer):
-        clean_text = re.sub(r'(?<=[^\W\d_]),\s*(?=[^\W\d_“"«])', ',: ', clean_text)
+        clean_text = re.sub(r'[\s\u00A0\u1680\u2000-\u200a\u202f\u205f\u3000—–-]*[,，、﹐][\s\u00A0\u1680\u2000-\u200a\u202f\u205f\u3000—–-]*(?:…|\.{3})?', ', ', clean_text)
+        clean_text = re.sub(r'\s+', ' ', clean_text).strip()
             
         prev_ctx = raw_parts[i-1] if i > 0 else ""
         next_ctx = raw_parts[i+1] if i + 1 < len(raw_parts) else ""

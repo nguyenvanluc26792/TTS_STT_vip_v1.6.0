@@ -27,7 +27,7 @@ class HonorLocalServer(
 
     private val bookManager = NativeBookManager(context)
     private val dictEngine = NativeDictionaryEngine(context)
-    private val cacheDir = File(context.cacheDir, "tts_cache_v6").apply { mkdirs() }
+    private val cacheDir = File(context.cacheDir, "tts_cache_v7").apply { mkdirs() }
     private val pronounceFile = File(context.filesDir, "pronounce_rules.json")
     private val customWordsFile = File(context.filesDir, "custom_english_words.json")
 
@@ -49,20 +49,58 @@ class HonorLocalServer(
         return baos.toByteArray()
     }
 
+
+    private fun getBuildNumberFromStream(stream: InputStream): Int {
+        return try {
+            stream.bufferedReader(Charsets.UTF_8).use { reader ->
+                val regex = Regex("""CURRENT_APP_BUILD\s*=\s*(\d+)""")
+                var count = 0
+                while (count < 25000) {
+                    val line = reader.readLine() ?: break
+                    count++
+                    val match = regex.find(line)
+                    if (match != null) {
+                        return match.groupValues[1].toInt()
+                    }
+                }
+            }
+            0
+        } catch (e: Exception) {
+            0
+        }
+    }
+
+    private fun getBuildNumberFromAssets(): Int {
+        return try {
+            getBuildNumberFromStream(context.assets.open("index.html"))
+        } catch (e: Exception) {
+            0
+        }
+    }
+
+    private fun getBuildNumberFromFile(file: File): Int {
+        return try {
+            getBuildNumberFromStream(FileInputStream(file))
+        } catch (e: Exception) {
+            0
+        }
+    }
+
     init {
         try {
             // Xoa sach thu muc cache cu de giai phong bo nho
             context.cacheDir.listFiles()?.forEach { f ->
-                if (f.name.startsWith("tts_cache") && f.name != "tts_cache_v6") {
+                if (f.name.startsWith("tts_cache") && f.name != "tts_cache_v7") {
                     f.deleteRecursively()
                 }
             }
-            // Neu APK moi vua duoc cai dat, xoa file ota/index.html cu de tranh che khuat code moi trong assets
+            // Neu APK moi vua duoc cai dat (build number lon hon hoac bang OTA), xoa file ota/index.html
             val otaFile = File(context.filesDir, "ota/index.html")
             if (otaFile.exists()) {
-                val pkgInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-                if (otaFile.lastModified() < pkgInfo.lastUpdateTime) {
-                    Log.i(TAG, "Xóa ota/index.html cũ do APK vừa được cập nhật mới hơn")
+                val assetBuild = getBuildNumberFromAssets()
+                val otaBuild = getBuildNumberFromFile(otaFile)
+                if (assetBuild >= otaBuild) {
+                    Log.i(TAG, "Xóa ota/index.html cũ do APK (Build $assetBuild) mới hơn hoặc bằng OTA (Build $otaBuild)")
                     otaFile.delete()
                 }
             }
@@ -117,8 +155,16 @@ class HonorLocalServer(
             try {
                 val otaFile = File(context.filesDir, "ota/index.html")
                 val input: InputStream = if (otaFile.exists() && otaFile.length() > 50000) {
-                    Log.i(TAG, "Đang nạp index.html từ gói cập nhật OTA (${otaFile.length()} bytes)")
-                    FileInputStream(otaFile)
+                    val assetBuild = getBuildNumberFromAssets()
+                    val otaBuild = getBuildNumberFromFile(otaFile)
+                    if (otaBuild > assetBuild) {
+                        Log.i(TAG, "Đang nạp index.html từ gói cập nhật OTA (Build $otaBuild > Asset $assetBuild)")
+                        FileInputStream(otaFile)
+                    } else {
+                        Log.i(TAG, "OTA cũ hơn hoặc bằng Asset (OTA $otaBuild <= Asset $assetBuild), xóa và dùng Assets")
+                        otaFile.delete()
+                        context.assets.open("index.html")
+                    }
                 } else {
                     Log.i(TAG, "Đang nạp index.html từ assets gốc")
                     context.assets.open("index.html")
