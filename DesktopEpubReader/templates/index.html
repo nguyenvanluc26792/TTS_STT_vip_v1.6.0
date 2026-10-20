@@ -6193,7 +6193,7 @@ body.zen-mode #nrFabAdd {
             document.getElementById('bookMetaInfo').textContent = `${data.title} - ${data.author || 'Tác giả'}`;
           }
           if (typeof loadChapter === 'function') {
-            loadChapter(targetCh, targetPara, true);
+            loadChapter(targetCh, targetPara, false);
           }
           updateNrPlayerUI();
           switchNrTab('reader');
@@ -6709,7 +6709,7 @@ body.zen-mode #nrFabAdd {
               document.getElementById('bookMetaInfo').textContent = `${data.title} - ${data.author || 'Tác giả'}`;
             }
             if (typeof loadChapter === 'function') {
-              loadChapter(targetCh, targetPara, true);
+              loadChapter(targetCh, targetPara, false);
             }
             updateNrPlayerUI();
             showToast(`🎉 Đã tải xong chữ (${data.chapters[0].paragraphs.length} đoạn): ${data.title}`);
@@ -9920,7 +9920,7 @@ body.zen-mode #nrFabAdd {
         const chLen = Array.isArray(data.chapters) ? data.chapters.length : 1;
         const targetCh = Math.min(Math.max(0, data.lastChapter || 0), Math.max(0, chLen - 1));
         const targetPara = data.lastParagraph || 0;
-        loadChapter(targetCh, targetPara, true);
+        loadChapter(targetCh, targetPara, false);
         showToast(`🎉 Nạp truyện thành công: ${data.title} (${data.totalChapters} chương đã sẵn sàng!)`);
 
         // Cập nhật số lượng sách trong tủ
@@ -10036,7 +10036,7 @@ body.zen-mode #nrFabAdd {
         const chLen = Array.isArray(data.chapters) ? data.chapters.length : 1;
         const targetCh = Math.min(Math.max(0, data.lastChapter || 0), Math.max(0, chLen - 1));
         const targetPara = data.lastParagraph || 0;
-        loadChapter(targetCh, targetPara, true);
+        loadChapter(targetCh, targetPara, false);
         loadSkipRules(data.id);
         showToast(`✨ Đã mở: ${data.title} (Chương ${targetCh + 1}, Đoạn ${targetPara + 1})`);
       } catch (err) {
@@ -10796,7 +10796,7 @@ body.zen-mode #nrFabAdd {
               paragraphs: qc.paragraphs
             };
             document.getElementById('bookMetaInfo').textContent = `${qc.title} - ${qc.author || ''}`;
-            loadChapter(qc.chapterIndex || 0, qc.paragraphIndex || 0, true);
+            loadChapter(qc.chapterIndex || 0, qc.paragraphIndex || 0, false);
             restoredFromQuickCache = true;
           }
         }
@@ -10859,7 +10859,7 @@ body.zen-mode #nrFabAdd {
             updateSkippedParagraphsInDOM();
             notifyPreloader(targetCh);
           } else {
-            loadChapter(targetCh, targetPara, true);
+            loadChapter(targetCh, targetPara, false);
           }
           showToast(`✨ Đã mở: ${lastBook.title} (Chương ${targetCh + 1}, Đoạn ${targetPara + 1})`);
         } else if (!restoredFromQuickCache) {
@@ -10903,7 +10903,7 @@ body.zen-mode #nrFabAdd {
 
         const targetCh = data.lastChapter || 0;
         const targetPara = data.lastParagraph || 0;
-        loadChapter(targetCh, targetPara, true);
+        loadChapter(targetCh, targetPara, false);
         showToast(`📚 Đã lưu vào Tủ Sách & mở: Chương ${targetCh + 1}`);
 
         // Cập nhật badge số lượng sách
@@ -10976,13 +10976,13 @@ body.zen-mode #nrFabAdd {
         // BALANCED BREATH-GROUP SPLITTING (> 135 ký tự có nhiều dấu phẩy)
         // Chống quá tải Duration Predictor & lỗi khựng ngắt nhịp của TTS
         // Mẹo Anti-Downstep: Mệnh đề 1 kết thúc bằng dấu phẩy, tuyệt đối KHÔNG thêm dấu chấm!
-        if (part.length > 135 && /,\s+/.test(part)) {
+        if (part.length > 320 && /,\s+/.test(part)) {
           const clauses = part.split(/(?<=[,])\s+/);
           let currentClauseGroup = '';
           for (let c = 0; c < clauses.length; c++) {
             const clause = clauses[c].trim();
             if (!clause) continue;
-            if (currentClauseGroup && (currentClauseGroup.length + clause.length > 120)) {
+            if (currentClauseGroup && (currentClauseGroup.length + clause.length > 260)) {
               rawSentences.push(currentClauseGroup);
               currentClauseGroup = clause;
             } else {
@@ -11207,7 +11207,7 @@ body.zen-mode #nrFabAdd {
           span.id = `sent-${sIdx}`;
           span.dataset.index = sIdx;
           span.dataset.paraIndex = pIdx;
-          span.innerHTML = renderSentenceHtml(sentText) + ' ';
+          span.innerHTML = renderSentenceHtml(sentText).replace(/,\s{2,}/g, ', ') + ' ';
 
 // Bấm vào câu trong sách không tự ý phát giọng (chuẩn app gốc)
 
@@ -13207,6 +13207,7 @@ body.zen-mode #nrFabAdd {
 
       const isMultiVoice = (localStorage.getItem('reader_multi_voice') !== '0');
       const nextSentence = (sIdx + 1 < allSentences.length) ? allSentences[sIdx + 1] : '';
+      const prevSentence = (sIdx > 0) ? allSentences[sIdx - 1] : '';
       const attr = isMultiVoice ? analyzeDialogueAttribution(text, nextSentence, prevSentence, sIdx) : { isDialogue: false, gender: 'narration', emotion: 'normal', speedFactor: 1.0, pitchFactor: 1.0, speaker: '' };
       if (isMultiVoice && attr.isDialogue) {
         spokenText = sanitizeDialogueForTTS(spokenText, attr);
@@ -13598,11 +13599,20 @@ body.zen-mode #nrFabAdd {
       const cacheKey = getAudioCacheKey(currentChapterIndex, idx, `${effectiveVoiceId}_${attr.emotion}`);
       let blob = paragraphAudioCache.get(cacheKey);
 
-      const isOfflineVoice = (effectiveProvider === 'offline' || String(effectiveVoiceId).startsWith('offline_'));
+      const isOfflineVoice = (effectiveProvider === 'offline' || String(effectiveVoiceId).startsWith('offline_') || effectiveProvider === 'native' || effectiveVoiceId === 'android_native');
       const offlinePitch = isOfflineVoice ? getPitchForOfflineVoice(effectiveVoiceId, currentPitch) : currentPitch;
 
+      // CHỌN GIỌNG OFFLINE: LUÔN LUÔN đọc trực tiếp bằng bộ tổng hợp âm thanh trên máy (Native/Pitch),
+      // BẤT KỂ CÓ MẠNG HAY MẤT MẠNG -> Tuyệt đối không tự ý nhảy sang giọng Online CapCut!
+      if (isOfflineVoice) {
+        console.log('[Offline Engine] Đã chọn giọng Offline (' + effectiveVoiceId + '): Đọc trực tiếp bằng máy không qua mạng');
+        if (tryFallbackNative(spokenText, effectiveSpeed, offlinePitch)) {
+          return;
+        }
+      }
+
       // KHI MẤT MẠNG HOÀN TOÀN: Đọc ngay bằng Native TTS máy, 0ms delay, không chờ gọi API
-      if (!navigator.onLine && (isOfflineVoice || window.HonorBridge)) {
+      if (!navigator.onLine && window.HonorBridge) {
         console.log('[Offline Engine] Mất mạng: Đọc trực tiếp bằng giọng máy offline không delay');
         if (tryFallbackNative(spokenText, effectiveSpeed, offlinePitch)) {
           return;
@@ -15214,8 +15224,8 @@ body.zen-mode #nrFabAdd {
     // ==========================================
     const DEFAULT_OTA_3G_URL = 'https://opinion-personality-activities-mailto.trycloudflare.com';
     const DEFAULT_OTA_WIFI_URL = 'http://192.168.1.204:5000';
-    const CURRENT_APP_VERSION = 'v1.6.60';
-    const CURRENT_APP_BUILD = 220;
+    const CURRENT_APP_VERSION = 'v1.6.61';
+    const CURRENT_APP_BUILD = 221;
 
     async function autoSilentOtaCheck() {
       try {

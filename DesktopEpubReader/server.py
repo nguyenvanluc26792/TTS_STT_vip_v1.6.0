@@ -235,15 +235,16 @@ def get_ota_version():
         stat = bundle_path.stat()
         return jsonify({
             "success": True,
-            "version": "v1.6.60",
-            "version_code": 220,
+            "version": "v1.6.61",
+            "version_code": 221,
             "size": stat.st_size,
             "updated_at": int(stat.st_mtime),
             "changelog": [
-                "⚡ Sửa triệt để giọng Offline (Ban Mai...): Hoạt động ngay lập tức 100% khi MẤT MẠNG hoặc MẠNG YẾU (Zero-Latency Native Voice), không bị treo chờ",
-                "🎙️ Tự động điều chỉnh âm sắc Pitch riêng cho Ban Mai (nữ trẻ trung), Ngọc Huyền (nữ ấm áp), Nam Trầm... khi đọc ngoại tuyến",
-                "⏱️ Chuẩn hóa nhịp nghỉ dấu phẩy/chấm/xuống dòng: Thêm khoảng trắng hoặc dòng trống không bị tăng thời gian nghỉ",
-                "🎭 2 Mode phát giọng trong Cài đặt: Mode 1 đa giọng theo giới tính, Mode 2 đơn giọng duy nhất"
+                "⚡ Chuẩn hóa triệt để dấu phẩy & khoảng trắng: Dấu phẩy 1 hay 2 khoảng trắng đều có nhịp nghỉ bằng nhau 100%, không bị giật cục",
+                "🚀 Sửa triệt để lỗi dừng lâu khi đổi thoại / đổi đoạn: Tải trước đa giọng (Prefetch) hoạt động hoàn hảo, không còn độ trễ chờ mạng",
+                "🔇 Tắt hoàn toàn tự động đọc media khi khởi động app: Mở app ở trạng thái dừng, bấm Play mới đọc",
+                "🎯 Cố định giọng được chọn: Chọn giọng Offline nào (Ban Mai, Ngọc Huyền, Nam Trầm...) dùng đúng giọng đó, không tự nhảy sang online",
+                "⚡ Tối ưu tốc độ mở app: Nạp nội dung sách tức thì (<50ms)"
             ]
         })
     return jsonify({"success": False}), 404
@@ -400,7 +401,7 @@ def ota_helper_page():
   <div class="card">
     <div class="badge">⚡ MÁY CHỦ OTA 3G ONLINE</div>
     <h2>Cập Nhật Honor Reader</h2>
-    <div class="ver-tag">Bản cập nhật mới nhất: v1.6.60 (Build 220)</div>
+    <div class="ver-tag">Bản cập nhật mới nhất: v1.6.61 (Build 221)</div>
 
     <!-- Hướng dẫn 2 bước -->
     <div class="guide-box">
