@@ -5063,7 +5063,7 @@ body.zen-mode #nrFabAdd {
               <span>🌐 Máy chủ cập nhật (Hỗ trợ 3G / Wi-Fi):</span>
               <span id="nrOtaModeLabel" style="color:#38bdf8; font-weight:700; font-size:0.72rem;">3G Tự động</span>
             </div>
-            <input type="text" id="nrOtaServerInput" style="width:100%; box-sizing:border-box; padding:6px 10px; font-size:0.76rem; border-radius:8px; border:1px solid rgba(255,255,255,0.15); background:rgba(0,0,0,0.4); color:#f1f5f9; outline:none; font-family:monospace;" placeholder="https://rehab-survey-clusters-joins.trycloudflare.com" onchange="saveCustomOtaServer(this.value)">
+            <input type="text" id="nrOtaServerInput" style="width:100%; box-sizing:border-box; padding:6px 10px; font-size:0.76rem; border-radius:8px; border:1px solid rgba(255,255,255,0.15); background:rgba(0,0,0,0.4); color:#f1f5f9; outline:none; font-family:monospace;" placeholder="https://opinion-personality-activities-mailto.trycloudflare.com" onchange="saveCustomOtaServer(this.value)">
             <div style="display:flex; gap:6px; margin-top:6px;">
               <button type="button" class="nr-chip-btn" id="btnOtaPreset3G" style="flex:1; font-size:0.70rem; padding:4px 6px; border-color:#38bdf8; color:#38bdf8; font-weight:600;" onclick="setOtaPreset('3g')">⚡ Dùng 3G/Internet</button>
               <button type="button" class="nr-chip-btn" id="btnOtaPresetWifi" style="flex:1; font-size:0.70rem; padding:4px 6px; border-color:#64748b; color:#94a3b8;" onclick="setOtaPreset('wifi')">🏠 Dùng Wi-Fi (192.168.1.204)</button>
@@ -15183,7 +15183,7 @@ body.zen-mode #nrFabAdd {
     // ==========================================
     // OTA UPDATE ENGINE (Hỗ trợ 3G / 4G / Wi-Fi toàn cầu & Kiểm tra phiên bản)
     // ==========================================
-    const DEFAULT_OTA_3G_URL = 'https://rehab-survey-clusters-joins.trycloudflare.com';
+    const DEFAULT_OTA_3G_URL = 'https://opinion-personality-activities-mailto.trycloudflare.com';
     const DEFAULT_OTA_WIFI_URL = 'http://192.168.1.204:5000';
     const CURRENT_APP_VERSION = 'v1.6.59';
     const CURRENT_APP_BUILD = 219;
@@ -15251,7 +15251,7 @@ body.zen-mode #nrFabAdd {
 
       // Lưu trữ và ưu tiên link 3G Cloudflare chính xác cho tất cả các bản sau
       let currentServer = (localStorage.getItem('honor_ota_server') || '').trim();
-      if (!currentServer || (currentServer.includes('trycloudflare.com') && !currentServer.includes('rehab-survey-clusters-joins'))) {
+      if (!currentServer || (currentServer.includes('trycloudflare.com') && !currentServer.includes('opinion-personality-activities-mailto'))) {
         currentServer = DEFAULT_OTA_3G_URL;
         localStorage.setItem('honor_ota_server', DEFAULT_OTA_3G_URL);
       }

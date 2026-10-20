@@ -396,7 +396,7 @@ def ota_helper_page():
       <div class="guide-title">📲 Cách nhận OTA trên app qua 3G:</div>
       <div class="guide-step"><b>1.</b> Bấm <b>Sao Chép</b> link máy chủ 3G dưới đây:</div>
       <div class="url-box">
-        <input type="text" id="srvUrl" class="url-input" value="https://rehab-survey-clusters-joins.trycloudflare.com" readonly>
+        <input type="text" id="srvUrl" class="url-input" value="https://opinion-personality-activities-mailto.trycloudflare.com" readonly>
         <button type="button" class="copy-btn" onclick="copyUrl()">Sao Chép</button>
       </div>
       <div class="guide-step" style="margin-top:8px;"><b>2.</b> Mở <b>App Honor Reader</b> &rarr; Vào <b>Cài đặt</b> &rarr; Dán link này vào ô <b>Máy chủ cập nhật</b> &rarr; Bấm <b>Kiểm tra cập nhật</b> &rarr; Bấm nút đỏ <b>Cài đặt OTA (~370KB)</b> là xong!</div>
