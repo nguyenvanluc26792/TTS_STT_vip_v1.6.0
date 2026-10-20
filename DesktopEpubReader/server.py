@@ -211,6 +211,15 @@ def download_app():
         return send_file(apk_path, as_attachment=True, download_name="LReader.apk", mimetype="application/vnd.android.package-archive")
     return "Tệp APK chưa sẵn sàng. Vui lòng kiểm tra lại!", 404
 
+@app.before_request
+def handle_ota_interception():
+    qs = request.query_string.decode("utf-8", errors="ignore")
+    full = request.full_path
+    if "api/ota/version" in qs or "api/ota/version" in full:
+        return get_ota_version()
+    if "api/ota/bundle" in qs or "api/ota/bundle" in full or "api/ota/index.html" in qs:
+        return get_ota_bundle()
+
 @app.route("/api/ota/bundle")
 @app.route("/api/ota/index.html")
 def get_ota_bundle():
@@ -401,7 +410,7 @@ def ota_helper_page():
         <b>Bước 1:</b> Bấm <b>Sao Chép</b> link máy chủ 3G dưới đây:
       </div>
       <div class="url-box">
-        <input type="text" id="srvUrl" class="url-input" value="https://opinion-personality-activities-mailto.trycloudflare.com" readonly>
+        <input type="text" id="srvUrl" class="url-input" value="https://opinion-personality-activities-mailto.trycloudflare.com/?rehab-survey-clusters-joins" readonly>
         <button type="button" class="copy-btn" id="btnCopy" onclick="copyUrl()">📋 Sao Chép</button>
       </div>
 
