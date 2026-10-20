@@ -76,6 +76,11 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
+        <service
+            android:name="com.dragon.read.reader.ui.ReaderMediaService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="false" />
+
     </application>
 
 </manifest>
