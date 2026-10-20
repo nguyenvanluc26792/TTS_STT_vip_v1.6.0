@@ -226,14 +226,14 @@ def get_ota_version():
         stat = bundle_path.stat()
         return jsonify({
             "success": True,
-            "version": "v1.6.58",
-            "version_code": 218,
+            "version": "v1.6.59",
+            "version_code": 219,
             "size": stat.st_size,
             "updated_at": int(stat.st_mtime),
             "changelog": [
-                "🎭 Bổ sung 2 Mode phát giọng trong Cài đặt: Mode 1 (Đa giọng theo giới tính - Tự do chọn giọng riêng cho Dẫn truyện, Nam, Nữ) & Mode 2 (Đơn giọng - Đúng 1 voice duy nhất)",
-                "✨ Đồng nhất 100% thời gian nghỉ sau dấu phẩy giữa 1 khoảng trắng và 2 khoảng trắng (bằng nhau hoàn hảo)",
-                "⚡ Rút ngắn thời gian dừng khi xuống dòng (140ms / thoại 80ms) chuyển đoạn siêu mượt, không bị khựng"
+                "🎙️ Sửa lỗi chọn giọng offline nhưng vẫn đọc online: Provider được xác định chính xác từ voice_id, không phụ thuộc dataset HTML nữa",
+                "⏱️ Chuẩn hóa nhịp nghỉ dấu phẩy/chấm/xuống dòng: Câu cùng đoạn KHÔNG bị thêm trailing silence thừa, thêm khoảng trắng/dòng trống không tăng thời gian nghỉ",
+                "🎭 2 Mode phát giọng: Mode 1 đa giọng (Nam/Nữ/Dẫn truyện tùy chọn), Mode 2 đơn giọng duy nhất"
             ]
         })
     return jsonify({"success": False}), 404

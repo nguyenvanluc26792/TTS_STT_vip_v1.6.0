@@ -10458,10 +10458,8 @@ body.zen-mode #nrFabAdd {
         const voiceSelect = document.getElementById('voiceSelect');
         const selectedOpt = voiceSelect ? (voiceSelect.options[voiceSelect.selectedIndex] || {}) : {};
         const vId = selectedOpt.value || localStorage.getItem('reader_saved_voice') || 'BV074_streaming';
-        let prov = selectedOpt.dataset?.provider || 'capcut';
-        if (vId.startsWith('eleven_') || vId.includes('adam') || vId.includes('almee')) prov = 'elevenlabs';
-        else if (vId.startsWith('offline_')) prov = 'offline';
-        else if (vId.includes('edge_')) prov = 'edge';
+        // Resolve provider dứt khoát từ voiceId
+        let prov = getProviderForVoiceId(vId);
         try {
           const isMultiVoice = (localStorage.getItem('reader_multi_voice') !== '0');
           await fetch('/api/preload/update', {
@@ -12572,9 +12570,13 @@ body.zen-mode #nrFabAdd {
       if (!vId) return 'capcut';
       const s = String(vId).toLowerCase();
       if (s === 'android_native') return 'native';
+      // Offline AI voices: prefix offline_ hoặc các tên offline voice được lưu
       if (s.startsWith('offline_')) return 'offline';
+      // Edge TTS (Microsoft): voice name bắt đầu bằng vi-vn- hoặc en-us-
       if (s.startsWith('vi-vn-') || s.startsWith('en-us-') || s.startsWith('edge_')) return 'edge';
+      // ElevenLabs: prefix eleven_ hoặc tên cụ thể
       if (s.startsWith('eleven_') || s.includes('adam') || s.includes('almee')) return 'elevenlabs';
+      // CapCut: BV*, multi_female_richgirl_uranus*, vi_female_huong, etc.
       return 'capcut';
     }
 
@@ -13187,7 +13189,8 @@ body.zen-mode #nrFabAdd {
       const voiceSelect = document.getElementById('voiceSelect');
       const selectedOpt = voiceSelect ? (voiceSelect.options[voiceSelect.selectedIndex] || {}) : {};
       const voiceId = selectedOpt.value || 'BV074_streaming';
-      const provider = selectedOpt.dataset?.provider || 'capcut';
+      // Resolve provider dứt khoát từ voiceId, tránh dataset bị thiếu
+      const provider = getProviderForVoiceId(voiceId);
 
       if (provider === 'native' || voiceId === 'android_native') return;
 
@@ -13430,7 +13433,8 @@ body.zen-mode #nrFabAdd {
       const voiceSelect = document.getElementById('voiceSelect');
       const selectedOpt = voiceSelect ? (voiceSelect.options[voiceSelect.selectedIndex] || {}) : {};
       const voiceId = selectedOpt.value || 'BV074_streaming';
-      const provider = selectedOpt.dataset?.provider || 'capcut';
+      // Resolve provider dứt khoát từ voiceId (dataset có thể bị thiếu sau khi populate selects)
+      const provider = getProviderForVoiceId(voiceId);
 
       const isMultiVoice = (localStorage.getItem('reader_multi_voice') !== '0');
       const nextSentence = (idx + 1 < allSentences.length) ? allSentences[idx + 1] : '';
@@ -13453,9 +13457,28 @@ body.zen-mode #nrFabAdd {
       spokenText = spokenText.replace(/[\s\u00A0\u1680\u2000-\u200a\u202f\u205f\u3000—–-]*[,，、﹐][\s\u00A0\u1680\u2000-\u200a\u202f\u205f\u3000—–-]*(?:…|\.{3})?/g, ', ');
       spokenText = spokenText.replace(/ {2,}/g, ' ');
       if (isTrailingComma) {
-        spokenText = spokenText.replace(/[.…~–—\s]+$/, ', '); // Mẹo Anti-Downstep: giữ nguyên độ lơ lửng tự nhiên
+        // Câu mệnh đề kết thúc bằng , -> giữ nguyên dấu phẩy, KHÔNG thêm . để TTS không tạo trailing silence thừa
+        spokenText = spokenText.replace(/[.…~–—\s]+$/, ',');
       } else {
-        spokenText = spokenText.replace(/[.…~–—\s]+$/, '.');
+        // Kiểm tra câu tiếp theo có cùng đoạn không
+        const nextValidIdxForEnd = (() => {
+          let ni = idx + 1;
+          while (ni < allSentences.length && isParagraphSkipped(allSentences[ni])) ni++;
+          return ni;
+        })();
+        const currParaForEnd = sentenceMeta && sentenceMeta[idx] ? sentenceMeta[idx].paraIndex : -1;
+        const nextParaForEnd = sentenceMeta && sentenceMeta[nextValidIdxForEnd] ? sentenceMeta[nextValidIdxForEnd].paraIndex : -2;
+        const isSameParagraph = (currParaForEnd !== -1 && currParaForEnd === nextParaForEnd);
+        if (isSameParagraph) {
+          // Cùng đoạn -> KHÔNG thêm dấu chấm để tránh TTS engine thêm trailing silence thừa
+          spokenText = spokenText.replace(/[.…~–—\s]+$/, '');
+          if (!spokenText.match(/[.,!?…]$/)) {
+            // Nếu câu chưa có dấu kết thúc, để nguyên -> TTS tự xử lý nhịp điệu tự nhiên
+          }
+        } else {
+          // Hết đoạn hoặc hết câu -> thêm dấu chấm để TTS xử lý khoảng nghỉ hợp lý
+          spokenText = spokenText.replace(/[.…~–—\s]+$/, '.');
+        }
       }
       spokenText = spokenText.replace(/ {2,}/g, ' ').trim();
 
@@ -15162,8 +15185,8 @@ body.zen-mode #nrFabAdd {
     // ==========================================
     const DEFAULT_OTA_3G_URL = 'https://rehab-survey-clusters-joins.trycloudflare.com';
     const DEFAULT_OTA_WIFI_URL = 'http://192.168.1.204:5000';
-    const CURRENT_APP_VERSION = 'v1.6.58';
-    const CURRENT_APP_BUILD = 218;
+    const CURRENT_APP_VERSION = 'v1.6.59';
+    const CURRENT_APP_BUILD = 219;
 
     async function autoSilentOtaCheck() {
       try {
