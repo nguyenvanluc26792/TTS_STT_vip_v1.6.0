@@ -226,14 +226,15 @@ def get_ota_version():
         stat = bundle_path.stat()
         return jsonify({
             "success": True,
-            "version": "v1.6.59",
-            "version_code": 219,
+            "version": "v1.6.60",
+            "version_code": 220,
             "size": stat.st_size,
             "updated_at": int(stat.st_mtime),
             "changelog": [
-                "🎙️ Sửa lỗi chọn giọng offline nhưng vẫn đọc online: Provider được xác định chính xác từ voice_id, không phụ thuộc dataset HTML nữa",
-                "⏱️ Chuẩn hóa nhịp nghỉ dấu phẩy/chấm/xuống dòng: Câu cùng đoạn KHÔNG bị thêm trailing silence thừa, thêm khoảng trắng/dòng trống không tăng thời gian nghỉ",
-                "🎭 2 Mode phát giọng: Mode 1 đa giọng (Nam/Nữ/Dẫn truyện tùy chọn), Mode 2 đơn giọng duy nhất"
+                "⚡ Sửa triệt để giọng Offline (Ban Mai...): Hoạt động ngay lập tức 100% khi MẤT MẠNG hoặc MẠNG YẾU (Zero-Latency Native Voice), không bị treo chờ",
+                "🎙️ Tự động điều chỉnh âm sắc Pitch riêng cho Ban Mai (nữ trẻ trung), Ngọc Huyền (nữ ấm áp), Nam Trầm... khi đọc ngoại tuyến",
+                "⏱️ Chuẩn hóa nhịp nghỉ dấu phẩy/chấm/xuống dòng: Thêm khoảng trắng hoặc dòng trống không bị tăng thời gian nghỉ",
+                "🎭 2 Mode phát giọng trong Cài đặt: Mode 1 đa giọng theo giới tính, Mode 2 đơn giọng duy nhất"
             ]
         })
     return jsonify({"success": False}), 404

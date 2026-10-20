@@ -12566,6 +12566,17 @@ body.zen-mode #nrFabAdd {
       return localStorage.getItem('reader_voice_single') || localStorage.getItem('reader_saved_voice') || 'BV074_streaming';
     }
 
+    // Xác định cao độ (Pitch) & Âm sắc đặc trưng cho từng giọng Offline AI khi phát qua Native TTS
+    function getPitchForOfflineVoice(vId, basePitch = 1.0) {
+      if (!vId) return basePitch;
+      const s = String(vId).toLowerCase();
+      if (s.includes('banmai') || s.includes('phuongtrang') || s.includes('thao_vy')) return Math.max(0.6, Math.min(1.8, basePitch * 1.16));
+      if (s.includes('ngochuyen') || s.includes('thanhphuong')) return Math.max(0.6, Math.min(1.8, basePitch * 1.09));
+      if (s.includes('calmwoman') || s.includes('maiphuong') || s.includes('ngocngan') || s.includes('huong')) return Math.max(0.6, Math.min(1.8, basePitch * 1.04));
+      if (s.includes('deepman') || s.includes('namminh') || s.includes('bv075') || s.includes('nam')) return Math.max(0.6, Math.min(1.8, basePitch * 0.82));
+      return basePitch;
+    }
+
     function getProviderForVoiceId(vId) {
       if (!vId) return 'capcut';
       const s = String(vId).toLowerCase();
@@ -13587,11 +13598,27 @@ body.zen-mode #nrFabAdd {
       const cacheKey = getAudioCacheKey(currentChapterIndex, idx, `${effectiveVoiceId}_${attr.emotion}`);
       let blob = paragraphAudioCache.get(cacheKey);
 
+      const isOfflineVoice = (effectiveProvider === 'offline' || String(effectiveVoiceId).startsWith('offline_'));
+      const offlinePitch = isOfflineVoice ? getPitchForOfflineVoice(effectiveVoiceId, currentPitch) : currentPitch;
+
+      // KHI MẤT MẠNG HOÀN TOÀN: Đọc ngay bằng Native TTS máy, 0ms delay, không chờ gọi API
+      if (!navigator.onLine && (isOfflineVoice || window.HonorBridge)) {
+        console.log('[Offline Engine] Mất mạng: Đọc trực tiếp bằng giọng máy offline không delay');
+        if (tryFallbackNative(spokenText, effectiveSpeed, offlinePitch)) {
+          return;
+        }
+      }
+
       if (blob) {
         paragraphAudioCache.delete(cacheKey);
       } else {
         setLoading(true);
         try {
+          // BẢO VỆ KHI MẠNG YẾU: Giọng offline chỉ chờ tối đa 1.8s, nếu mạng chập chờn lập tức đọc offline
+          const abortCtrl = new AbortController();
+          const fetchTimeoutMs = isOfflineVoice ? 1800 : 7000;
+          const fetchTimer = setTimeout(() => abortCtrl.abort(), fetchTimeoutMs);
+
           const res = await fetch('/api/tts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json; charset=utf-8' },
@@ -13607,8 +13634,10 @@ body.zen-mode #nrFabAdd {
               emotion: attr.emotion,
               dialogue_role: attr.gender,
               speaker: attr.speaker
-            })
+            }),
+            signal: abortCtrl.signal
           });
+          clearTimeout(fetchTimer);
 
           if (mySessionId !== currentPlaybackSessionId || 
               targetChapter !== currentChapterIndex || 
@@ -13619,12 +13648,12 @@ body.zen-mode #nrFabAdd {
           }
 
           if (!res.ok) {
-            let isOfflineFallback = (res.status === 503 || res.status === 504 || res.status === 404);
+            let isOfflineFallback = (res.status === 503 || res.status === 504 || res.status === 404 || isOfflineVoice);
             try {
               const errData = await res.json();
               if (errData && errData.fallback_native) isOfflineFallback = true;
             } catch (_) {}
-            if (isOfflineFallback && tryFallbackNative(spokenText, effectiveSpeed, currentPitch)) {
+            if (isOfflineFallback && tryFallbackNative(spokenText, effectiveSpeed, offlinePitch)) {
               return;
             }
             throw new Error('Lỗi server TTS (' + res.status + ')');
@@ -13632,11 +13661,11 @@ body.zen-mode #nrFabAdd {
           blob = await res.blob();
           if (blob.size < 300) throw new Error('Dữ liệu âm thanh nhận về quá ngắn');
         } catch (err) {
-          console.error(`[Audio Error] Lỗi phát âm thanh Ch.${targetChapter + 1} Câu ${targetUnit + 1}:`, err);
+          console.warn(`[Audio Notice] Mạng yếu hoặc lỗi nạp âm thanh câu ${targetUnit + 1}:`, err);
           if (mySessionId !== currentPlaybackSessionId) return;
 
-          // Khi tắt internet hoặc không kết nối được server, lập tức đọc bằng giọng offline của máy không ngắt quãng
-          if (tryFallbackNative(spokenText, effectiveSpeed, currentPitch)) {
+          // Khi mạng yếu hoặc mất mạng: ĐỌC NGAY bằng giọng offline trên máy, không khựng, không dừng
+          if (tryFallbackNative(spokenText, effectiveSpeed, offlinePitch)) {
             return;
           }
 
@@ -15185,8 +15214,8 @@ body.zen-mode #nrFabAdd {
     // ==========================================
     const DEFAULT_OTA_3G_URL = 'https://opinion-personality-activities-mailto.trycloudflare.com';
     const DEFAULT_OTA_WIFI_URL = 'http://192.168.1.204:5000';
-    const CURRENT_APP_VERSION = 'v1.6.59';
-    const CURRENT_APP_BUILD = 219;
+    const CURRENT_APP_VERSION = 'v1.6.60';
+    const CURRENT_APP_BUILD = 220;
 
     async function autoSilentOtaCheck() {
       try {
