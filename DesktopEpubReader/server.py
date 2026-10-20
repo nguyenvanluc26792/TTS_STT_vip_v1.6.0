@@ -266,41 +266,92 @@ def ota_helper_page():
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      padding: 24px 16px;
+      padding: 20px 16px;
     }
     .card {
       background: #1e293b;
-      border: 1px solid rgba(255,255,255,0.12);
+      border: 1.5px solid rgba(56, 189, 248, 0.35);
       border-radius: 20px;
       padding: 24px 20px;
-      max-width: 420px;
+      max-width: 440px;
       width: 100%;
       text-align: center;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      box-shadow: 0 12px 35px rgba(0,0,0,0.55);
     }
     .badge {
       display: inline-block;
-      padding: 4px 12px;
-      background: rgba(56, 189, 248, 0.15);
+      padding: 4px 14px;
+      background: rgba(56, 189, 248, 0.18);
       color: #38bdf8;
       border-radius: 99px;
-      font-size: 0.8rem;
+      font-size: 0.82rem;
       font-weight: 700;
       margin-bottom: 12px;
+      letter-spacing: 0.5px;
     }
-    h2 { font-size: 1.25rem; margin-bottom: 8px; color: #fff; }
-    p { font-size: 0.84rem; color: #94a3b8; line-height: 1.5; margin-bottom: 20px; }
+    h2 { font-size: 1.3rem; margin-bottom: 6px; color: #fff; }
+    .ver-tag { font-size: 0.85rem; color: #4ade80; font-weight: 700; margin-bottom: 14px; }
+    .guide-box {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      padding: 14px 14px;
+      margin-bottom: 16px;
+      text-align: left;
+    }
+    .guide-title {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: #fbbf24;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .guide-step {
+      font-size: 0.78rem;
+      color: #cbd5e1;
+      line-height: 1.55;
+      margin-bottom: 6px;
+    }
+    .url-box {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .url-input {
+      flex: 1;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      background: rgba(0, 0, 0, 0.45);
+      color: #38bdf8;
+      font-size: 0.74rem;
+      font-family: monospace;
+      outline: none;
+    }
+    .copy-btn {
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: #0284c7;
+      color: #fff;
+      font-size: 0.75rem;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      white-space: nowrap;
+    }
     .btn {
       display: block;
       width: 100%;
       padding: 13px 16px;
       border-radius: 14px;
-      font-size: 0.92rem;
+      font-size: 0.90rem;
       font-weight: 700;
       cursor: pointer;
       text-decoration: none;
       border: none;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
       transition: all 0.2s;
     }
     .btn-ota {
@@ -308,14 +359,24 @@ def ota_helper_page():
       color: #fff;
       box-shadow: 0 4px 16px rgba(239, 68, 68, 0.4);
     }
+    .btn-download-ota {
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border: 1.5px solid rgba(56, 189, 248, 0.4);
+    }
     .btn-apk {
       background: #334155;
       color: #cbd5e1;
       border: 1px solid rgba(255,255,255,0.1);
     }
+    .btn-web {
+      background: rgba(34, 197, 94, 0.15);
+      color: #4ade80;
+      border: 1px solid rgba(34, 197, 94, 0.35);
+    }
     #status {
-      margin-top: 14px;
-      font-size: 0.82rem;
+      margin-top: 12px;
+      font-size: 0.80rem;
       padding: 10px;
       border-radius: 10px;
       background: rgba(0,0,0,0.3);
@@ -328,19 +389,57 @@ def ota_helper_page():
   <div class="card">
     <div class="badge">⚡ OTA UPDATE 3G / 4G</div>
     <h2>Cập Nhật Honor Reader</h2>
-    <p>Cập nhật giao diện mới, sửa lỗi bỏ qua từ chọn, nút đệm mới, giới hạn 30 chương đệm mượt mà.</p>
+    <div class="ver-tag">Bản mới nhất: v1.6.59 (Build 219)</div>
 
+    <!-- Hướng dẫn nhận OTA trên app -->
+    <div class="guide-box">
+      <div class="guide-title">📲 Cách nhận OTA trên app qua 3G:</div>
+      <div class="guide-step"><b>1.</b> Bấm <b>Sao Chép</b> link máy chủ 3G dưới đây:</div>
+      <div class="url-box">
+        <input type="text" id="srvUrl" class="url-input" value="https://rehab-survey-clusters-joins.trycloudflare.com" readonly>
+        <button type="button" class="copy-btn" onclick="copyUrl()">Sao Chép</button>
+      </div>
+      <div class="guide-step" style="margin-top:8px;"><b>2.</b> Mở <b>App Honor Reader</b> &rarr; Vào <b>Cài đặt</b> &rarr; Dán link này vào ô <b>Máy chủ cập nhật</b> &rarr; Bấm <b>Kiểm tra cập nhật</b> &rarr; Bấm nút đỏ <b>Cài đặt OTA (~370KB)</b> là xong!</div>
+    </div>
+
+    <!-- Nút tự động nạp OTA vào app nếu đang mở app -->
     <button id="btnOta" class="btn btn-ota" onclick="do3gOtaUpdate()">
-      ⚡ CẬP NHẬT APP QUA 3G NGAY (1 GIÂY)
+      ⚡ TỰ ĐỘNG NẠP OTA VÀO APP (1 GIÂY)
     </button>
+
+    <!-- Nút tải file bundle OTA trực tiếp về máy -->
+    <a href="/api/ota/bundle?download=1" class="btn btn-download-ota">
+      📦 Tải Gói OTA Về Máy (index.html ~700KB)
+    </a>
+
+    <!-- Nút mở trực tiếp Web Reader 3G -->
+    <a href="/" class="btn btn-web">
+      📖 Hoặc Đọc Trực Tiếp Trên Web 3G
+    </a>
+
+    <!-- Nút tải file APK đầy đủ nếu cần -->
     <a href="/download-app" class="btn btn-apk">
-      📥 Tải APK Mới Nhất (60MB)
+      📥 Hoặc Tải Bộ Cài APK Mới Nhất (62MB)
     </a>
 
     <div id="status"></div>
   </div>
 
   <script>
+    function copyUrl() {
+      const input = document.getElementById('srvUrl');
+      input.select();
+      input.setSelectionRange(0, 99999);
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(input.value).then(() => {
+          alert('✅ Đã sao chép link máy chủ 3G! Hãy mở App -> Cài đặt -> Dán vào ô Máy chủ cập nhật -> Bấm Kiểm tra cập nhật.');
+        });
+      } else {
+        document.execCommand('copy');
+        alert('✅ Đã sao chép link máy chủ 3G!');
+      }
+    }
+
     async function do3gOtaUpdate() {
       const btn = document.getElementById('btnOta');
       const st = document.getElementById('status');
@@ -348,7 +447,7 @@ def ota_helper_page():
       btn.innerText = '⏳ Đang tải gói cập nhật...';
       st.style.display = 'block';
       st.style.color = '#38bdf8';
-      st.innerText = 'Đang tải mã nguồn mới nhất từ máy chủ đám mây...';
+      st.innerText = 'Đang tải mã nguồn mới nhất v1.6.59...';
 
       try {
         const bundleRes = await fetch('/api/ota/bundle?t=' + Date.now());
@@ -356,7 +455,7 @@ def ota_helper_page():
         const html = await bundleRes.text();
         if (!html || html.length < 50000) throw new Error('Gói cập nhật không đầy đủ (' + html.length + ' bytes)');
 
-        st.innerText = 'Đang nạp cập nhật vào app trên điện thoại...';
+        st.innerText = 'Đang nạp cập nhật vào app Honor Reader trên máy...';
 
         const pushRes = await fetch('http://127.0.0.1:8765/api/ota/update', {
           method: 'POST',
@@ -375,7 +474,7 @@ def ota_helper_page():
         }
       } catch (err) {
         st.style.color = '#f87171';
-        st.innerHTML = '❌ ' + err.message + '<br><small style="color:#94a3b8;">Mẹo: Đảm bảo app Honor Reader đang mở trên điện thoại, hoặc bạn có thể bấm "Tải APK Mới Nhất" ở trên để cài đè.</small>';
+        st.innerHTML = '⚠️ ' + err.message + '<br><small style="color:#94a3b8;"><b>Mẹo:</b> Hãy làm theo hướng dẫn ở trên: Sao chép link máy chủ 3G &rarr; Mở app &rarr; Cài đặt &rarr; Dán vào ô Máy chủ cập nhật &rarr; Bấm "Kiểm tra cập nhật".</small>';
         btn.disabled = false;
         btn.innerText = '⚡ Thử Lại';
       }

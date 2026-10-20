@@ -1003,13 +1003,13 @@ class HonorLocalServer(
         if (uri == "/api/ota/update" && method == Method.POST) {
             try {
                 val json = JSONObject(postData)
-                val serverUrl = json.optString("server_url", "https://unwrap-analyzed-clarke-fonts.trycloudflare.com").trimEnd('/')
+                val serverUrl = json.optString("server_url", "https://rehab-survey-clusters-joins.trycloudflare.com").trimEnd('/')
                 var htmlContent = json.optString("html_content", "")
 
                 if (htmlContent.isEmpty()) {
                     val candidateUrls = mutableListOf<String>()
                     if (serverUrl.isNotEmpty()) candidateUrls.add(serverUrl)
-                    val fallback3G = "https://unwrap-analyzed-clarke-fonts.trycloudflare.com"
+                    val fallback3G = "https://rehab-survey-clusters-joins.trycloudflare.com"
                     val fallbackWifi = "http://192.168.1.204:5000"
                     if (!candidateUrls.contains(fallback3G)) candidateUrls.add(fallback3G)
                     if (!candidateUrls.contains(fallbackWifi)) candidateUrls.add(fallbackWifi)
