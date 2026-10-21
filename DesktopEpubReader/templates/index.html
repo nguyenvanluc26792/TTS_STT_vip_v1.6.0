@@ -4686,7 +4686,8 @@ body.zen-mode #nrFabAdd {
 
         <div style="display: flex; gap: 8px; margin-bottom: 14px;">
           <input type="text" id="nrCharSearchInput" placeholder="Tìm kiếm nhân vật trong truyện..." oninput="filterCharacterRegistryList()" style="flex: 1; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.82rem; outline: none;">
-          <button class="btn" onclick="clearCurrentBookCharacterRegistry()" style="font-size: 0.76rem; color: #ef4444; border-color: rgba(239,68,68,0.3); padding: 8px 12px; white-space: nowrap;">🗑️ Xóa bộ nhớ</button>
+          <button class="btn" onclick="scanCurrentChapterCharacters()" style="font-size: 0.76rem; color: #38bdf8; border-color: rgba(56,189,248,0.4); padding: 8px 12px; white-space: nowrap;">⚡ Quét chương này</button>
+          <button class="btn" onclick="clearCurrentBookCharacterRegistry()" style="font-size: 0.76rem; color: #ef4444; border-color: rgba(239,68,68,0.3); padding: 8px 12px; white-space: nowrap;">🗑️ Xóa</button>
         </div>
 
         <div id="nrCharListContainer" style="display: flex; flex-direction: column; gap: 8px; min-height: 120px;">
@@ -10172,10 +10173,10 @@ body.zen-mode #nrFabAdd {
         return;
       }
       localStorage.setItem('reader_saved_voice', val);
-      if (getVoiceMode() === 'single') {
-        localStorage.setItem('reader_voice_single', val);
-      } else {
-        localStorage.setItem('reader_voice_narrator', val);
+      localStorage.setItem('reader_voice_narrator', val);
+      localStorage.setItem('reader_voice_single', val);
+      if (val !== 'android_native') {
+        localStorage.setItem('reader_last_ai_voice', val);
       }
       syncVoiceUIElements(val);
       populateGenderVoiceSelects();
@@ -10815,59 +10816,50 @@ body.zen-mode #nrFabAdd {
         typeof fetchCustomEnglishWords === 'function' ? fetchCustomEnglishWords() : Promise.resolve()
       ]);
 
-      // 4. Khi dữ liệu sách từ Server hoàn tất
-      try {
-        let lastBook = await lastBookPromise;
-
-        // Dự phòng: Nếu /api/last-book null, thử lấy theo last_active_book_id đã lưu
-        if (!lastBook || !lastBook.chapters) {
-          const cachedId = localStorage.getItem('last_active_book_id');
-          if (cachedId) {
-            try {
-              const bRes = await fetch(`/api/books/${cachedId}`);
-              const bData = await bRes.json();
-              if (bData && bData.chapters) lastBook = bData;
-            } catch (_) {}
-          }
-        }
-
-        if (lastBook && lastBook.chapters && lastBook.chapters.length > 0) {
-          const isSameBookAsCache = (bookData && bookData.id === lastBook.id);
-          bookData = lastBook;
-          document.getElementById('bookMetaInfo').textContent = `${lastBook.title} - ${lastBook.author}`;
-          await loadSkipRules(lastBook.id);
-
-          // Kiểm tra xem localStorage có tiến độ mới hơn không
-          let targetCh = lastBook.lastChapter || 0;
-          let targetPara = lastBook.lastParagraph || 0;
-
-          try {
-            const localProgStr = localStorage.getItem('progress_' + lastBook.id);
-            if (localProgStr) {
-              const localProg = JSON.parse(localProgStr);
-              if (localProg && (localProg.chapterIndex > targetCh || (localProg.chapterIndex === targetCh && localProg.paragraphIndex > targetPara))) {
-                targetCh = localProg.chapterIndex;
-                targetPara = localProg.paragraphIndex;
-              }
+      // 4. Nạp ngầm dữ liệu sách đầy đủ từ Server mà KHÔNG làm đơ giao diện lúc mở app
+      lastBookPromise.then(async (lastBook) => {
+        try {
+          if (!lastBook || !lastBook.chapters) {
+            const cachedId = localStorage.getItem('last_active_book_id');
+            if (cachedId) {
+              try {
+                const bRes = await fetch(`/api/books/${cachedId}`);
+                const bData = await bRes.json();
+                if (bData && bData.chapters) lastBook = bData;
+              } catch (_) {}
             }
-          } catch (_) {}
-
-          targetCh = Math.min(Math.max(0, targetCh), lastBook.chapters.length - 1);
-
-          if (restoredFromQuickCache && isSameBookAsCache && currentChapterIndex === targetCh && currentParagraphIndex === targetPara) {
-            // Đã hiển thị đúng chương & đoạn từ cache -> chỉ cần cập nhật trạng thái skip và báo preloader
-            updateSkippedParagraphsInDOM();
-            notifyPreloader(targetCh);
-          } else {
-            loadChapter(targetCh, targetPara, false);
           }
-          showToast(`✨ Đã mở: ${lastBook.title} (Chương ${targetCh + 1}, Đoạn ${targetPara + 1})`);
-        } else if (!restoredFromQuickCache) {
-          document.getElementById('bookMetaInfo').textContent = 'Chưa nạp truyện';
-        }
-      } catch (err) {
-        console.error('Lỗi khi khôi phục vị trí từ server:', err);
-      }
+
+          if (lastBook && lastBook.chapters && lastBook.chapters.length > 0) {
+            const isSameBookAsCache = (bookData && bookData.id === lastBook.id);
+            bookData = lastBook;
+            const metaInfo = document.getElementById('bookMetaInfo');
+            if (metaInfo) metaInfo.textContent = `${lastBook.title} - ${lastBook.author}`;
+            loadSkipRules(lastBook.id);
+
+            let targetCh = lastBook.lastChapter || 0;
+            let targetPara = lastBook.lastParagraph || 0;
+            try {
+              const localProgStr = localStorage.getItem('progress_' + lastBook.id);
+              if (localProgStr) {
+                const localProg = JSON.parse(localProgStr);
+                if (localProg && (localProg.chapterIndex > targetCh || (localProg.chapterIndex === targetCh && localProg.paragraphIndex > targetPara))) {
+                  targetCh = localProg.chapterIndex;
+                  targetPara = localProg.paragraphIndex;
+                }
+              }
+            } catch (_) {}
+
+            targetCh = Math.min(Math.max(0, targetCh), lastBook.chapters.length - 1);
+
+            if (!restoredFromQuickCache) {
+              loadChapter(targetCh, targetPara, false);
+            } else {
+              notifyPreloader(currentChapterIndex);
+            }
+          }
+        } catch (_) {}
+      }).catch(() => {});
 
       // Cập nhật số lượng sách trong tủ (chạy nền)
       fetch('/api/books')
@@ -12072,6 +12064,18 @@ body.zen-mode #nrFabAdd {
       } catch (e) {}
     }
 
+        function scanCurrentChapterCharacters() {
+      if (!bookData || !bookData.chapters || !bookData.chapters[currentChapterIndex]) {
+        showToast('Chưa nạp nội dung chương để quét');
+        return;
+      }
+      const ch = bookData.chapters[currentChapterIndex];
+      pass1PreScanChapter(ch.paragraphs || []);
+      renderCharacterRegistryModal();
+      updateCharacterRegistryUIBadge();
+      showToast('⚡ Đã quét xong nhân vật chương ' + (currentChapterIndex + 1) + '!');
+    }
+
     function openCharacterRegistryModal() {
       const overlay = document.getElementById('nrCharRegistryModalOverlay');
       if (overlay) {
@@ -12748,116 +12752,45 @@ body.zen-mode #nrFabAdd {
 
     function getPairedMultiVoice(baseVoiceId, provider, targetGender, crowdRole = '') {
       const mode = getVoiceMode();
-      if (mode === 'single') {
-        return getSingleVoice() || baseVoiceId;
-      }
-
-      // Mode 1: Đổi giọng theo giới tính (Người dùng tùy chọn gán giọng cho từng giới tính)
-      if (targetGender === 'female') {
-        const customFemale = localStorage.getItem('reader_voice_female');
-        if (customFemale) return customFemale;
-      } else if (targetGender === 'male') {
-        const customMale = localStorage.getItem('reader_voice_male');
-        if (customMale) return customMale;
-      } else if (targetGender === 'narration' || targetGender === 'neutral' || !targetGender) {
-        const customNarrator = localStorage.getItem('reader_voice_narrator');
-        if (customNarrator) return customNarrator;
-      }
-
-      if (crowdRole === 'crowd_female_a') {
-        return 'multi_female_richgirl_uranus_bigtts';
-      }
-      if (crowdRole === 'crowd_male_b') {
-        return 'BV075_streaming';
-      }
-      if (crowdRole === 'crowd_male_a') {
-        return 'BV074_streaming';
-      }
-
-      if (targetGender === 'narration' || targetGender === 'neutral' || !targetGender) {
+      if (mode === 'single' || (localStorage.getItem('reader_multi_voice') === '0')) {
         return baseVoiceId;
       }
+
       const vId = (baseVoiceId || '').toLowerCase();
-      const isBaseFemale = (
-        vId.includes('female') ||
-        vId.includes('hoaimy') ||
-        vId.includes('nhỏ') ||
-        vId.includes('bv421') ||
-        vId.includes('bv074') ||
-        vId.includes('huong') ||
-        vId.includes('richgirl') ||
-        vId.includes('banmai') ||
-        vId.includes('ngochuyen') ||
-        vId.includes('calmwoman') ||
-        vId.includes('thao_vy')
-      );
+      const isBaseOffline = (provider === 'offline' || provider === 'native' || vId.startsWith('offline_') || vId === 'android_native');
 
-      // 1. CAPCUT TTS (Online)
-      if (provider === 'capcut' || vId.startsWith('bv') || vId.includes('richgirl') || vId.includes('huong')) {
+      // NẾU GIỌNG CHỌN BAN ĐẦU LÀ GIỌNG OFFLINE -> 100% CÁC VAI PHẢI DÙNG GIỌNG OFFLINE, KHÔNG BAO GIỜ GỌI ONLINE
+      if (isBaseOffline) {
         if (targetGender === 'female') {
-          // Thoại Nữ: Tuyệt đối KHÔNG dùng giọng dẫn truyện!
-          if (vId.includes('bv074')) {
-            // Người dẫn là Cô Gái Hoạt Ngôn -> Lời thoại Nữ dùng Review Phim siêu truyền cảm
-            return 'multi_female_richgirl_uranus_bigtts';
-          } else if (vId.includes('richgirl')) {
-            // Người dẫn là Review Phim -> Lời thoại Nữ dùng Cô Gái Hoạt Ngôn tươi trẻ
-            return 'BV074_streaming';
-          } else if (vId.includes('bv421') || vId.includes('huong')) {
-            return 'multi_female_richgirl_uranus_bigtts';
-          }
-          return 'multi_female_richgirl_uranus_bigtts';
-        }
-
-        if (targetGender === 'male') {
-          // Thoại Nam:
-          if (vId.includes('bv075')) {
-            // Người dẫn đã là Nam Trầm Ấm -> Lời thoại Nam dùng giọng Nam Minh (Edge) để tách biệt 100%
-            return 'vi-VN-NamMinhNeural';
-          }
-          return 'BV075_streaming';
-        }
-      }
-
-      // 2. EDGE TTS (Online)
-      if (provider === 'edge' || vId.startsWith('vi-vn-') || vId.startsWith('en-us-')) {
-        if (targetGender === 'female') {
-          if (vId.includes('hoaimy')) {
-            // Người dẫn là Hoài My -> Lời thoại Nữ dùng Review Phim (CapCut)
-            return 'multi_female_richgirl_uranus_bigtts';
-          }
-          return 'vi-VN-HoaiMyNeural';
-        }
-
-        if (targetGender === 'male') {
-          if (vId.includes('namminh')) {
-            // Người dẫn là Nam Minh -> Lời thoại Nam dùng Nam Trầm Ấm (CapCut)
-            return 'BV075_streaming';
-          }
-          return 'vi-VN-NamMinhNeural';
-        }
-      }
-
-      // 3. PIPER OFFLINE TTS (offline_*)
-      if (provider === 'offline' || vId.startsWith('offline_')) {
-        if (targetGender === 'female') {
-          if (vId.includes('banmai')) return 'offline_ngochuyennew';
-          if (vId.includes('ngochuyen')) return 'offline_banmai';
-          if (vId.includes('calmwoman')) return 'offline_banmai';
           return 'offline_banmai';
         }
         if (targetGender === 'male') {
-          if (vId.includes('deepman')) return 'offline_manhdung';
-          if (vId.includes('manhdung')) return 'offline_deepman3909';
           return 'offline_deepman3909';
         }
+        return baseVoiceId;
       }
 
-      // 4. Default Fallback
-      if (targetGender === 'female') {
-        return isBaseFemale ? 'multi_female_richgirl_uranus_bigtts' : 'BV074_streaming';
+      // NẾU GIỌNG CHỌN BAN ĐẦU LÀ GIỌNG ONLINE -> 100% CÁC VAI DÙNG GIỌNG ONLINE CAPCUT CHUẨN HOẠT ĐỘNG TỐT TRÊN MÁY
+      if (crowdRole === 'crowd_female_a') {
+        return 'multi_female_richgirl_uranus_bigtts';
       }
+      if (crowdRole === 'crowd_male_b' || crowdRole === 'crowd_male_a') {
+        return 'BV075_streaming';
+      }
+
+      if (targetGender === 'female') {
+        if (vId.includes('bv074')) {
+          return 'multi_female_richgirl_uranus_bigtts';
+        } else if (vId.includes('richgirl')) {
+          return 'BV074_streaming';
+        } else if (vId.includes('bv421')) {
+          return 'multi_female_richgirl_uranus_bigtts';
+        }
+        return 'BV074_streaming';
+      }
+
       if (targetGender === 'male') {
-        return !isBaseFemale ? 'vi-VN-NamMinhNeural' : 'BV075_streaming';
+        return 'BV075_streaming';
       }
 
       return baseVoiceId;
@@ -13583,15 +13516,14 @@ body.zen-mode #nrFabAdd {
 
       // 2. Giọng Online & Giọng Offline AI đã tải về (Hỗ trợ 2 Mode: Đa giọng giới tính vs 1 giọng duy nhất)
       let effectiveVoiceId = voiceId;
-      if (isMultiVoice) {
+      if (isMultiVoice && (localStorage.getItem('reader_multi_voice') !== '0') && (getVoiceMode() !== 'single')) {
         if (attr.isDialogue) {
           effectiveVoiceId = getPairedMultiVoice(voiceId, provider, attr.gender, attr.crowdRole);
         } else {
-          const customNarrator = localStorage.getItem('reader_voice_narrator');
-          effectiveVoiceId = customNarrator || voiceId;
+          effectiveVoiceId = voiceId;
         }
       } else {
-        effectiveVoiceId = getSingleVoice() || voiceId;
+        effectiveVoiceId = voiceId;
       }
       const effectiveProvider = getProviderForVoiceId(effectiveVoiceId);
       const effectiveSpeed = currentSpeed * attr.speedFactor;
@@ -15224,8 +15156,8 @@ body.zen-mode #nrFabAdd {
     // ==========================================
     const DEFAULT_OTA_3G_URL = 'https://opinion-personality-activities-mailto.trycloudflare.com';
     const DEFAULT_OTA_WIFI_URL = 'http://192.168.1.204:5000';
-    const CURRENT_APP_VERSION = 'v1.6.61';
-    const CURRENT_APP_BUILD = 221;
+    const CURRENT_APP_VERSION = 'v1.6.62';
+    const CURRENT_APP_BUILD = 222;
 
     async function autoSilentOtaCheck() {
       try {
