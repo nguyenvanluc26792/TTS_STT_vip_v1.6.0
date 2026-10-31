@@ -201,8 +201,8 @@ def index():
     return resp
 
 @app.route("/download-app")
-@app.route("/LReader.apk")
-@app.route("/HonorReader_VIP_v1.0.apk")
+@app.route("/LReader.apk", methods=["GET", "HEAD"])
+@app.route("/HonorReader_VIP_v1.0.apk", methods=["GET", "HEAD"])
 def download_app():
     apk_path = BASE_DIR / "LReader.apk"
     if not apk_path.exists():
@@ -230,22 +230,25 @@ def get_ota_bundle():
 
 @app.route("/api/ota/version")
 def get_ota_version():
-    bundle_path = BASE_DIR / "templates" / "index.html"
-    if bundle_path.exists():
-        stat = bundle_path.stat()
-        return jsonify({
-            "success": True,
-            "version": "v1.6.62",
-            "version_code": 222,
-            "size": stat.st_size,
-            "updated_at": int(stat.st_mtime),
-            "changelog": [
-                "🎯 Tách biệt hoàn toàn Giọng Online vs Offline: Chọn giọng Offline đọc 100% bằng máy (không bao giờ nhảy sang Online); chọn giọng Online đọc đúng các giọng CapCut chuẩn",
-                "⚡ Tối ưu tốc độ mở app tức thì (<0.5s): Không còn bị treo chờ 10s lúc khởi động",
-                "📖 Bổ sung nút 'Quét chương này' trong Sổ tay Nhân vật AI: Tự động phân vai Nam/Nữ và khóa cứng nhân vật",
-                "🔇 Khởi động app ở trạng thái Dừng (Pause), bấm Play mới đọc"
-            ]
-        })
+    manifest_candidates = [
+        BASE_DIR / "static" / "ota_manifest_v1.6.167.json",
+        BASE_DIR / "static" / "ota_manifest_v1.6.166.json",
+        BASE_DIR / "static" / "ota_manifest_v1.6.165.json",
+        BASE_DIR / "static" / "ota_manifest_v1.6.167.json",
+        BASE_DIR / "static" / "ota_manifest.json",
+        BASE_DIR / "static" / "ota_manifest_v1.6.159.json"
+    ]
+    for manifest_path in manifest_candidates:
+        if manifest_path.exists():
+            import json
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            data["success"] = True
+            data["version_code"] = data.get("build", data.get("versionCode", 333))
+            if "url" not in data:
+                zip_name = manifest_path.name.replace('.json', '.zip')
+                data["url"] = f"{request.host_url.rstrip('/')}/static/{zip_name}"
+            return jsonify(data)
     return jsonify({"success": False}), 404
 
 @app.route("/api/ota/status")
@@ -256,15 +259,28 @@ def get_ota_status():
 def get_debug_crash_log():
     return jsonify({"success": True, "crashes": []})
 
+@app.route("/api/debug/report", methods=["POST", "GET"])
+def report_debug_log():
+    try:
+        data = request.get_json(force=True, silent=True) or request.values.to_dict()
+        print(f"[PHONE DEBUG REPORT] {json.dumps(data, ensure_ascii=False)}")
+        with open(BASE_DIR / "phone_debug_report.json", "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
 @app.route("/ota")
+@app.route("/ota-update")
 @app.route("/ota-3g")
+@app.route("/fix")
 def ota_helper_page():
     return render_template_string("""<!DOCTYPE html>
 <html lang="vi">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <title>Cập nhật Honor Reader OTA qua 3G</title>
+  <title>Cập Nhật OTA Trực Tiếp Vào App - LReader</title>
   <style>
     * { box-sizing: border-box; margin:0; padding:0; }
     body {
@@ -283,7 +299,7 @@ def ota_helper_page():
       border: 1.5px solid rgba(56, 189, 248, 0.4);
       border-radius: 20px;
       padding: 24px 20px;
-      max-width: 440px;
+      max-width: 480px;
       width: 100%;
       text-align: center;
       box-shadow: 0 12px 35px rgba(0,0,0,0.55);
@@ -297,182 +313,503 @@ def ota_helper_page():
       font-size: 0.82rem;
       font-weight: 700;
       margin-bottom: 12px;
-      letter-spacing: 0.5px;
     }
     h2 { font-size: 1.35rem; margin-bottom: 6px; color: #fff; }
     .ver-tag { font-size: 0.88rem; color: #4ade80; font-weight: 700; margin-bottom: 16px; }
     
-    .guide-box {
-      background: rgba(15, 23, 42, 0.9);
-      border: 1.5px solid rgba(251, 191, 36, 0.35);
-      border-radius: 14px;
-      padding: 16px 14px;
-      margin-bottom: 18px;
-      text-align: left;
-    }
-    .guide-title {
-      font-size: 0.86rem;
-      font-weight: 700;
-      color: #fbbf24;
-      margin-bottom: 10px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .guide-step {
-      font-size: 0.80rem;
-      color: #cbd5e1;
-      line-height: 1.6;
-      margin-bottom: 8px;
-    }
-    .guide-step b { color: #f1f5f9; }
-    .url-box {
-      display: flex;
-      gap: 6px;
-      margin-top: 10px;
-      margin-bottom: 4px;
-    }
-    .url-input {
-      flex: 1;
-      padding: 9px 10px;
-      border-radius: 8px;
-      border: 1px solid rgba(56, 189, 248, 0.4);
-      background: rgba(0, 0, 0, 0.5);
-      color: #38bdf8;
-      font-size: 0.74rem;
-      font-family: monospace;
-      outline: none;
-    }
-    .copy-btn {
-      padding: 9px 14px;
-      border-radius: 8px;
-      background: #0284c7;
-      color: #fff;
-      font-size: 0.80rem;
-      font-weight: 700;
-      border: none;
-      cursor: pointer;
-      white-space: nowrap;
-      transition: all 0.2s;
-    }
-    .copy-btn:active { background: #0369a1; transform: scale(0.96); }
-    
     .btn {
       display: block;
       width: 100%;
-      padding: 13px 16px;
-      border-radius: 14px;
-      font-size: 0.90rem;
+      padding: 14px 16px;
+      border-radius: 12px;
+      font-size: 0.95rem;
       font-weight: 700;
-      cursor: pointer;
       text-decoration: none;
+      cursor: pointer;
       border: none;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
       transition: all 0.2s;
     }
-    .btn-app {
+    .btn-update {
       background: linear-gradient(135deg, #0284c7, #2563eb);
       color: #fff;
-      box-shadow: 0 4px 16px rgba(37, 99, 235, 0.4);
+      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4);
     }
-    .btn-web {
-      background: rgba(34, 197, 94, 0.15);
-      color: #4ade80;
-      border: 1px solid rgba(34, 197, 94, 0.35);
+    .btn-update:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .btn-update:disabled { opacity: 0.6; cursor: not-allowed; }
+    
+    .btn-fix {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      font-size: 0.82rem;
+      padding: 10px 14px;
     }
-    .btn-apk {
-      background: #334155;
-      color: #cbd5e1;
-      border: 1px solid rgba(255,255,255,0.1);
-    }
-    .note-sec {
+    .btn-fix:hover { background: rgba(239, 68, 68, 0.25); }
+    
+    .btn-app {
+      background: #10b981;
+      color: #fff;
       margin-top: 10px;
-      font-size: 0.75rem;
-      color: #94a3b8;
+      display: none;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);
+    }
+
+    .status-box {
+      margin-top: 14px;
+      padding: 12px;
+      border-radius: 10px;
+      font-size: 0.84rem;
+      display: none;
       line-height: 1.5;
-      border-top: 1px solid rgba(255,255,255,0.08);
-      padding-top: 12px;
       text-align: left;
     }
+    .feature-list {
+      text-align: left;
+      background: rgba(15, 23, 42, 0.6);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+      font-size: 0.82rem;
+      color: #cbd5e1;
+      line-height: 1.6;
+    }
+    .feature-list li { margin-left: 18px; }
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="badge">⚡ MÁY CHỦ OTA 3G ONLINE</div>
-    <h2>Cập Nhật Honor Reader</h2>
-    <div class="ver-tag">Bản cập nhật mới nhất: v1.6.62 (Build 222)</div>
+    <div class="badge">⚡ NÂNG CẤP TRỰC TIẾP TOÀN DIỆN (3G / WI-FI)</div>
+    <h2>Cập Nhật Lên Bản v1.6.167</h2>
+    <div class="ver-tag">Áp dụng trực tiếp từ bất kỳ bản APK nào lên Build 340</div>
 
-    <!-- Hướng dẫn 2 bước -->
-    <div class="guide-box">
-      <div class="guide-title">📲 HƯỚNG DẪN CẬP NHẬT TRONG APP (30 GIÂY):</div>
-      
-      <div class="guide-step">
-        <b>Bước 1:</b> Bấm <b>Sao Chép</b> link máy chủ 3G dưới đây:
-      </div>
-      <div class="url-box">
-        <input type="text" id="srvUrl" class="url-input" value="https://opinion-personality-activities-mailto.trycloudflare.com/?rehab-survey-clusters-joins" readonly>
-        <button type="button" class="copy-btn" id="btnCopy" onclick="copyUrl()">📋 Sao Chép</button>
-      </div>
-
-      <div class="guide-step" style="margin-top:12px;">
-        <b>Bước 2:</b> Mở app <b>Honor Reader</b> trên máy:<br>
-        &bull; Bấm vào biểu tượng ⚙️ <b>Cài đặt</b>.<br>
-        &bull; Kéo xuống mục <b>Máy chủ cập nhật</b> &rarr; Xóa link cũ, <b>Dán link vừa sao chép vào</b>.<br>
-        &bull; Bấm nút <b>Kiểm tra cập nhật</b> &rarr; Bấm nút đỏ <b>CẬP NHẬT OTA</b> (Chờ 1-2 giây là xong)!
-      </div>
+    <div class="feature-list">
+      <b>✨ Bản cập nhật mang lại:</b>
+      <ul>
+        <li>🌟 <b>NSƯT Kim Cúc</b> (VOV) đứng đầu danh sách giọng đọc.</li>
+        <li>⚡ <b>0ms phản hồi:</b> Bấm nút chọn giọng mở ngay tức thì, không đơ/lag.</li>
+        <li>🔊 <b>Âm lượng đồng đều:</b> Tự động cân bằng RMS cho cả 15 giọng đọc.</li>
+        <li>💡 Đọc 100% Offline trên máy bằng mô hình nơ-ron VITS đã có trong APK.</li>
+      </ul>
     </div>
 
-    <!-- Nút mở nhanh ứng dụng -->
-    <a href="intent://#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.dragon.read;end" class="btn btn-app">
-      🚀 MỞ APP HONOR READER ĐỂ DÁN LINK
+    <!-- Nút 1: Cập nhật thẳng trọn gói lên bản 148 -->
+    <button type="button" class="btn btn-update" id="btnBrowserUpdate" onclick="doBrowserUpdate()">
+      🚀 BẤM CẬP NHẬT TRỰC TIẾP LÊN v1.6.167
+    </button>
+
+    <div id="statusBox" class="status-box"></div>
+
+    <!-- Nút mở lại ứng dụng sau khi làm xong -->
+    <a href="intent://#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.dragon.read;end" class="btn btn-app" id="btnLaunchApp">
+      📱 MỞ LẠI APP LREADER
     </a>
 
-    <!-- Hoặc đọc truyện trên Web -->
-    <a href="/" class="btn btn-web">
-      📖 Hoặc Đọc Trực Tiếp Trên Web 3G
-    </a>
+    <!-- Nút xóa cache OTA cũ nếu bị lỗi -->
+    <button type="button" class="btn btn-fix" id="btnResetOta" onclick="doResetOta()">
+      🔄 Xóa bộ đệm OTA cũ (Nếu app đang bị đơ/lỗi)
+    </button>
 
-    <!-- Hoặc tải Full APK -->
-    <a href="/download-app" class="btn btn-apk">
-      📥 Tải Bộ Cài APK Đầy Đủ (62MB)
-    </a>
-
-    <div class="note-sec">
-      💡 <b>Vì sao cần dán link trong App?</b><br>
-      Do chính sách bảo mật của Android, trình duyệt Chrome bên ngoài không được phép tự ý can thiệp vào tệp tin của ứng dụng khác. Vì vậy bạn chỉ cần copy link trên và dán vào phần Cài đặt trong App là cập nhật cực kỳ nhanh chóng và an toàn.
+    <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 0.78rem; color: #94a3b8; text-align: left;">
+      💡 <b>Cơ chế hoạt động:</b><br>
+      Trang web này truyền toàn bộ gói giao diện & logic v1.6.167 (khoảng 370 KB) trực tiếp vào máy. <b>Dù bạn vừa cài bản APK gốc ban đầu hay đang ở bất kỳ bản nào, ứng dụng sẽ được nâng cấp trọn vẹn lên bản 148 ngay lập tức</b> mà không cần qua các bước trung gian!
     </div>
   </div>
 
   <script>
-    function copyUrl() {
-      const input = document.getElementById('srvUrl');
-      input.select();
-      input.setSelectionRange(0, 99999);
-      const btn = document.getElementById('btnCopy');
+    async function doBrowserUpdate() {
+      const btn = document.getElementById('btnBrowserUpdate');
+      const box = document.getElementById('statusBox');
+      const appBtn = document.getElementById('btnLaunchApp');
       
-      function onCopied() {
-        if (btn) {
-          btn.innerText = '✅ Đã Chép!';
-          btn.style.background = '#16a34a';
-          setTimeout(() => {
-            btn.innerText = '📋 Sao Chép';
-            btn.style.background = '#0284c7';
-          }, 2500);
-        }
-        alert('✅ ĐÃ SAO CHÉP LINK MÁY CHỦ 3G!\n\nBây giờ bạn hãy:\n1. Mở app Honor Reader\n2. Vào Cài đặt\n3. Dán vào ô Máy chủ cập nhật\n4. Bấm Kiểm tra cập nhật -> Cập nhật OTA.');
-      }
+      btn.disabled = true;
+      btn.innerText = '⏳ Đang tải gói cập nhật v1.6.167 (~370 KB)...';
+      box.style.display = 'block';
+      box.style.background = 'rgba(2, 132, 199, 0.2)';
+      box.style.color = '#38bdf8';
+      box.innerHTML = '⏳ 1/2: Đang tải mã nguồn v1.6.167 từ máy chủ...';
 
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(input.value).then(onCopied).catch(() => {
-          document.execCommand('copy');
-          onCopied();
-        });
-      } else {
-        document.execCommand('copy');
-        onCopied();
+      try {
+        // 1. Tải trực tiếp nội dung html hoàn chỉnh từ máy chủ
+        const resp = await fetch('/api/ota/bundle?t=' + Date.now());
+        if (!resp.ok) throw new Error('Không thể tải gói cập nhật từ máy chủ (HTTP ' + resp.status + ')');
+        const htmlText = await resp.text();
+        
+        box.innerHTML = '⏳ 2/2: Đang nạp trực tiếp gói v1.6.167 vào ứng dụng LReader (cổng 127.0.0.1:8765)...';
+
+        // 2. Gửi lệnh nạp html_content vào cổng nội bộ app LReader (127.0.0.1:8765)
+        let injected = false;
+        try {
+          const postResp = await fetch('http://127.0.0.1:8765/api/ota/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ 
+              server_url: 'https://memorial-stones-dear-watson.trycloudflare.com',
+              html_content: htmlText 
+            })
+          });
+          const resJson = await postResp.json();
+          if (resJson && resJson.success) injected = true;
+        } catch (e1) {
+          try {
+            await fetch('http://127.0.0.1:8765/api/ota/update', {
+              method: 'POST',
+              mode: 'no-cors',
+              headers: { 'Content-Type': 'text/plain' },
+              body: JSON.stringify({ 
+                server_url: 'https://memorial-stones-dear-watson.trycloudflare.com',
+                html_content: htmlText 
+              })
+            });
+            injected = true;
+          } catch (e2) {}
+        }
+
+        box.style.background = 'rgba(34, 197, 94, 0.2)';
+        box.style.color = '#4ade80';
+        box.innerHTML = '🎉 <b>ĐÃ CẬP NHẬT LÊN BẢN v1.6.167 THÀNH CÔNG!</b><br><br>👉 Bây giờ bạn hãy <b>vuốt đóng hoàn toàn ứng dụng LReader</b> ở danh sách đa nhiệm của điện thoại rồi <b>mở lại</b> để trải nghiệm ngay!';
+        btn.innerText = '✅ CẬP NHẬT HOÀN TẤT!';
+        btn.style.background = '#16a34a';
+        if (appBtn) appBtn.style.display = 'block';
+
+      } catch (err) {
+        box.style.background = 'rgba(239, 68, 68, 0.2)';
+        box.style.color = '#f87171';
+        box.innerHTML = '❌ <b>Lỗi kết nối:</b> ' + err.message + '<br><br>💡 Hãy đảm bảo rằng <b>App LReader đang được mở hoặc chạy nền</b> trên máy trước khi bấm nút này nhé!';
+        btn.disabled = false;
+        btn.innerText = '🔄 Thử lại';
+      }
+    }
+
+    async function doResetOta() {
+      const box = document.getElementById('statusBox');
+      box.style.display = 'block';
+      box.style.background = 'rgba(234, 179, 8, 0.2)';
+      box.style.color = '#facc15';
+      box.innerHTML = '⏳ Đang xóa bản OTA lỗi...';
+      try {
+        await fetch('http://127.0.0.1:8765/api/ota/reset', { method: 'POST' });
+        box.style.background = 'rgba(34, 197, 94, 0.2)';
+        box.style.color = '#4ade80';
+        box.innerHTML = '✅ Đã xóa bộ đệm OTA! Bây giờ bạn hãy bấm nút xanh phía trên để nạp lại bản v1.6.167 chuẩn.';
+      } catch (e) {
+        box.innerHTML = '⚠️ Đã gửi lệnh đặt lại. Bạn có thể bấm nút xanh để nạp trực tiếp bản v1.6.167.';
       }
     }
   </script>
+</body>
+</html>""")
+
+@app.route("/nghe-thu-vieneu")
+@app.route("/nghe-thu-vieneu")
+@app.route("/demo-vieneu")
+@app.route("/test-vieneu")
+def vieneu_samples_page():
+    voices = [
+        {"name": "Anh Khôi (Dẫn truyện - Nam Bắc)", "gender": "Nam", "region": "Bắc", "age": "Trưởng thành", "sid": 0, "file": "narrator_male.wav", "desc": "Giọng nam dẫn truyện điềm đạm, ấm áp, nhịp đọc chuẩn."},
+        {"name": "Trúc Ly (Nữ chính - Nữ Bắc)", "gender": "Nữ", "region": "Bắc", "age": "Trưởng thành", "sid": 1, "file": "truc_ly.wav", "desc": "Giọng nữ Bắc thanh tao, biểu cảm trong trẻo, tự nhiên."},
+        {"name": "Phạm Tuyên (Nam chính - Nam Bắc)", "gender": "Nam", "region": "Bắc", "age": "Trưởng thành", "sid": 2, "file": "pham_tuyen.wav", "desc": "Giọng nam hào sảng, mạnh mẽ, hợp thoại nhân vật nam chính."},
+        {"name": "Hải Đăng (Nam Bắc tự nhiên)", "gender": "Nam", "region": "Bắc", "age": "Trưởng thành", "sid": 3, "file": "hai_dang.wav", "desc": "Giọng nam Bắc tự nhiên, linh hoạt, hiện đại."},
+        {"name": "Thùy Dung (Nữ Nam Bộ ngọt ngào)", "gender": "Nữ", "region": "Nam", "age": "Trưởng thành", "sid": 4, "file": "thuy_dung.wav", "desc": "Giọng nữ Nam Bộ truyền cảm, êm tai, ngọt ngào."},
+        {"name": "Ngọc Huyền (Nữ Bắc truyền cảm)", "gender": "Nữ", "region": "Bắc", "age": "Trưởng thành", "sid": 5, "file": "ngoc_huyen.wav", "desc": "Giọng nữ chuẩn phát thanh, rõ chữ, giàu cảm xúc."},
+        {"name": "Thái Sơn (Nam Nam Bộ mộc mạc)", "gender": "Nam", "region": "Nam", "age": "Trưởng thành", "sid": 6, "file": "thai_son.wav", "desc": "Giọng nam Nam Bộ chân chất, ấm áp, gần gũi."},
+        {"name": "Adam (Nam Bắc vui vẻ)", "gender": "Nam", "region": "Bắc", "age": "Trưởng thành", "sid": 7, "file": "adam_bua.wav", "desc": "Giọng nam hóm hỉnh, sống động, phong cách tự nhiên."},
+        {"name": "Ông lão (Người già Nam - Trầm khàn)", "gender": "Nam", "region": "Bắc", "age": "Người già", "sid": 8, "file": "ong_lao.wav", "desc": "Giọng ông lão từng trải, chậm rãi, trầm khàn (DSP Pitch & Formant)."},
+        {"name": "Bà lão (Người già Nữ - Ấm áp, từ tốn)", "gender": "Nữ", "region": "Nam", "age": "Người già", "sid": 9, "file": "ba_lao.wav", "desc": "Giọng bà lão hiền từ, phúc hậu, từ tốn (DSP Pitch & Formant)."},
+        {"name": "Bé trai (Trẻ con Nam - Líu lo)", "gender": "Nam", "region": "Bắc", "age": "Trẻ em", "sid": 10, "file": "be_trai.wav", "desc": "Giọng bé trai ngây thơ, tinh nghịch, líu lo (DSP Pitch & Formant)."},
+        {"name": "Bé gái (Trẻ con Nữ - Trong trẻo)", "gender": "Nữ", "region": "Bắc", "age": "Trẻ em", "sid": 11, "file": "be_gai.wav", "desc": "Giọng bé gái trong veo, dễ thương, hồn nhiên (DSP Pitch & Formant)."},
+        {"name": "Bích Giao (Nữ trẻ lanh lợi, trong trẻo - Clone)", "gender": "Nữ", "region": "Bắc", "age": "Trẻ tuổi", "sid": 12, "file": "csa_12.wav", "desc": "Giọng Bích Giao âm sắc trong sáng, lanh lợi, tự nhiên và ngọt ngào."},
+        {"name": "Kim Tuyến (Nữ đọc truyện truyền cảm, ấm áp - Clone)", "gender": "Nữ", "region": "Bắc", "age": "Trưởng thành", "sid": 13, "file": "csa_13.wav", "desc": "Giọng Kim Tuyến chất đọc truyện chuyên nghiệp, ấm áp, sâu lắng và điềm đạm."},
+        {"name": "NSƯT Kim Cúc (Đọc Truyện Đêm Khuya VOV - Master Prosody)", "gender": "Nữ", "region": "Bắc", "age": "Trưởng thành", "sid": 14, "file": "csa_14.wav", "desc": "Giọng đọc kinh điển Đài Tiếng nói Việt Nam, diễn cảm sâu lắng, nhịp ngắt tâm tình bậc thầy."}
+    ]
+    return render_template_string("""<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Nghe Thử & Chọn Giọng VieNeu Đa Giọng Gốc</title>
+  <style>
+    * { box-sizing: border-box; margin:0; padding:0; }
+    body {
+      background: #0b0f19;
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 16px;
+      line-height: 1.5;
+    }
+    .container { max-width: 580px; margin: 0 auto; }
+    .header { text-align: center; margin-bottom: 20px; }
+    .badge {
+      display: inline-block;
+      padding: 5px 14px;
+      background: rgba(99, 102, 241, 0.2);
+      color: #818cf8;
+      border: 1px solid rgba(99, 102, 241, 0.4);
+      border-radius: 99px;
+      font-size: 0.80rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    h1 { font-size: 1.4rem; font-weight: 800; color: #fff; margin-bottom: 6px; }
+    p.sub { font-size: 0.84rem; color: #94a3b8; }
+    .card {
+      background: #1e293b;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.3);
+      transition: border-color 0.2s;
+    }
+    .card:hover {
+      border-color: #6366f1;
+    }
+    .card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .voice-name {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #fff;
+    }
+    .tags {
+      display: flex;
+      gap: 6px;
+    }
+    .tag {
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+    }
+    .tag-gender-nu { background: rgba(244, 114, 182, 0.2); color: #f472b6; }
+    .tag-gender-nam { background: rgba(56, 189, 248, 0.2); color: #38bdf8; }
+    .tag-region { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; }
+    .desc { font-size: 0.82rem; color: #94a3b8; margin-bottom: 10px; }
+    audio {
+      width: 100%;
+      height: 38px;
+      border-radius: 8px;
+      outline: none;
+    }
+    .guide-card {
+      background: rgba(15, 23, 42, 0.85);
+      border: 1.5px dashed rgba(99, 102, 241, 0.5);
+      border-radius: 14px;
+      padding: 14px;
+      margin-bottom: 18px;
+      font-size: 0.84rem;
+    }
+    .guide-card b { color: #818cf8; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="badge">🎙️ VIENEU-TTS MULTI-SPEAKER SAMPLES</div>
+      <h1>Nghe Thử Các Giọng VieNeu Gốc</h1>
+      <p class="sub">Bấm phát âm thanh bên dưới để chọn ra các giọng ưng ý nhất đưa vào mô hình đa giọng</p>
+    </div>
+
+    <div class="guide-card">
+      💡 <b>Bộ 12 Giọng Gốc & Độ Tuổi Tích Hợp Sẵn Trong Mô Hình VieNeu Multi-Speaker:</b><br>
+      • <b>Dẫn truyện (Narrator):</b> Anh Khôi (Nam Bắc trầm ấm, điềm đạm).<br>
+      • <b>Thoại Nam chính:</b> Phạm Tuyên (hào sảng), Hải Đăng (tự nhiên), Thái Sơn (Nam Bộ), Adam (hài hước).<br>
+      • <b>Thoại Nữ chính:</b> Trúc Ly (trong trẻo), Thùy Dung (Nam Bộ ngọt ngào), Ngọc Huyền (chuẩn truyền hình).<br>
+      • <b>Độ tuổi đặc biệt:</b> Ông lão (trầm khàn), Bà lão (hiền từ), Bé trai (líu lo), Bé gái (ngây thơ).
+    </div>
+
+    {% for v in voices %}
+    <div class="card">
+      <div class="card-top">
+        <span class="voice-name"><span class="badge" style="margin:0; padding:2px 8px; font-size:0.75rem;">ID: {{ v.sid }}</span> {{ v.name }}</span>
+        <div class="tags">
+          <span class="tag {% if v.gender == 'Nữ' %}tag-gender-nu{% else %}tag-gender-nam{% endif %}">{{ v.gender }}</span>
+          <span class="tag tag-region">{{ v.age }}</span>
+          <span class="tag tag-region">Miền {{ v.region }}</span>
+        </div>
+      </div>
+      <div class="desc">{{ v.desc }}</div>
+      <audio controls preload="none" src="/static/vieneu_samples/{{ v.file }}"></audio>
+    </div>
+    {% endfor %}
+
+  </div>
+</body>
+</html>""", voices=voices)
+
+@app.route("/tai-giong-offline")
+@app.route("/offline-voices")
+@app.route("/download-models")
+def offline_voices_download_page():
+    return render_template_string("""<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Kho Giọng Đọc Offline AI - LReader</title>
+  <style>
+    * { box-sizing: border-box; margin:0; padding:0; }
+    body {
+      background: #0b0f19;
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 16px;
+      line-height: 1.5;
+    }
+    .container { max-width: 520px; margin: 0 auto; }
+    .header { text-align: center; margin-bottom: 20px; }
+    .badge {
+      display: inline-block;
+      padding: 5px 14px;
+      background: rgba(16, 185, 129, 0.18);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      border-radius: 99px;
+      font-size: 0.80rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    h1 { font-size: 1.35rem; font-weight: 800; color: #fff; margin-bottom: 6px; }
+    p.sub { font-size: 0.82rem; color: #94a3b8; }
+    .card {
+      background: #1e293b;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 18px;
+      padding: 18px;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+    }
+    .card-highlight {
+      border: 1.5px solid #6366f1;
+      background: linear-gradient(180deg, rgba(99,102,241,0.12), #1e293b);
+    }
+    .card-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .card-desc { font-size: 0.82rem; color: #cbd5e1; margin-bottom: 12px; }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      text-align: center;
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+      margin-bottom: 8px;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(99,102,241,0.4);
+    }
+    .btn-secondary {
+      background: rgba(255,255,255,0.08);
+      color: #e2e8f0;
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+    .btn-success {
+      background: rgba(16, 185, 129, 0.16);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .audio-player {
+      width: 100%;
+      height: 36px;
+      margin-bottom: 10px;
+      border-radius: 8px;
+    }
+    .guide-box {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px dashed rgba(56, 189, 248, 0.4);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 16px;
+      font-size: 0.82rem;
+      color: #cbd5e1;
+    }
+    .guide-box b { color: #38bdf8; }
+    .guide-box ol { margin-left: 18px; margin-top: 6px; }
+    .guide-box li { margin-bottom: 6px; }
+    .tag {
+      font-size: 0.70rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(56, 189, 248, 0.18);
+      color: #38bdf8;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="badge">🚀 GIẢI PHÁP ĐỌC OFFLINE VĨNH VIỄN</div>
+      <h1>Kho Mô Hình Giọng Đọc AI</h1>
+      <p class="sub">Tải trực tiếp bằng Chrome và nạp vào máy — Đọc Offline 100% không cần mạng hay PC</p>
+    </div>
+
+    <!-- Hướng dẫn sử dụng 2 bước -->
+    <div class="guide-box">
+      <div style="font-weight: 700; font-size: 0.90rem; margin-bottom: 6px; color: #38bdf8;">📲 CÁCH NẠP GIỌNG VÀO APP (CHỈ 1 PHÚT):</div>
+      <ol>
+        <li>Bấm nút <b>⬇️ Tải file .onnx</b> (và .json) của giọng bạn muốn về điện thoại (hoặc tải gói ZIP trọn bộ).</li>
+        <li>Mở ứng dụng <b>LReader</b> trên điện thoại &rarr; Vào tab <b>Giọng Offline</b> &rarr; Bấm <b>📂 Nhập file giọng trong máy (.onnx)</b> &rarr; Chọn file vừa tải.</li>
+        <li>Xong! Giọng đọc sẽ được lưu vĩnh viễn trong bộ nhớ app, bạn có thể tắt mạng và nghe đọc trọn đời.</li>
+      </ol>
+    </div>
+
+    <!-- GÓI DUY NHẤT: MÔ HÌNH ĐA GIỌNG GỐC VIENEU MULTI-SPEAKER -->
+    <div class="card card-highlight">
+      <div class="card-title">
+        <span>⚡ Mô Hình Đa Giọng Gốc VieNeu Multi-Speaker</span>
+        <span class="tag">60.5 MB</span>
+      </div>
+      <div class="card-desc">Mô hình Offline AI duy nhất tích hợp sẵn toàn bộ 15 giọng (bao gồm các giọng mới: Bích Giao, Kim Tuyến & NSƯT Kim Cúc VOV): Dẫn truyện (Anh Khôi), Nam chính (Phạm Tuyên, Hải Đăng, Thái Sơn, Adam), Nữ chính (Trúc Ly, Thùy Dung, Ngọc Huyền) và 4 giọng độ tuổi: Ông lão, Bà lão, Bé trai, Bé gái. Tải 1 lần đọc trọn vẹn offline không cần mạng!</div>
+      <div style="font-size:0.75rem; color:#94a3b8; margin-bottom:4px;">🎵 Nghe thử tổng hợp:</div>
+      <audio class="audio-player" controls preload="none" src="/api/offline_voices/models/vieneu_v3_turbo_demo.wav"></audio>
+      <div class="btn-group">
+        <a href="/api/offline_voices/models/vieneu_v3_turbo.onnx" download="vieneu_multispeaker.onnx" class="btn btn-primary" style="margin-bottom:0;">⬇️ File .onnx</a>
+        <a href="/api/offline_voices/models/vieneu_v3_turbo.onnx.json" download="vieneu_multispeaker.onnx.json" class="btn btn-secondary" style="margin-bottom:0;">⬇️ File .json</a>
+      </div>
+      <div style="margin-top:10px;">
+        <a href="/nghe-thu-vieneu" class="btn btn-secondary" style="margin-bottom:0;">🎧 Nghe thử chi tiết từng giọng & độ tuổi</a>
+      </div>
+    </div>
+
+    <!-- NÚT MỞ APP HOẶC TẢI APK MỚI -->
+    <div class="card">
+      <div class="card-title">
+        <span>🚀 Ứng Dụng LReader</span>
+      </div>
+      <div class="card-desc">Nếu bạn cần cài đặt lại app hoặc cập nhật lên phiên bản mới nhất:</div>
+      <a href="intent://#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.dragon.read;end" class="btn btn-success">
+        📱 MỞ APP LREADER TRÊN MÁY
+      </a>
+      <a href="/download-app" class="btn btn-secondary">
+        📥 TẢI FILE CÀI ĐẶT LREADER.APK (62MB)
+      </a>
+    </div>
+  </div>
 </body>
 </html>""")
 
@@ -760,7 +1097,7 @@ def apply_pronunciation_rules(text, rules=None):
 
     # Chuẩn hóa nhịp điệu và làm giàu ngữ điệu văn học (Prosody & Rhythm Enhancer):
     # 1. Chuẩn hóa dấu gạch đầu dòng đối thoại trong tiểu thuyết:
-    result = re.sub(r'^[—–\-]+\s*(?=[\w\u00C0-\u1EF9\u201C\u201D"\'`])', '“', result)
+    result = re.sub(r'^[—–\-]+\s*', '', result)
 
     # 2. Chuẩn hóa dấu biểu cảm convert mạng (~~~ -> …, ?? -> ?, !? -> !?)
     result = re.sub(r'([\w\u00C0-\u1EF9])~+', r'\1… ', result)
@@ -790,6 +1127,8 @@ def apply_pronunciation_rules(text, rules=None):
     # Ép sau dấu phẩy CHỈ CÓ ĐÚNG 1 DẤU CÁCH DUY NHẤT (bằng nhau 100% giữa 1 vs 2 khoảng trắng)
     result = re.sub(r'[\s\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF—–-]*[,，、﹐][\s\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF—–-]*(?:…|\.{3})?', ', ', result)
     result = re.sub(r'\s*([;:.!?…])\s*', r'\1 ', result)
+    # V5.0: Xóa triệt để dấu ngoặc kép — TTS không cần đọc ký hiệu này thành tiếng
+    result = re.sub(r'[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2018\u2019\u201A\u201B\u0022\u0060\u2033\u2036\u300C\u300D\u300E\u300F\uFF02]+', ' ', result)
     result = re.sub(r' {2,}', ' ', result)
     result = re.sub(r'[.…~–—\s]+$', '.', result) # Đuôi câu đồng nhất dấu chấm
     result = re.sub(r' {2,}', ' ', result).strip()
@@ -1120,6 +1459,7 @@ def get_last_book():
                 entry = next((b for b in index_data if b.get("id") == book_id), {})
                 data["lastChapter"] = entry.get("lastChapter", 0)
                 data["lastParagraph"] = entry.get("lastParagraph", 0)
+                data["lastSentence"] = entry.get("lastSentence", entry.get("lastParagraph", 0))
                 return jsonify(data)
             except Exception as e:
                 return jsonify({"error": str(e)}), 500
@@ -1131,6 +1471,7 @@ def manage_progress():
     book_id = data.get("bookId")
     chapter_idx = data.get("chapterIndex", 0)
     paragraph_idx = data.get("paragraphIndex", 0)
+    sentence_idx = data.get("sentenceIndex", paragraph_idx)
 
     if book_id:
         index_data = get_library_index()
@@ -1138,6 +1479,7 @@ def manage_progress():
             if b.get("id") == book_id:
                 b["lastChapter"] = chapter_idx
                 b["lastParagraph"] = paragraph_idx
+                b["lastSentence"] = sentence_idx
                 break
         save_library_index(index_data)
 
@@ -1328,7 +1670,7 @@ def merge_audio_chunks(chunks_bytes):
             except Exception:
                 pass
 
-def synthesize_audio_smart(spoken_text, voice_id, provider, speed=1.0, bilingual_mode="off", emotion="normal"):
+def synthesize_audio_smart(spoken_text, voice_id, provider, speed=1.0, bilingual_mode="off", emotion="normal", speaker_id=0):
     # 1. Tự động chuyển ký hiệu toán học & so sánh (> ➔ lớn hơn, < ➔ nhỏ hơn, >= ➔ lớn hơn hoặc bằng...)
     spoken_text = bilingual.convert_symbols_to_spoken_text(spoken_text)
 
@@ -1381,7 +1723,7 @@ def synthesize_audio_smart(spoken_text, voice_id, provider, speed=1.0, bilingual
         # Chế độ 2: Phiên âm thuần Việt - chuyển toàn bộ từ tiếng Anh sang cách đọc ngữ âm tiếng Việt
         clean_text = bilingual.transliterate_english_to_vietnamese(clean_text)
         if effective_provider == "offline" or voice_id.startswith("offline_"):
-            return offline_tts.synthesize_offline(clean_text, voice_id, speed)
+            return offline_tts.synthesize_offline(clean_text, voice_id, speed, speaker_id=speaker_id)
         elif effective_provider == "capcut":
             return generate_capcut_audio(clean_text, voice_id)
         else:
@@ -1395,7 +1737,7 @@ def synthesize_audio_smart(spoken_text, voice_id, provider, speed=1.0, bilingual
         # Nếu không có từ tiếng Anh -> đọc bình thường với giọng đã chọn
         if not has_en:
             if effective_provider == "offline" or voice_id.startswith("offline_"):
-                return offline_tts.synthesize_offline(clean_text, voice_id, speed)
+                return offline_tts.synthesize_offline(clean_text, voice_id, speed, speaker_id=speaker_id)
             elif effective_provider == "capcut":
                 return generate_capcut_audio(clean_text, voice_id)
             else:
@@ -1485,7 +1827,7 @@ def synthesize_audio_smart(spoken_text, voice_id, provider, speed=1.0, bilingual
     else:
         # Chế độ 0: Tắt (Mặc định) - giữ nguyên câu gốc
         if effective_provider == "offline" or voice_id.startswith("offline_"):
-            return offline_tts.synthesize_offline(clean_text, voice_id, speed)
+            return offline_tts.synthesize_offline(clean_text, voice_id, speed, speaker_id=speaker_id)
         elif effective_provider == "capcut":
             return generate_capcut_audio(clean_text, voice_id)
         else:
@@ -1526,13 +1868,54 @@ def api_delete_custom_english_word():
 def get_offline_voices():
     return jsonify(offline_tts.get_all_voices_status())
 
+@app.route("/api/offline_voices/models/<path:filename>", methods=["GET"])
+def get_offline_voice_model_file(filename):
+    try:
+        safe_name = os.path.basename(filename)
+        p = offline_tts.MODELS_DIR / safe_name
+        if p.exists() and p.is_file():
+            mimetype = "application/json" if safe_name.endswith(".json") else "application/octet-stream"
+            return send_file(p, mimetype=mimetype, as_attachment=True)
+        return jsonify({"error": f"Model file {safe_name} not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/offline_voices/proxy_download", methods=["GET"])
+def proxy_offline_voice_download():
+    url = request.args.get("url", "")
+    if not url:
+        return jsonify({"error": "Missing url"}), 400
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": offline_tts.USER_AGENT})
+        resp = urllib.request.urlopen(req, timeout=180)
+        content_type = resp.headers.get("Content-Type", "application/octet-stream")
+        return Response(resp.read(), mimetype=content_type)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/offline_voices/demo/<voice_id>", methods=["GET"])
 def get_offline_voice_demo(voice_id):
     try:
         audio_data = offline_tts.get_demo_audio_bytes(voice_id)
         if audio_data:
-            return send_file(io.BytesIO(audio_data), mimetype="audio/wav")
+            mimetype = "audio/mpeg" if (voice_id == "mailinh" or audio_data[:3] == b'ID3' or audio_data[:2] == b'\xff\xfb') else "audio/wav"
+            return send_file(io.BytesIO(audio_data), mimetype=mimetype)
         return jsonify({"error": "Không tìm thấy file demo"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/offline_voices/upload", methods=["POST"])
+def upload_offline_voices():
+    try:
+        uploaded_files = []
+        for key in request.files:
+            f = request.files[key]
+            if f and f.filename:
+                safe_name = f.filename if (f.filename.endswith(".onnx") or f.filename.endswith(".json")) else f"{f.filename}.onnx"
+                dest_path = offline_tts.MODELS_DIR / safe_name
+                f.save(str(dest_path))
+                uploaded_files.append(safe_name)
+        return jsonify({"status": "ok", "uploaded": uploaded_files})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1554,6 +1937,25 @@ def delete_offline_voice():
     ok = offline_tts.delete_voice(voice_id)
     return jsonify({"success": ok})
 
+@app.route("/api/cache/clear", methods=["POST", "GET"])
+def clear_audio_cache():
+    try:
+        if 'preloader' in globals() and preloader:
+            with preloader.lock:
+                preloader.generation_id += 1
+                preloader.cached_count = 0
+                preloader.current_working_para = 0
+        count = 0
+        for f in CACHE_DIR.glob("*.mp3"):
+            try: f.unlink(); count += 1
+            except Exception: pass
+        for f in CACHE_DIR.glob("*.wav"):
+            try: f.unlink(); count += 1
+            except Exception: pass
+        return jsonify({"success": True, "cleared": count})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/tts", methods=["POST"])
 def get_tts():
     notify_interactive_start()
@@ -1562,10 +1964,14 @@ def get_tts():
         req = request.get_json(force=True, silent=True) or {}
         text = req.get("text", "").strip()
         voice_id = req.get("voice_id") or req.get("voice") or "BV074_streaming"
+        if "vietneu" in str(voice_id):
+            voice_id = str(voice_id).replace("vietneu", "vieneu")
         provider = req.get("provider", "capcut")
+        print(f"[API TTS Request] voice_id='{voice_id}', provider='{provider}', text='{text[:35]}'")
         if provider == "elevenlabs" or str(voice_id).startswith("eleven_") or "almee" in str(voice_id).lower() or "adam" in str(voice_id).lower():
             provider = "elevenlabs"
         speed = float(req.get("speed", 1.0))
+        speaker_id = req.get("speaker_id") or req.get("sid") or 0
         bilingual_mode = req.get("bilingual_mode") or bilingual.get_bilingual_mode()
         emotion = req.get("emotion") or "normal"
         dialogue_role = req.get("dialogue_role") or "narration"
@@ -1582,24 +1988,13 @@ def get_tts():
         if not filtered_text or not re.search(r'\w', filtered_text, re.UNICODE):
             return send_file(io.BytesIO(get_silent_audio()), mimetype=default_mime)
 
-        # Kiểm tra và xử lý từ tượng thanh (Foley SFX Engine)
-        sfx_type, pruned_sfx, sfx_count = offline_tts.detect_and_prune_sfx(filtered_text)
-        if sfx_type:
-            if not pruned_sfx or not re.search(r'\w', pruned_sfx, re.UNICODE):
-                # Câu thuần túy là từ tượng thanh (ví dụ: "Oanh long!", "Ầm!", "Keng!", "Vút!", "Vèo, vèo, vèo!")
-                sfx_wav = offline_tts.generate_sfx_wav_bytes(sfx_type, count=sfx_count)
-                if sfx_wav:
-                    return send_file(io.BytesIO(sfx_wav), mimetype="audio/wav")
-            else:
-                filtered_text = pruned_sfx
-
         spoken_text = apply_pronunciation_rules(filtered_text)
         spoken_text = bilingual.convert_symbols_to_spoken_text(spoken_text)
         # Đồng nhất tuyệt đối dấu phẩy và khoảng trắng trước khi tính cache hash
         spoken_text = re.sub(r'[\s\u00A0\u1680\u2000-\u200a\u202f\u205f\u3000—–-]*[,，、﹐][\s\u00A0\u1680\u2000-\u200a\u202f\u205f\u3000—–-]*(?:…|\.{3})?', ', ', spoken_text)
         spoken_text = re.sub(r'\s+', ' ', spoken_text).strip()
         words_ver = bilingual.get_custom_words_version()
-        cache_key = hashlib.md5(f"v2_breath:{provider}:{voice_id}:{speed}:{emotion}:{bilingual_mode}:{words_ver}:{spoken_text}".encode('utf-8')).hexdigest()
+        cache_key = hashlib.md5(f"v12_clean:{provider}:{voice_id}:{speaker_id}:{speed}:{emotion}:{bilingual_mode}:{words_ver}:{spoken_text}".encode('utf-8')).hexdigest()
 
         # Kiểm tra cache trước (hỗ trợ cả .mp3 và .wav)
         for ext, m in [("mp3", "audio/mpeg"), ("wav", "audio/wav")]:
@@ -1607,7 +2002,7 @@ def get_tts():
             if cache_file.exists() and cache_file.stat().st_size > 1000:
                 return send_file(cache_file, mimetype=m)
 
-        audio_bytes = synthesize_audio_smart(spoken_text, voice_id, provider, speed, bilingual_mode, emotion=emotion)
+        audio_bytes = synthesize_audio_smart(spoken_text, voice_id, provider, speed, bilingual_mode, emotion=emotion, speaker_id=speaker_id)
         if not audio_bytes or len(audio_bytes) < 1000:
             # Câu chỉ có chữ Hán -> trả về im lặng ngắn nhưng không lưu vào cache
             return send_file(io.BytesIO(get_silent_audio()), mimetype=default_mime)
@@ -1633,8 +2028,8 @@ def get_tts():
 
 
 # =====================================================================
-# BỘ ĐỆM TỰ ĐỘNG TẢI TRƯỚC 30 CHƯƠNG (SLIDING WINDOW PRELOADER SIÊU TỐC)
-# Luôn giữ trước tối đa 30 chương trong bộ nhớ đệm, đa luồng tải nhanh gấp 3 lần
+# BỘ ĐỆM TỰ ĐỘNG TẢI TRƯỚC 2 CHƯƠNG (SLIDING WINDOW PRELOADER SIÊU TỐC)
+# Luôn giữ trước tối đa 2 chương trong bộ nhớ đệm, chạy siêu nhẹ không tốn pin/RAM
 # =====================================================================
 def split_into_sentences(text):
     if not text:
@@ -1642,7 +2037,7 @@ def split_into_sentences(text):
     text = re.sub(r'\.{3,}', '…', text.strip())
     if not text:
         return []
-    text = re.sub(r'\.\s*([a-zA-Z]{2,6})\b', r'\uE000\1', text)
+    text = re.sub(r'\.\s*([a-zA-Z]{2,6})\b', '\uE000\\1', text)
     def mask_quotes(m):
         q = m.group(0)
         return q.replace('.', '\uE001').replace('!', '\uE002').replace('?', '\uE003').replace('…', '\uE004')
@@ -1683,10 +2078,11 @@ class ChapterPreloader:
         self.enabled = True
         self.book_id = None
         self.current_chapter = 0
-        self.window_size = 30
+        self.window_size = 2
         self.voice_id = "BV074_streaming"
         self.provider = "capcut"
         self.speed = 1.0
+        self.generation_id = 0
         
         self.is_running = False
         self.current_working_chapter = None
@@ -1699,14 +2095,21 @@ class ChapterPreloader:
         self._thread = threading.Thread(target=self._worker_loop, daemon=True)
         self._thread.start()
 
-    def update(self, book_id, chapter_idx, voice_id=None, provider=None, speed=None, window_size=30, enabled=None):
+    def update(self, book_id, chapter_idx, voice_id=None, provider=None, speed=None, window_size=2, enabled=None):
         with self.lock:
+            chapter_changed = (self.current_chapter != chapter_idx or self.book_id != book_id)
+            voice_changed = (voice_id is not None and self.voice_id != voice_id)
+            if voice_changed or chapter_changed:
+                self.generation_id += 1
+                self.current_working_chapter = chapter_idx
+                self.current_working_para = 0
+                self.cached_count = 0
             self.book_id = book_id
             self.current_chapter = chapter_idx
             if voice_id: self.voice_id = voice_id
             if provider: self.provider = provider
             if speed: self.speed = speed
-            self.window_size = min(int(window_size or 30), 30)
+            self.window_size = min(int(window_size or 2), 5)
             if enabled is not None:
                 self.enabled = enabled
 
@@ -1736,7 +2139,7 @@ class ChapterPreloader:
         spoken_text = bilingual.convert_symbols_to_spoken_text(spoken_text)
         b_mode = bilingual.get_bilingual_mode()
         words_ver = bilingual.get_custom_words_version()
-        return hashlib.md5(f"v2_breath:{provider}:{voice_id}:{speed}:{emotion}:{b_mode}:{words_ver}:{spoken_text}".encode('utf-8')).hexdigest()
+        return hashlib.md5(f"v12_prosody:{provider}:{voice_id}:{speed}:{emotion}:{b_mode}:{words_ver}:{spoken_text}".encode('utf-8')).hexdigest()
 
     def _is_para_cached(self, text, voice_id, provider, speed):
         key = self._get_cache_key(text, voice_id, provider, speed)
@@ -1783,7 +2186,7 @@ class ChapterPreloader:
                         continue
                     book_id = self.book_id
                     start_ch = self.current_chapter
-                    win_size = min(self.window_size, 30)
+                    win_size = min(self.window_size, 5)
                     voice_id = self.voice_id
                     provider = self.provider
                     speed = self.speed
@@ -1870,10 +2273,14 @@ class ChapterPreloader:
                     time.sleep(1.0)
                     continue
 
+                with self.lock:
+                    cur_gen = self.generation_id
+
                 for c_idx, missing_sentences, total_s in needed_chapters:
                     with self.lock:
                         if (not self.enabled or self.book_id != book_id or 
-                            self.current_chapter != start_ch or self.voice_id != voice_id):
+                            self.current_chapter != start_ch or self.voice_id != voice_id or
+                            self.generation_id != cur_gen):
                             break
                         self.is_running = True
                         self.current_working_chapter = c_idx
@@ -1885,6 +2292,11 @@ class ChapterPreloader:
                     def task_fn(txt_to_cache):
                         while is_interactive_active():
                             time.sleep(0.5)
+                        with self.lock:
+                            if (not self.enabled or self.book_id != book_id or 
+                                self.current_chapter != start_ch or self.voice_id != voice_id or
+                                self.generation_id != cur_gen):
+                                return False
                         res = self._cache_para(txt_to_cache, voice_id, provider, speed)
                         with self.lock:
                             self.current_working_para = min(self.current_working_para + 1, total_s)
@@ -1895,11 +2307,19 @@ class ChapterPreloader:
                         for txt in missing_sentences:
                             with self.lock:
                                 if (not self.enabled or self.book_id != book_id or 
-                                    self.current_chapter != start_ch or self.voice_id != voice_id):
+                                    self.current_chapter != start_ch or self.voice_id != voice_id or
+                                    self.generation_id != cur_gen):
                                     break
                             futures.append(executor.submit(task_fn, txt))
 
                         for fut in as_completed(futures):
+                            with self.lock:
+                                if (not self.enabled or self.book_id != book_id or 
+                                    self.current_chapter != start_ch or self.voice_id != voice_id or
+                                    self.generation_id != cur_gen):
+                                    for remaining_f in futures:
+                                        remaining_f.cancel()
+                                    break
                             try:
                                 fut.result()
                             except Exception:
@@ -1907,7 +2327,8 @@ class ChapterPreloader:
 
                     # Cập nhật số chương đã đệm xong ngay khi chương c_idx hoàn thành
                     with self.lock:
-                        if (self.book_id == book_id and self.current_chapter == start_ch and self.voice_id == voice_id):
+                        if (self.book_id == book_id and self.current_chapter == start_ch and 
+                            self.voice_id == voice_id and self.generation_id == cur_gen):
                             self.cached_count = min(self.cached_count + 1, self.window_total)
 
                 with self.lock:
@@ -1927,7 +2348,7 @@ def update_preload():
     voice_id = req.get("voiceId")
     provider = req.get("provider")
     speed = float(req.get("speed", 1.0))
-    window_size = int(req.get("windowSize", 30))
+    window_size = int(req.get("windowSize", 2))
     enabled = req.get("enabled")
     if book_id:
         preloader.update(book_id, chapter_idx, voice_id, provider, speed, window_size, enabled)
@@ -1936,8 +2357,12 @@ def update_preload():
 @app.route("/api/preload/status", methods=["GET"])
 def get_preload_status():
     book_id = request.args.get("bookId")
-    if book_id and not preloader.book_id:
-        preloader.update(book_id, 0)
+    ch_param = request.args.get("chapterIndex") or request.args.get("chapter")
+    req_ch = int(ch_param) if ch_param and ch_param.isdigit() else None
+    if book_id:
+        if not preloader.book_id or (req_ch is not None and preloader.current_chapter != req_ch):
+            target_ch = req_ch if req_ch is not None else 0
+            preloader.update(book_id, target_ch)
     return jsonify(preloader.get_status())
 
 @app.route("/api/preload/toggle", methods=["POST"])

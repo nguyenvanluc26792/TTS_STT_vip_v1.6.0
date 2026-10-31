@@ -100,4 +100,7 @@ dependencies {
 
   // PDF Parser for Android (Apache PDFBox-Android)
   implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+
+  // Sherpa-ONNX Native Engine (.onnx Piper VITS / VieNeu TTS)
+  implementation(files("libs/sherpa-onnx.jar"))
 }

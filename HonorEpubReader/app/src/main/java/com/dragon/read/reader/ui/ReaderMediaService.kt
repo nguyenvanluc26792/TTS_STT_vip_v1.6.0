@@ -9,13 +9,22 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.BitmapFactory
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.AudioTrack
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
+import android.view.KeyEvent
 import com.hihonor.dz.reader.R
 
 class ReaderMediaService : Service() {
@@ -32,6 +41,68 @@ class ReaderMediaService : Service() {
         const val ACTION_STOP = "com.dragon.read.action.STOP"
 
         var actionListener: MediaActionListener? = null
+        var instance: ReaderMediaService? = null
+
+        fun handleMediaAction(context: Context, action: String, intent: Intent? = null) {
+            Log.i(TAG, "handleMediaAction: $action")
+            when (action) {
+                ACTION_PLAY -> {
+                    try {
+                        val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                        am?.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
+                    } catch (_: Exception) {}
+                    actionListener?.onPlay()
+                    instance?.updatePlaybackStateAndNotify(true)
+                }
+                ACTION_PAUSE -> {
+                    try {
+                        val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                        am?.abandonAudioFocus(null)
+                    } catch (_: Exception) {}
+                    actionListener?.onPause()
+                    instance?.updatePlaybackStateAndNotify(false)
+                }
+                ACTION_PREV -> {
+                    actionListener?.onPrevious()
+                }
+                ACTION_NEXT -> {
+                    actionListener?.onNext()
+                }
+                ACTION_STOP -> {
+                    try {
+                        val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                        am?.abandonAudioFocus(null)
+                    } catch (_: Exception) {}
+                    actionListener?.onStop()
+                    instance?.stopForegroundService()
+                }
+                Intent.ACTION_MEDIA_BUTTON -> {
+                    val keyEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent?.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent?.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+                    }
+                    if (keyEvent != null && keyEvent.action == KeyEvent.ACTION_DOWN) {
+                        when (keyEvent.keyCode) {
+                            KeyEvent.KEYCODE_MEDIA_PAUSE -> handleMediaAction(context, ACTION_PAUSE)
+                            KeyEvent.KEYCODE_MEDIA_PLAY -> handleMediaAction(context, ACTION_PLAY)
+                            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> {
+                                val isCurrentlyPlaying = instance?.isPlaying ?: false
+                                if (isCurrentlyPlaying) {
+                                    handleMediaAction(context, ACTION_PAUSE)
+                                } else {
+                                    handleMediaAction(context, ACTION_PLAY)
+                                }
+                            }
+                            KeyEvent.KEYCODE_MEDIA_NEXT -> handleMediaAction(context, ACTION_NEXT)
+                            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> handleMediaAction(context, ACTION_PREV)
+                            KeyEvent.KEYCODE_MEDIA_STOP -> handleMediaAction(context, ACTION_STOP)
+                        }
+                    }
+                }
+            }
+        }
 
         fun startOrUpdate(context: Context, title: String, artist: String, isPlaying: Boolean, album: String) {
             try {
@@ -65,7 +136,9 @@ class ReaderMediaService : Service() {
 
     private var mediaSession: MediaSession? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
     private var notificationManager: NotificationManager? = null
+
 
     private var currentTitle = "Đang đọc sách"
     private var currentArtist = "Trình Đọc Truyện AI"
@@ -74,7 +147,9 @@ class ReaderMediaService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        
         createNotificationChannel()
 
         try {
@@ -82,6 +157,13 @@ class ReaderMediaService : Service() {
             wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "HonorReader:MediaWakeLock")
         } catch (e: Throwable) {
             Log.w(TAG, "Không thể tạo WakeLock: ${e.message}")
+        }
+
+        try {
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            wifiLock = wm?.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "HonorReader:WifiLock")
+        } catch (e: Throwable) {
+            Log.w(TAG, "Không thể tạo WifiLock: ${e.message}")
         }
 
         initMediaSession()
@@ -106,28 +188,88 @@ class ReaderMediaService : Service() {
         try {
             mediaSession = MediaSession(this, "HonorReaderMediaSession").apply {
                 setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS or MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS)
+                val mediaButtonIntent = Intent(Intent.ACTION_MEDIA_BUTTON, null, this@ReaderMediaService, MediaControlReceiver::class.java)
+                val mediaButtonPendingIntent = PendingIntent.getBroadcast(
+                    this@ReaderMediaService,
+                    0,
+                    mediaButtonIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                setMediaButtonReceiver(mediaButtonPendingIntent)
                 setCallback(object : MediaSession.Callback() {
                     override fun onPlay() {
+                        Log.i(TAG, "MediaSession.Callback onPlay()")
                         actionListener?.onPlay()
                         updatePlaybackStateAndNotify(true)
                     }
 
                     override fun onPause() {
+                        Log.i(TAG, "MediaSession.Callback onPause()")
                         actionListener?.onPause()
                         updatePlaybackStateAndNotify(false)
                     }
 
                     override fun onSkipToNext() {
+                        Log.i(TAG, "MediaSession.Callback onSkipToNext()")
                         actionListener?.onNext()
                     }
 
                     override fun onSkipToPrevious() {
+                        Log.i(TAG, "MediaSession.Callback onSkipToPrevious()")
                         actionListener?.onPrevious()
                     }
 
                     override fun onStop() {
+                        Log.i(TAG, "MediaSession.Callback onStop()")
                         actionListener?.onStop()
-                        stopForegroundService()
+                        updatePlaybackStateAndNotify(false)
+                    }
+
+                    override fun onMediaButtonEvent(mediaButtonIntent: Intent): Boolean {
+                        val keyEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+                        }
+                        if (keyEvent != null && keyEvent.action == KeyEvent.ACTION_DOWN) {
+                            when (keyEvent.keyCode) {
+                                KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                                    actionListener?.onPause()
+                                    updatePlaybackStateAndNotify(false)
+                                    return true
+                                }
+                                KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                                    actionListener?.onPlay()
+                                    updatePlaybackStateAndNotify(true)
+                                    return true
+                                }
+                                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> {
+                                    if (isPlaying) {
+                                        actionListener?.onPause()
+                                        updatePlaybackStateAndNotify(false)
+                                    } else {
+                                        actionListener?.onPlay()
+                                        updatePlaybackStateAndNotify(true)
+                                    }
+                                    return true
+                                }
+                                KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                                    actionListener?.onNext()
+                                    return true
+                                }
+                                KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                                    actionListener?.onPrevious()
+                                    return true
+                                }
+                                KeyEvent.KEYCODE_MEDIA_STOP -> {
+                                    actionListener?.onStop()
+                                    updatePlaybackStateAndNotify(false)
+                                    return true
+                                }
+                            }
+                        }
+                        return super.onMediaButtonEvent(mediaButtonIntent)
                     }
                 })
                 isActive = true
@@ -176,36 +318,43 @@ class ReaderMediaService : Service() {
             }
         }
 
-        manageWakeLock(isPlaying)
+        manageLocksAndKeepAlive(isPlaying)
         updateSessionAndNotification()
         return START_STICKY
     }
 
     private fun updatePlaybackStateAndNotify(playing: Boolean) {
         isPlaying = playing
-        manageWakeLock(playing)
+        manageLocksAndKeepAlive(playing)
         updateSessionAndNotification()
     }
 
-    private fun manageWakeLock(acquire: Boolean) {
+    private fun manageLocksAndKeepAlive(acquire: Boolean) {
         try {
             if (acquire) {
+                // 1. Giữ WakeLock CPU
                 if (wakeLock?.isHeld == false) {
-                    wakeLock?.acquire(12 * 60 * 60 * 1000L) // Giữ tối đa 12 tiếng phát nền
+                    wakeLock?.acquire(12 * 60 * 60 * 1000L)
+                }
+                // 2. Giữ WifiLock
+                if (wifiLock?.isHeld == false) {
+                    wifiLock?.acquire()
                 }
             } else {
                 if (wakeLock?.isHeld == true) {
                     wakeLock?.release()
                 }
+                if (wifiLock?.isHeld == true) {
+                    wifiLock?.release()
+                }
             }
         } catch (e: Throwable) {
-            Log.w(TAG, "Lỗi quản lý WakeLock: ${e.message}")
+            Log.w(TAG, "Lỗi quản lý Locks: ${e.message}")
         }
     }
 
     private fun updateSessionAndNotification() {
         try {
-            // 1. Cập nhật MediaMetadata cho MediaSession (hiển thị lên thanh Media Android & MagicOS)
             val metaBuilder = MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, currentTitle)
                 .putString(MediaMetadata.METADATA_KEY_ARTIST, currentArtist)
@@ -221,10 +370,9 @@ class ReaderMediaService : Service() {
 
             mediaSession?.setMetadata(metaBuilder.build())
 
-            // 2. Cập nhật PlaybackState cho MediaSession
             val stateInt = if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
             val playbackState = PlaybackState.Builder()
-                .setState(stateInt, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1.0f)
+                .setState(stateInt, 0L, 1.0f)
                 .setActions(
                     PlaybackState.ACTION_PLAY or
                     PlaybackState.ACTION_PAUSE or
@@ -236,7 +384,6 @@ class ReaderMediaService : Service() {
                 .build()
             mediaSession?.setPlaybackState(playbackState)
 
-            // 3. Xây dựng Notification
             val notification = buildNotification()
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -263,26 +410,33 @@ class ReaderMediaService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val prevIntent = PendingIntent.getService(
+        val prevIntent = PendingIntent.getBroadcast(
             this,
             1,
-            Intent(this, ReaderMediaService::class.java).apply { action = ACTION_PREV },
+            Intent(this, MediaControlReceiver::class.java).apply { action = ACTION_PREV },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val playPauseIntent = PendingIntent.getService(
+        val pauseIntent = PendingIntent.getBroadcast(
             this,
             2,
-            Intent(this, ReaderMediaService::class.java).apply {
-                action = if (isPlaying) ACTION_PAUSE else ACTION_PLAY
-            },
+            Intent(this, MediaControlReceiver::class.java).apply { action = ACTION_PAUSE },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val nextIntent = PendingIntent.getService(
+        val playIntent = PendingIntent.getBroadcast(
+            this,
+            4,
+            Intent(this, MediaControlReceiver::class.java).apply { action = ACTION_PLAY },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val playPauseIntent = if (isPlaying) pauseIntent else playIntent
+
+        val nextIntent = PendingIntent.getBroadcast(
             this,
             3,
-            Intent(this, ReaderMediaService::class.java).apply { action = ACTION_NEXT },
+            Intent(this, MediaControlReceiver::class.java).apply { action = ACTION_NEXT },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -319,7 +473,7 @@ class ReaderMediaService : Service() {
     }
 
     private fun stopForegroundService() {
-        manageWakeLock(false)
+        manageLocksAndKeepAlive(false)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -333,7 +487,8 @@ class ReaderMediaService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        manageWakeLock(false)
+        if (instance == this) instance = null
+        manageLocksAndKeepAlive(false)
         try {
             mediaSession?.isActive = false
             mediaSession?.release()

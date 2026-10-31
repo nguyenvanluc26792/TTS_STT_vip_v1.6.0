@@ -10,6 +10,7 @@ import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -68,6 +69,7 @@ class ReaderActivity : ComponentActivity() {
 
     private var textToSpeech: TextToSpeech? = null
     private var isTtsReady = false
+    private var currentSystemVoiceName: String = ""
 
     private var localServer: HonorLocalServer? = null
     private lateinit var prefs: SharedPreferences
@@ -92,6 +94,100 @@ class ReaderActivity : ComponentActivity() {
         } else {
             fileUploadCallback?.onReceiveValue(null)
             fileUploadCallback = null
+        }
+    }
+
+    private val offlineModelPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris: List<Uri>? ->
+        if (!uris.isNullOrEmpty()) {
+            importOfflineModelsFromUris(uris)
+        }
+    }
+
+    private fun importOfflineModelsFromUris(uris: List<Uri>) {
+        thread {
+            try {
+                val targetDir = localServer?.offlineModelsDir ?: (
+                    getExternalFilesDir("piper_models") ?: java.io.File(filesDir, "piper_models")
+                ).apply { mkdirs() }
+
+                var successCount = 0
+                var lastVoiceId = ""
+                var lastFileName = ""
+
+                for (uri in uris) {
+                    try {
+                        val fileName = getFileName(uri) ?: "custom_voice_${System.currentTimeMillis()}.onnx"
+                        val safeName = if (fileName.endsWith(".onnx", ignoreCase = true) || fileName.endsWith(".json", ignoreCase = true)) {
+                            fileName
+                        } else {
+                            "$fileName.onnx"
+                        }
+                        val targetFile = java.io.File(targetDir, safeName)
+                        contentResolver.openInputStream(uri)?.use { input ->
+                            targetFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        successCount++
+
+                        // Tự động chuẩn hóa liên kết tên với các giọng định sẵn (Mai Linh, VieNeu, Ban Mai)
+                        val clean = safeName.lowercase().replace(" ", "").replace("-", "_")
+                        if (safeName.endsWith(".onnx", ignoreCase = true)) {
+                            lastVoiceId = safeName.substringBeforeLast(".")
+                            lastFileName = safeName
+                            try {
+                                if (clean.contains("mailinh")) {
+                                    targetFile.copyTo(java.io.File(targetDir, "mailinh250626.onnx"), overwrite = true)
+                                    targetFile.copyTo(java.io.File(targetDir, "mailinh.onnx"), overwrite = true)
+                                } else if (clean.contains("diemdam") || clean.contains("turbo") || clean.contains("vieneu") || clean.contains("vietneu")) {
+                                    targetFile.copyTo(java.io.File(targetDir, "vieneu_v3_turbo.onnx"), overwrite = true)
+                                } else if (clean.contains("altotram") || clean.contains("nano")) {
+                                    targetFile.copyTo(java.io.File(targetDir, "vieneu_v3_nano.onnx"), overwrite = true)
+                                } else if (clean.contains("banmai") || clean.contains("vais")) {
+                                    targetFile.copyTo(java.io.File(targetDir, "banmai.onnx"), overwrite = true)
+                                }
+                            } catch (_: Exception) {}
+                        } else if (safeName.endsWith(".json", ignoreCase = true)) {
+                            try {
+                                if (clean.contains("mailinh")) {
+                                    targetFile.copyTo(java.io.File(targetDir, "mailinh250626.onnx.json"), overwrite = true)
+                                    targetFile.copyTo(java.io.File(targetDir, "mailinh.onnx.json"), overwrite = true)
+                                } else if (clean.contains("diemdam") || clean.contains("turbo") || clean.contains("vieneu") || clean.contains("vietneu")) {
+                                    targetFile.copyTo(java.io.File(targetDir, "vieneu_v3_turbo.onnx.json"), overwrite = true)
+                                } else if (clean.contains("altotram") || clean.contains("nano")) {
+                                    targetFile.copyTo(java.io.File(targetDir, "vieneu_v3_nano.onnx.json"), overwrite = true)
+                                } else if (clean.contains("banmai") || clean.contains("vais")) {
+                                    targetFile.copyTo(java.io.File(targetDir, "banmai.onnx.json"), overwrite = true)
+                                }
+                            } catch (_: Exception) {}
+                        }
+                    } catch (eItem: Exception) {
+                        Log.e(TAG, "Lỗi nạp từng file uri: ${eItem.message}", eItem)
+                    }
+                }
+
+                if (successCount > 0) {
+                    runOnUiThread {
+                        Toast.makeText(this@ReaderActivity, "✅ Đã nạp thành công $successCount tệp mô hình vào máy!", Toast.LENGTH_LONG).show()
+                        try {
+                            webView.post {
+                                webView.evaluateJavascript("if (window.onOfflineVoiceImported) window.onOfflineVoiceImported('$lastVoiceId', '$lastFileName');", null)
+                            }
+                        } catch (_: Throwable) {}
+                    }
+                } else {
+                    runOnUiThread {
+                        Toast.makeText(this@ReaderActivity, "❌ Không thể sao chép tệp đã chọn", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Lỗi nạp file giọng đọc offline: ${e.message}", e)
+                runOnUiThread {
+                    Toast.makeText(this@ReaderActivity, "❌ Lỗi nạp file: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 
@@ -180,21 +276,47 @@ class ReaderActivity : ComponentActivity() {
                 requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
             }
         }
-        setupMediaServiceListener()
-
-        // Giữ nguyên toàn bộ cache audio đệm chương để nghe offline không bị mất
-        try {
-            // Chỉ xóa các file demo 242KB nếu có
-            val ttsDir = java.io.File(cacheDir, "tts_cache_v6")
-            if (ttsDir.exists()) {
-                ttsDir.listFiles()?.forEach { f ->
-                    if (f.length() in 240000L..245000L) {
-                        f.delete()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!android.os.Environment.isExternalStorageManager()) {
+                try {
+                    val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                        data = android.net.Uri.parse("package:$packageName")
                     }
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    try {
+                        val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                        startActivity(intent)
+                    } catch (_: Exception) {}
                 }
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Lỗi kiểm tra cache audio: ${e.message}")
+        } else {
+            if (checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE), 1002)
+            }
+        }
+        setupMediaServiceListener()
+
+        // Dọn dẹp cache cũ trong luồng nền để không chặn Main Thread khi mở app
+        thread {
+            try {
+                // Dọn dẹp thư mục piper_models bộ nhớ trong cũ nếu có để tránh nạp nhầm file hỏng
+                val legacyPiperModels = java.io.File(filesDir, "piper_models")
+                if (legacyPiperModels.exists()) {
+                    legacyPiperModels.deleteRecursively()
+                }
+                // Chỉ xóa các file demo 242KB nếu có
+                val ttsDir = java.io.File(cacheDir, "tts_cache_v6")
+                if (ttsDir.exists()) {
+                    ttsDir.listFiles()?.forEach { f ->
+                        if (f.length() in 240000L..245000L) {
+                            f.delete()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Lỗi kiểm tra cache audio: ${e.message}")
+            }
         }
 
         rootLayout = FrameLayout(this).apply {
@@ -323,6 +445,11 @@ class ReaderActivity : ComponentActivity() {
                             }
                         })
                         Log.i(TAG, "Android Native TextToSpeech initialized successfully")
+                        runOnUiThread {
+                            try {
+                                webView.evaluateJavascript("if (window.loadVoices) window.loadVoices();", null)
+                            } catch (e: Throwable) {}
+                        }
                     } catch (e: Throwable) {
                         Log.e(TAG, "Lỗi cấu hình TextToSpeech: ${e.message}")
                     }
@@ -384,51 +511,114 @@ class ReaderActivity : ComponentActivity() {
     private fun setupMediaServiceListener() {
         ReaderMediaService.actionListener = object : MediaActionListener {
             override fun onPlay() {
-                runOnUiThread {
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    localServer?.isAudioPlaying = true
+                    try {
+                        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                        am?.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
+                    } catch (_: Exception) {}
                     webView.evaluateJavascript("""
                         (function() {
-                            if (typeof window.resumeAudio === 'function') window.resumeAudio();
-                            else if (typeof window.togglePlay === 'function') window.togglePlay();
+                            try {
+                                if (typeof isUserIntentionalPause !== 'undefined') isUserIntentionalPause = false;
+                                if (typeof window.resumeAudio === 'function') {
+                                    window.resumeAudio();
+                                } else if (typeof window.togglePlay === 'function') {
+                                    window.togglePlay();
+                                }
+                            } catch(e) {}
                         })();
                     """.trimIndent(), null)
                 }
             }
 
             override fun onPause() {
-                runOnUiThread {
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    try {
+                        textToSpeech?.stop()
+                    } catch (_: Exception) {}
+                    localServer?.isAudioPlaying = false
+                    try {
+                        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                        am?.abandonAudioFocus(null)
+                    } catch (_: Exception) {}
                     webView.evaluateJavascript("""
                         (function() {
-                            if (typeof window.pauseAudio === 'function') window.pauseAudio();
+                            try {
+                                if (typeof isUserIntentionalPause !== 'undefined') isUserIntentionalPause = true;
+                                if (typeof window.onUserMediaPause === 'function') {
+                                    window.onUserMediaPause();
+                                } else if (typeof window.pauseAudio === 'function') {
+                                    window.pauseAudio(true);
+                                }
+                                var aud = document.getElementById('audioPlayer');
+                                if (aud) { aud.pause(); }
+                            } catch(e) {}
                         })();
                     """.trimIndent(), null)
                 }
             }
 
             override fun onNext() {
-                runOnUiThread {
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
                     webView.evaluateJavascript("""
                         (function() {
-                            if (typeof window.nextParagraph === 'function') window.nextParagraph();
+                            try {
+                                if (typeof isUserIntentionalPause !== 'undefined') isUserIntentionalPause = false;
+                                if (typeof window.onNativeMediaNext === 'function') {
+                                    window.onNativeMediaNext();
+                                } else if (typeof window.nextParagraph === 'function') {
+                                    window.nextParagraph();
+                                } else if (typeof window.nextChapter === 'function') {
+                                    window.nextChapter();
+                                }
+                            } catch(e) {}
                         })();
                     """.trimIndent(), null)
                 }
             }
 
             override fun onPrevious() {
-                runOnUiThread {
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
                     webView.evaluateJavascript("""
                         (function() {
-                            if (typeof window.prevParagraph === 'function') window.prevParagraph();
+                            try {
+                                if (typeof isUserIntentionalPause !== 'undefined') isUserIntentionalPause = false;
+                                if (typeof window.onNativeMediaPrev === 'function') {
+                                    window.onNativeMediaPrev();
+                                } else if (typeof window.prevParagraph === 'function') {
+                                    window.prevParagraph();
+                                } else if (typeof window.prevChapter === 'function') {
+                                    window.prevChapter();
+                                }
+                            } catch(e) {}
                         })();
                     """.trimIndent(), null)
                 }
             }
 
             override fun onStop() {
-                runOnUiThread {
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    try {
+                        textToSpeech?.stop()
+                    } catch (_: Exception) {}
+                    localServer?.isAudioPlaying = false
+                    try {
+                        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                        am?.abandonAudioFocus(null)
+                    } catch (_: Exception) {}
                     webView.evaluateJavascript("""
                         (function() {
-                            if (typeof window.pauseAudio === 'function') window.pauseAudio();
+                            try {
+                                if (typeof isUserIntentionalPause !== 'undefined') isUserIntentionalPause = true;
+                                if (typeof window.onUserMediaPause === 'function') {
+                                    window.onUserMediaPause();
+                                } else if (typeof window.pauseAudio === 'function') {
+                                    window.pauseAudio(true);
+                                }
+                                var aud = document.getElementById('audioPlayer');
+                                if (aud) { aud.pause(); }
+                            } catch(e) {}
                         })();
                     """.trimIndent(), null)
                 }
@@ -438,6 +628,7 @@ class ReaderActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        setupMediaServiceListener()
         applyImmersiveSticky()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (currentAnimMode != InputManagerExHelper.ANIM_NONE && !isMediaPlaying) {
@@ -861,12 +1052,11 @@ class ReaderActivity : ComponentActivity() {
             allowContentAccess = true
             useWideViewPort = true
             loadWithOverviewMode = true
-            cacheMode = WebSettings.LOAD_NO_CACHE
+            cacheMode = WebSettings.LOAD_DEFAULT
             displayZoomControls = false
             builtInZoomControls = false
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         }
-        webView.clearCache(true)
         webView.overScrollMode = View.OVER_SCROLL_NEVER
         webView.isVerticalScrollBarEnabled = false
         webView.isHorizontalScrollBarEnabled = false
@@ -1115,10 +1305,7 @@ class ReaderActivity : ComponentActivity() {
         if (!finalUrl.startsWith("http://") && !finalUrl.startsWith("https://")) {
             finalUrl = "http://$finalUrl"
         }
-        val buster = "_t=${System.currentTimeMillis()}"
-        finalUrl = if (finalUrl.contains("?")) "$finalUrl&$buster" else "$finalUrl?$buster"
         Log.i(TAG, "Loading URL: $finalUrl")
-        webView.clearCache(true)
         webView.loadUrl(finalUrl)
     }
 
@@ -1663,61 +1850,197 @@ class ReaderActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
-        fun speakNative(text: String, speed: Float): Boolean {
-            if (!isTtsReady || textToSpeech == null) return false
-            try {
-                runOnUiThread {
-                    try {
-                        textToSpeech?.setPitch(1.0f)
-                        textToSpeech?.setSpeechRate(if (speed in 0.5f..2.5f) speed else 1.0f)
-                        val uttId = "reader_utt_${System.currentTimeMillis()}"
-                        val params = android.os.Bundle().apply {
-                            putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, uttId)
-                        }
-                        val cleanText = text.replace(Regex("[\\s\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF—–-]*[,，、﹐][\\s\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF—–-]*(?:…|\\.{3})?"), ", ")
-                                            .replace(Regex(" {2,}"), " ")
-                                            .trim()
-                        val res = textToSpeech?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, uttId)
-                        if (res != TextToSpeech.SUCCESS) {
-                            Log.w(TAG, "textToSpeech.speak error code: $res")
-                            runOnUiThread {
-                                try {
-                                    webView.evaluateJavascript("if (window.onNativeTtsError) window.onNativeTtsError();", null)
-                                } catch (e: Throwable) {}
-                            }
-                        }
-                    } catch (e: Throwable) {
-                        Log.e(TAG, "Lỗi speakNative: ${e.message}")
-                        runOnUiThread {
-                            try {
-                                webView.evaluateJavascript("if (window.onNativeTtsError) window.onNativeTtsError();", null)
-                            } catch (err: Throwable) {}
-                        }
+        fun getSystemTtsVoices(): String {
+            if (!isTtsReady || textToSpeech == null) return "[]"
+            return try {
+                val arr = org.json.JSONArray()
+                val voices = textToSpeech?.voices ?: emptySet()
+                val defaultVoiceName = try { textToSpeech?.defaultVoice?.name ?: "" } catch (e: Throwable) { "" }
+                val viVoices = mutableListOf<android.speech.tts.Voice>()
+                val otherVoices = mutableListOf<android.speech.tts.Voice>()
+
+                for (v in voices) {
+                    val lang = v.locale.language.lowercase()
+                    if (lang == "vi" || lang == "vie") {
+                        viVoices.add(v)
+                    } else if (!v.isNetworkConnectionRequired && (lang == "en" || lang == "zh")) {
+                        otherVoices.add(v)
                     }
                 }
-                return true
+
+                // Sắp xếp giọng Offline trước, chất lượng cao trước
+                viVoices.sortWith(compareBy<android.speech.tts.Voice> { it.isNetworkConnectionRequired }.thenByDescending { it.quality }.thenBy { it.name })
+
+                var idx = 1
+                for (v in viVoices) {
+                    val isOffline = !v.isNetworkConnectionRequired
+                    val rawName = v.name
+                    val friendlyLabel = buildString {
+                        append("Giọng máy #${idx++}: ")
+                        when {
+                            rawName.contains("vi-vn-x-vif", true) -> append("Nữ Việt Nam (VIF)")
+                            rawName.contains("vi-vn-x-vid", true) -> append("Nam Việt Nam (VID)")
+                            rawName.contains("vi-vn-x-vie", true) -> append("Nữ Truyền Cảm (VIE)")
+                            rawName.contains("vi-vn-x-vic", true) -> append("Nữ Chuẩn (VIC)")
+                            rawName.contains("vi-vn-x-gft", true) -> append("Giọng Chuẩn (GFT)")
+                            rawName.contains("language", true) -> append("Mặc định Tiếng Việt")
+                            else -> append(rawName.replace("vi-vn-x-", "").replace("-local", "").replace("-network", ""))
+                        }
+                        if (isOffline) append(" [Offline có sẵn]") else append(" [Online]")
+                    }
+                    arr.put(org.json.JSONObject().apply {
+                        put("id", rawName)
+                        put("name", friendlyLabel)
+                        put("locale", v.locale.toLanguageTag())
+                        put("isOffline", isOffline)
+                        put("isDefault", rawName == defaultVoiceName)
+                    })
+                }
+                arr.toString()
             } catch (e: Throwable) {
-                Log.e(TAG, "Error in speakNative bridge: ${e.message}")
-                return false
+                Log.e(TAG, "Error in getSystemTtsVoices: ${e.message}")
+                "[]"
             }
         }
 
         @JavascriptInterface
+        fun setSystemTtsVoice(voiceName: String): Boolean {
+            currentSystemVoiceName = voiceName.removePrefix("native:").trim()
+            if (!isTtsReady || textToSpeech == null) return false
+            return try {
+                runOnUiThread {
+                    try {
+                        if (currentSystemVoiceName.isEmpty() || currentSystemVoiceName == "android_native") {
+                            textToSpeech?.setLanguage(Locale("vi", "VN"))
+                        } else {
+                            val voices = textToSpeech?.voices ?: emptySet()
+                            val matched = voices.firstOrNull { it.name.equals(currentSystemVoiceName, ignoreCase = true) }
+                            if (matched != null) {
+                                textToSpeech?.voice = matched
+                            }
+                        }
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "setSystemTtsVoice error: ${e.message}")
+                    }
+                }
+                true
+            } catch (e: Throwable) {
+                false
+            }
+        }
+
+        @JavascriptInterface
+        fun openTtsSettings() {
+            runOnUiThread {
+                try {
+                    val intent = Intent("com.android.settings.TTS_SETTINGS").apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(intent)
+                } catch (e: Throwable) {
+                    try {
+                        val intent2 = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(intent2)
+                    } catch (err: Throwable) {
+                        Toast.makeText(this@ReaderActivity, "Hãy mở Cài đặt máy -> Ngôn ngữ & Nhập liệu -> Đầu ra văn bản thành giọng nói", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun pickOfflineModelFile() {
+            runOnUiThread {
+                try {
+                    Toast.makeText(this@ReaderActivity, "📂 Chọn file mô hình (.onnx / .json) trong điện thoại", Toast.LENGTH_SHORT).show()
+                    offlineModelPickerLauncher.launch(arrayOf("*/*"))
+                } catch (e: Throwable) {
+                    Log.e(TAG, "Lỗi mở SAF file picker: ${e.message}", e)
+                    webView.post {
+                        webView.evaluateJavascript("if (document.getElementById('offlineModelFileInput')) document.getElementById('offlineModelFileInput').click();", null)
+                    }
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun speakNative(text: String, speed: Float): Boolean {
+            return speakNativeWithPitch(text, speed, 1.0f, 0.80f)
+        }
+
+        @JavascriptInterface
         fun speakNativeWithPitch(text: String, speed: Float, pitch: Float): Boolean {
+            return speakNativeWithPitch(text, speed, pitch, 0.80f)
+        }
+
+        @JavascriptInterface
+        fun speakNativeWithPitch(text: String, speed: Float, pitch: Float, volume: Float): Boolean {
+            return speakNativeWithVoice(text, speed, pitch, volume, currentSystemVoiceName)
+        }
+
+        @JavascriptInterface
+        fun speakNativeWithVoice(text: String, speed: Float, pitch: Float, volume: Float, voiceName: String): Boolean {
+            if (textToSpeech == null) {
+                initNativeTts()
+            }
             if (!isTtsReady || textToSpeech == null) return false
             try {
                 runOnUiThread {
                     try {
+                        val reqVoice = voiceName.removePrefix("native:").trim()
+                        val voices = textToSpeech?.voices ?: emptySet()
+                        if (reqVoice.isNotEmpty() && reqVoice != "android_native") {
+                            var matched = voices.firstOrNull { it.name.equals(reqVoice, ignoreCase = true) }
+                            if (matched == null) {
+                                val reqLower = reqVoice.lowercase()
+                                val isReqFemale = reqLower == "gender_female" || reqLower == "female" || reqLower.contains("mailinh") || reqLower.contains("turbo") || reqLower.contains("nano") || reqLower.contains("banmai") || reqLower.contains("ngochuyen") || reqLower.contains("calmwoman")
+                                val isReqMale = reqLower == "gender_male" || reqLower == "male" || reqLower.contains("deepman") || reqLower.contains("manhdung") || reqLower.contains("minhquang")
+                                if (isReqFemale) {
+                                    matched = voices.firstOrNull { v ->
+                                        val n = v.name.lowercase()
+                                        (v.locale.language == "vi" || v.locale.language == "vie") &&
+                                        !v.isNetworkConnectionRequired &&
+                                        (n.contains("vic") || n.contains("vif") || n.contains("vie") || n.contains("female"))
+                                    } ?: voices.firstOrNull { v ->
+                                        val n = v.name.lowercase()
+                                        (v.locale.language == "vi" || v.locale.language == "vie") &&
+                                        !v.isNetworkConnectionRequired
+                                    }
+                                } else if (isReqMale) {
+                                    matched = voices.firstOrNull { v ->
+                                        val n = v.name.lowercase()
+                                        (v.locale.language == "vi" || v.locale.language == "vie") &&
+                                        !v.isNetworkConnectionRequired &&
+                                        (n.contains("vid") || n.contains("gft") || n.contains("male"))
+                                    }
+                                }
+                            }
+                            if (matched != null && !matched.isNetworkConnectionRequired && textToSpeech?.voice?.name != matched.name) {
+                                textToSpeech?.voice = matched
+                            }
+                        }
                         textToSpeech?.setSpeechRate(if (speed in 0.5f..2.5f) speed else 1.0f)
                         textToSpeech?.setPitch(if (pitch in 0.5f..2.0f) pitch else 1.0f)
+                        val safeVolume = if (volume in 0.1f..1.0f) volume else 0.80f
                         val uttId = "reader_utt_${System.currentTimeMillis()}"
                         val params = android.os.Bundle().apply {
                             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, uttId)
+                            putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, safeVolume)
                         }
-                        val cleanText = text.replace(Regex("[\\s\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF—–-]*[,，、﹐][\\s\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF—–-]*(?:…|\\.{3})?"), ", ")
+                        val cleanText = text.replace(Regex("[\\s\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF—–-]*[,，、﹐][\\s\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF—–-]*"), ", ")
+                                            .replace(Regex("[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2018\u2019\u201A\u201B\u0022\u0060\u2033\u2036\u300C\u300D\u300E\u300F\uFF02]+"), " ")
                                             .replace(Regex(" {2,}"), " ")
                                             .trim()
-                        val res = textToSpeech?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, uttId)
+                        var res = textToSpeech?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, uttId)
+                        if (res != TextToSpeech.SUCCESS) {
+                            Log.w(TAG, "textToSpeech.speak error code: $res, fallback to default voice")
+                            try {
+                                textToSpeech?.voice = textToSpeech?.defaultVoice
+                                res = textToSpeech?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, uttId)
+                            } catch (_: Throwable) {}
+                        }
                         if (res != TextToSpeech.SUCCESS) {
                             Log.w(TAG, "textToSpeech.speak error code: $res")
                             runOnUiThread {
@@ -1740,6 +2063,11 @@ class ReaderActivity : ComponentActivity() {
                 Log.e(TAG, "Error in speakNativeWithPitch bridge: ${e.message}")
                 return false
             }
+        }
+
+        @JavascriptInterface
+        fun speakNativeWithPitchAndVolume(text: String, speed: Float, pitch: Float, volume: Float): Boolean {
+            return speakNativeWithPitch(text, speed, pitch, volume)
         }
 
         @JavascriptInterface
@@ -1797,6 +2125,62 @@ class ReaderActivity : ComponentActivity() {
                 } catch (e: Throwable) {
                     Log.e(TAG, "Lỗi mở liên kết tải APK: ${e.message}")
                     Toast.makeText(this@ReaderActivity, "Lỗi mở tải: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun isBatteryOptimizationIgnored(): Boolean {
+            return try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    val pm = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+                    pm?.isIgnoringBatteryOptimizations(packageName) ?: false
+                } else {
+                    true
+                }
+            } catch (e: Throwable) {
+                false
+            }
+        }
+
+        @JavascriptInterface
+        fun isModelDownloaded(voiceId: String): Boolean {
+            return try {
+                val f = localServer?.resolveDownloadedOnnxFile(voiceId)
+                f != null && f.exists() && f.length() > 10 * 1024 * 1024L
+            } catch (e: Throwable) {
+                false
+            }
+        }
+
+        @JavascriptInterface
+        fun openBatteryOptimizationSettings() {
+            runOnUiThread {
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        val intent = Intent().apply {
+                            val pm = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+                            if (pm != null && !pm.isIgnoringBatteryOptimizations(packageName)) {
+                                action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+                                data = Uri.parse("package:$packageName")
+                            } else {
+                                action = Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
+                            }
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(intent)
+                    } else {
+                        Toast.makeText(this@ReaderActivity, "Hệ điều hành không cần tắt tối ưu pin", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Throwable) {
+                    try {
+                        val fallbackIntent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(fallbackIntent)
+                    } catch (err: Throwable) {
+                        Toast.makeText(this@ReaderActivity, "Không thể mở cài đặt pin: ${err.message}", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }

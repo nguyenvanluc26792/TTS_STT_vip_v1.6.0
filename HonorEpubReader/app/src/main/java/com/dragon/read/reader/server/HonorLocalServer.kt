@@ -1,10 +1,13 @@
 package com.dragon.read.reader.server
 
 import android.content.Context
+import android.os.Environment
 import android.util.Log
 import fi.iki.elonen.NanoHTTPD
 import org.json.JSONArray
 import org.json.JSONObject
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import com.dragon.read.reader.ui.ReaderMediaService
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -25,17 +28,31 @@ class HonorLocalServer(
         private const val TAG = "HonorLocalServer"
     }
 
-    private val bookManager = NativeBookManager(context)
-    private val dictEngine = NativeDictionaryEngine(context)
-    private val cacheDir = File(context.cacheDir, "tts_cache_v7").apply { mkdirs() }
+    private val bookManager by lazy { NativeBookManager(context) }
+    private val dictEngine by lazy { NativeDictionaryEngine(context) }
+    private val cacheDir = File(context.cacheDir, "tts_cache_v10").apply { mkdirs() }
     private val pronounceFile = File(context.filesDir, "pronounce_rules.json")
     private val customWordsFile = File(context.filesDir, "custom_english_words.json")
 
     @Volatile
     var isAudioPlaying: Boolean = false
+    val activeInteractiveRequests = java.util.concurrent.atomic.AtomicInteger(0)
     @Volatile
     private var isPreloadEnabled = true
     val preloader by lazy { ChapterAudioPreloader() }
+
+    fun getTtsCacheKeys(baseVoiceId: String, targetVoice: String, multiVoice: Boolean, emotion: String, text: String, speakerId: Int = 0): List<String> {
+        val vId = if (baseVoiceId.isEmpty() || baseVoiceId == "default") "BV074_streaming" else baseVoiceId
+        val tV = if (targetVoice.isEmpty() || targetVoice == "default") vId else targetVoice
+        val emo = if (emotion.isEmpty()) "normal" else emotion
+        val cleanBase = vId.removePrefix("offline_")
+        val cleanText = text.trim()
+        return listOf(
+            md5("v9:$vId:$tV:sid$speakerId:$multiVoice:$emo:$cleanText"),
+            md5("v9:$vId:sid$speakerId:$multiVoice:$emo:$cleanText"),
+            md5("v9:$cleanBase:sid$speakerId:$multiVoice:normal:$cleanText")
+        ).distinct()
+    }
 
     fun getSilentMp3(): ByteArray {
         val frame = byteArrayOf(
@@ -88,19 +105,50 @@ class HonorLocalServer(
 
     init {
         try {
-            // Xoa sach thu muc cache cu de giai phong bo nho
-            context.cacheDir.listFiles()?.forEach { f ->
-                if (f.name.startsWith("tts_cache") && f.name != "tts_cache_v7") {
-                    f.deleteRecursively()
+            // Đưa toàn bộ các tác vụ dọn dẹp và chuẩn bị dữ liệu ra luồng nền (background thread)
+            // để KHÔNG làm chậm khởi động app lúc mở
+            Thread {
+                try {
+                    // Xóa sách thư mục cache cũ để giải phóng bộ nhớ
+                    context.cacheDir.listFiles()?.forEach { f ->
+                        if (f.name.startsWith("tts_cache") && f.name != "tts_cache_v10") {
+                            f.deleteRecursively()
+                        }
+                    }
+                    // Giải nén trước espeak-ng-data ở luồng nền để đọc .onnx siêu tốc
+                    SherpaOnnxTtsEngine.ensureEspeakDataExtracted(context)
+
+                    // Dọn dẹp triệt để các file model onnx cũ khỏi bộ nhớ máy
+                    for (dir in getAllOfflineModelDirs()) {
+                        try {
+                            dir.listFiles()?.forEach { f ->
+                                val lower = f.name.lowercase()
+                                if (f.isFile && (lower.endsWith(".onnx") || lower.endsWith(".onnx.json"))) {
+                                    val isProtectedModel = lower.contains("vieneu") || lower.contains("vietneu") || 
+                                                           lower.contains("tokens.txt") || lower.contains("kokoro") ||
+                                                           lower.contains("banmai") || lower.contains("manhdung") ||
+                                                           lower.contains("calmwoman") || lower.contains("ngochuyen") ||
+                                                           lower.contains("deepman") || lower.contains("csa_")
+                                    if (!isProtectedModel) {
+                                        Log.i(TAG, "Tự động dọn dẹp model cũ khỏi máy: ${f.name}")
+                                        f.delete()
+                                    }
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Lỗi background init task: ${e.message}")
                 }
-            }
-            // Neu APK moi vua duoc cai dat (build number lon hon hoac bang OTA), xoa file ota/index.html
+            }.start()
+
+            // Kiểm tra file OTA chỉ bằng check tồn tại nhanh (metadata nhanh)
             val otaFile = File(context.filesDir, "ota/index.html")
             if (otaFile.exists()) {
                 val assetBuild = getBuildNumberFromAssets()
                 val otaBuild = getBuildNumberFromFile(otaFile)
-                if (assetBuild >= otaBuild) {
-                    Log.i(TAG, "Xóa ota/index.html cũ do APK (Build $assetBuild) mới hơn hoặc bằng OTA (Build $otaBuild)")
+                if (assetBuild >= otaBuild || otaBuild <= 286) {
+                    Log.i(TAG, "Xóa ota/index.html cũ để nạp bản mới nhất (Asset Build $assetBuild, OTA Build $otaBuild)")
                     otaFile.delete()
                 }
             }
@@ -146,7 +194,7 @@ class HonorLocalServer(
 
         if (uri == "/download-app" || uri == "/LReader.apk") {
             val redirectResp = newFixedLengthResponse(Response.Status.REDIRECT, "text/plain", "Redirecting to APK download...")
-            redirectResp.addHeader("Location", "https://opinion-personality-activities-mailto.trycloudflare.com/download-app")
+            redirectResp.addHeader("Location", "https://memorial-stones-dear-watson.trycloudflare.com/download-app")
             return redirectResp
         }
 
@@ -492,7 +540,7 @@ class HonorLocalServer(
         if (uri == "/api/voices") {
             val catalog = JSONArray().apply {
                 put(JSONObject().apply {
-                    put("id", "BV421_vivn_streaming")
+                    put("id", "vi_female_huong")
                     put("name", "Nhỏ Ngọt Ngào (Truyền Cảm • Audiobook)")
                     put("provider", "capcut")
                     put("lang", "vi")
@@ -558,8 +606,9 @@ class HonorLocalServer(
             return jsonResponse(catalog.toString())
         }
 
-        // 7. API Sinh Giọng Đọc TTSọc TTS
+        // 7. API Sinh Giọng Đọc TTS
         if (uri == "/api/tts" && method == Method.POST) {
+            activeInteractiveRequests.incrementAndGet()
             try {
                 val json = JSONObject(postData)
                 val rawText = json.optString("text", "").trim()
@@ -636,36 +685,6 @@ class HonorLocalServer(
 
                 text = normalizeSpokenText(text)
 
-                // Nhận diện và cắt bỏ từ tượng thanh (Foley SFX Engine)
-                val sfxWordsRaw = "(?:oanh\\s+long(?:\\s+long)?|oành(?:\\s+oành)?|oanh\\s+tạc|oanh\\s+kích|oanh\\s+ầm|xuy(?:\\s+xuy){1,2}|xuy(?=[!?.…~–—]|(?:\\s+một\\s+tiếng))|ầm(?:\\s+ầm){1,2}|ầm\\s+vang|ầm\\s+ào|đùng\\s+đoàng|đùng(?:\\s+đùng)?|đoàng(?:\\s+đoàng)?|bùm(?:\\s+bùm)?|nổ\\s+tung|rầm(?:\\s+rầm)?|bịch(?:\\s+bịch)?|huỵch(?:\\s+huỵch)?|bộp(?:\\s+bộp)?|bốp(?:\\s+bốp)?|chát(?:\\s+chát)?(?![a-zA-Z0-9à-ỹÀ-Ỹ\\s]*(?:chúa|ngắt))|rắc(?:\\s+rắc)?|bành\\s+bành|phanh(?:\\s+phanh)?|leng\\s+keng|keng(?:\\s+keng)?|choang(?:\\s+choang)?|xoảng(?:\\s+xoảng)?|xủng\\s+xoảng|boong(?:\\s+boong)?|coong(?:\\s+coong)?|vun\\s+vút|vút(?:\\s+vút)?|vèo(?:\\s+vèo)?|xẹt(?:\\s+xẹt)?|xoẹt(?:\\s+xoẹt)?|chéo(?:\\s+chéo)?|vù(?:\\s+vù)?|phù(?:\\s+phù)?(?![a-zA-Z0-9à-ỹÀ-Ỹ\\s]*(?:hợp|thủy|hộ|du|hiệu|chú)))"
-                val sfxRegex = Regex("(?i)(?<![\\p{L}\\p{N}])$sfxWordsRaw(?:\\s+một\\s+tiếng)?(?![\\p{L}\\p{N}])")
-                val sfxMatches = sfxRegex.findAll(text).toList()
-
-                val detectedSfxType = if (sfxMatches.isNotEmpty()) {
-                    val first = sfxMatches[0].value.lowercase()
-                    when {
-                        Regex("keng|choang|xoảng|boong|coong").containsMatchIn(first) -> "clash"
-                        Regex("vút|vèo|xẹt|xoẹt|chéo|vù|phù|xuy").containsMatchIn(first) -> "whoosh"
-                        Regex("rầm|bịch|huỵch|bộp|bốp|chát|rắc|bành|phanh").containsMatchIn(first) -> "impact"
-                        else -> "explosion"
-                    }
-                } else null
-
-                if (detectedSfxType != null) {
-                    val sfxCleaned = text.replace(sfxRegex, " ")
-                        .replace(Regex("[\\s,;:!?…–—]+"), " ")
-                        .trim()
-                    if (!sfxCleaned.any { it.isLetterOrDigit() }) {
-                        // Câu thuần túy là từ tượng thanh (ví dụ: "Oanh long!", "Ầm ầm ầm!", "Keng!", "Vút!", "Phanh! Phanh! Phanh!")
-                        val wavBytes = SfxAudioGenerator.generateWav(detectedSfxType, sfxMatches.size)
-                        val resp = newFixedLengthResponse(Response.Status.OK, "audio/wav", ByteArrayInputStream(wavBytes), wavBytes.size.toLong())
-                        resp.addHeader("Cache-Control", "no-cache, no-store, must-revalidate")
-                        return resp
-                    } else {
-                        text = text.replace(sfxRegex, " ")
-                    }
-                }
-
                 if (text.isEmpty() || !text.any { it.isLetterOrDigit() }) {
                     return newFixedLengthResponse(Response.Status.OK, "audio/mpeg", ByteArrayInputStream(ByteArray(0)), 0)
                 }
@@ -674,29 +693,26 @@ class HonorLocalServer(
                 val provider = json.optString("provider", "capcut")
                 val isElevenLabs = provider == "elevenlabs" || voiceId.startsWith("eleven_") || voiceId.contains("almee", true) || voiceId.contains("adam", true)
 
-                // Nếu người dùng chọn giọng Offline AI (offline_*), map sang giọng đọc AI chất lượng cao tương ứng
-                // Tách biệt hoàn toàn: Ban Mai dùng Review Phim, Ngọc Chuyên dùng Nhỏ Ngọt Ngào, Online chuẩn dùng Cô Gái Hoạt Ngôn
+                // Nếu người dùng chọn giọng Offline AI (offline_*), map sang 4 giọng đọc CapCut AI đã kiểm chứng hoạt động 100% (dự phòng khi chưa tải .onnx)
                 var targetVoice = voiceId
                 if (targetVoice == "adam-my" || targetVoice == "adam-us") {
                     targetVoice = "eleven_IRHApOXLvnW57QJPQH2P"
                 } else if (targetVoice == "adam-anh" || targetVoice == "adam") {
                     targetVoice = "eleven_Gsndh0O5AnuI2Hj3YUlA"
+                } else if (targetVoice.contains("BV421", ignoreCase = true) || targetVoice.contains("maiphuong", ignoreCase = true)) {
+                    targetVoice = "vi_female_huong"
+                } else if (targetVoice.contains("thao_vy", ignoreCase = true)) {
+                    targetVoice = "BV074_streaming"
+                } else if (targetVoice.contains("minhquang", ignoreCase = true)) {
+                    targetVoice = "BV075_streaming"
                 } else if (provider == "offline" || targetVoice.startsWith("offline_")) {
-                    val clean = targetVoice.removePrefix("offline_").lowercase()
-                    targetVoice = when {
-                        // Ngọc Chuyên / Ngọc Huyền / Thanh Phương -> Nhỏ Ngọt Ngào BV421 (ấm áp, tình cảm)
-                        clean.contains("ngochuyen") || clean.contains("thanhphuong") -> "BV421_vivn_streaming"
-                        // Ban Mai / Phương Trang -> Review Phim siêu truyền cảm (khác biệt 100% với Cô Gái Hoạt Ngôn BV074)
-                        clean.contains("banmai") || clean.contains("phuongtrang") -> "multi_female_richgirl_uranus_bigtts"
-                        // Nữ nhẹ nhàng / Mai Phương / Ngọc Ngân -> Giọng nữ dịu dàng Hương
-                        clean.contains("calmwoman") || clean.contains("maiphuong") || clean.contains("ngocngan") -> "vi_female_huong"
-                        // Tất cả giọng nam offline -> Nam trầm ấm BV075
-                        else -> "BV075_streaming"
-                    }
+                    // GIỮ NGUYÊN targetVoice cho Offline TTS! Không biến đổi thành CapCut voice ID để tránh ô nhiễm cache và hỏng routing.
+                    // Chỉ fallback sang CapCut nếu và chỉ nếu toàn bộ quá trình Offline và Remote đều thất bại ở cuối.
                 }
 
-                val multiVoice = json.optBoolean("multi_voice", true)
+                val multiVoice = json.optBoolean("multi_voice", false)
                 val emotion = json.optString("emotion", "normal")
+                val reqSpeed = json.optDouble("speed", 1.0).toFloat()
                 if (emotion == "cold" && !text.endsWith("!") && !text.endsWith("?")) {
                     text = text.trimEnd(' ', ',', ';', '…', '-', '–', '—') + "!"
                 }
@@ -707,19 +723,19 @@ class HonorLocalServer(
                 text = text.replace(Regex("[.…~–—\\s]+$"), ".")
                 text = text.replace(Regex(" {2,}"), " ").trim()
 
-                // Check cache sạch: đồng bộ khóa cache đa tầng với Preloader và Web UI
+                // Check cache sạch: phân tách tuyệt đối khóa cache theo giọng gốc (baseVoiceId)
                 val baseVoiceId = json.optString("base_voice_id", json.optString("voice_id", targetVoice)).let {
                     if (it.isEmpty() || it == "default") "BV074_streaming" else it
                 }
-                val cleanBaseId = baseVoiceId.removePrefix("offline_")
-                val cacheKeyCandidates = listOf(
-                    md5("$baseVoiceId:$multiVoice:$emotion:$text"),
-                    md5("$baseVoiceId:$multiVoice:normal:$text"),
-                    md5("$targetVoice:$multiVoice:$emotion:$text"),
-                    md5("$targetVoice:$multiVoice:normal:$text"),
-                    md5("$cleanBaseId:$multiVoice:normal:$text"),
-                    md5("$cleanBaseId:$multiVoice:$emotion:$text")
-                )
+                                var reqSpeakerId = json.optInt("speaker_id", json.optInt("sid", 0))
+                val rawVoiceStr = (json.optString("voice_id", "")).ifEmpty { json.optString("voice", "") }
+                if (rawVoiceStr.contains(":")) {
+                    val p = rawVoiceStr.substringAfterLast(":")
+                    if (p.all { it.isDigit() }) {
+                        reqSpeakerId = p.toInt()
+                    }
+                }
+                val cacheKeyCandidates = getTtsCacheKeys(baseVoiceId, targetVoice, multiVoice, emotion, text, reqSpeakerId)
                 var matchedCacheFile: File? = null
                 for (k in cacheKeyCandidates) {
                     val f = File(cacheDir, "$k.mp3")
@@ -733,18 +749,69 @@ class HonorLocalServer(
                     }
                 }
                 if (matchedCacheFile != null) {
+                    val headerBytes = ByteArray(4)
+                    val isWav = try {
+                        FileInputStream(matchedCacheFile).use { it.read(headerBytes) == 4 && String(headerBytes, Charsets.US_ASCII) == "RIFF" }
+                    } catch (_: Exception) { false }
+                    val mime = if (isWav) "audio/wav" else "audio/mpeg"
                     val fis = FileInputStream(matchedCacheFile)
-                    val resp = newFixedLengthResponse(Response.Status.OK, "audio/mpeg", fis, matchedCacheFile.length())
+                    val resp = newFixedLengthResponse(Response.Status.OK, mime, fis, matchedCacheFile.length())
                     resp.addHeader("Cache-Control", "no-cache, no-store, must-revalidate")
                     return resp
                 }
 
-                val audioBytes = synthesizeAudioUnified(text, targetVoice, multiVoice, isElevenLabs)
+                var audioBytes: ByteArray? = null
+                val checkOfflineId = if (baseVoiceId.startsWith("offline_")) baseVoiceId else voiceId
+                val isOfflineRequest = (provider == "offline" || checkOfflineId.startsWith("offline_"))
+
+
+                // ƯU TIÊN 0 (QUAN TRỌNG NHẤT): ĐỌC TRỰC TIẾP FILE .ONNX TRÊN ĐIỆN THOẠI BẰNG SHERPA-ONNX NATIVE ENGINE (100% OFFLINE)
+                if (isOfflineRequest) {
+                    try {
+                        val onnxFile = resolveDownloadedOnnxFile(checkOfflineId)
+                        if (onnxFile != null && onnxFile.exists() && onnxFile.length() > 5 * 1024 * 1024) {
+                            audioBytes = SherpaOnnxTtsEngine.synthesizeToWavBytes(
+                                context = context,
+                                onnxFile = onnxFile,
+                                text = text,
+                                speed = reqSpeed,
+                                emotion = emotion,
+                                speakerId = reqSpeakerId
+                            )
+                        }
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "Lỗi tổng hợp trực tiếp SherpaOnnxTtsEngine trên máy: ${e.message}")
+                    }
+                }
+
+                // ƯU TIÊN 1: Nếu chưa tải file .onnx về điện thoại, gọi máy chủ PC / Cloudflare để lấy đúng giọng .onnx chuẩn
+                if ((audioBytes == null || audioBytes.isEmpty()) && isOfflineRequest) {
+                    try {
+                        audioBytes = forwardTtsToPcServer(text, checkOfflineId, reqSpeed.toDouble(), reqSpeakerId)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Lỗi forwardTtsToPcServer: ${e.message}")
+                    }
+                }
+
+                // ƯU TIÊN 2: Chỉ dùng CapCut AI cho các giọng Online (tuyệt đối không dùng CapCut/Google TTS làm sai lệch giọng Offline AI)
+                if ((audioBytes == null || audioBytes.isEmpty()) && !isOfflineRequest) {
+                    audioBytes = synthesizeAudioUnified(text, targetVoice, multiVoice, isElevenLabs)
+                }
 
                 val primaryCacheFile = File(cacheDir, "${cacheKeyCandidates[0]}.mp3")
                 return if (audioBytes != null && audioBytes.isNotEmpty()) {
-                    try { primaryCacheFile.writeBytes(audioBytes) } catch (e: Exception) {}
-                    val resp = newFixedLengthResponse(Response.Status.OK, "audio/mpeg", ByteArrayInputStream(audioBytes), audioBytes.size.toLong())
+                    try {
+                        for (k in cacheKeyCandidates) {
+                            File(cacheDir, "$k.mp3").writeBytes(audioBytes)
+                        }
+                    } catch (e: Exception) {}
+                    val isWav = audioBytes.size > 12 &&
+                        audioBytes[0] == 'R'.code.toByte() &&
+                        audioBytes[1] == 'I'.code.toByte() &&
+                        audioBytes[2] == 'F'.code.toByte() &&
+                        audioBytes[3] == 'F'.code.toByte()
+                    val mime = if (isWav) "audio/wav" else "audio/mpeg"
+                    val resp = newFixedLengthResponse(Response.Status.OK, mime, ByteArrayInputStream(audioBytes), audioBytes.size.toLong())
                     resp.addHeader("Cache-Control", "no-cache, no-store, must-revalidate")
                     resp.addHeader("Pragma", "no-cache")
                     resp.addHeader("Expires", "0")
@@ -754,6 +821,8 @@ class HonorLocalServer(
                 }
             } catch (e: Exception) {
                 return jsonResponse("{\"error\":\"${e.message}\"}", Response.Status.INTERNAL_ERROR)
+            } finally {
+                activeInteractiveRequests.decrementAndGet()
             }
         }
 
@@ -888,8 +957,13 @@ class HonorLocalServer(
         }
         if (uri == "/api/preload/status") {
             val bookId = session.parameters["bookId"]?.firstOrNull() ?: ""
-            if (bookId.isNotEmpty() && preloader.currentBookId.isNullOrEmpty()) {
-                preloader.update(bookId, 0)
+            val chParam = session.parameters["chapterIndex"]?.firstOrNull() ?: session.parameters["chapter"]?.firstOrNull()
+            val reqCh = chParam?.toIntOrNull()
+            if (bookId.isNotEmpty()) {
+                val targetCh = reqCh ?: bookManager.getBook(bookId)?.optInt("lastChapter", 0) ?: 0
+                if (preloader.currentBookId != bookId || (reqCh != null && preloader.currentChapter != reqCh)) {
+                    preloader.update(bookId, targetCh)
+                }
             }
             val wCh = if (preloader.workingChapter != null) "${preloader.workingChapter}" else "null"
             return jsonResponse("{\"enabled\":${preloader.isEnabled},\"isWorking\":${preloader.isWorking},\"cachedCount\":${preloader.cachedCount},\"windowTotal\":${preloader.windowTotal},\"workingChapter\":$wCh,\"workingPara\":${preloader.workingPara},\"totalWorkingParas\":${preloader.totalWorkingParas},\"totalBookChapters\":${preloader.totalBookChapters},\"bookId\":\"${preloader.currentBookId ?: ""}\"}")
@@ -905,7 +979,7 @@ class HonorLocalServer(
                     val mVoice = json.optBoolean("multiVoice", json.optBoolean("multi_voice", true))
                     val emo = json.optString("emotion", "normal")
                     val e11 = json.optBoolean("isElevenLabs", false)
-                    val winSize = json.optInt("windowSize", 30)
+                    val winSize = json.optInt("windowSize", 2)
                     if (bookId.isNotEmpty()) {
                         preloader.update(bookId, chIdx, vId, tVoice, mVoice, emo, e11, winSize)
                     }
@@ -922,23 +996,77 @@ class HonorLocalServer(
             return jsonResponse(getOfflineVoicesCatalog().toString())
         }
 
+        if (uri == "/api/debug/offline_status") {
+            val json = JSONObject()
+            val hasAllFiles = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                android.os.Environment.isExternalStorageManager()
+            } else true
+            json.put("permission_all_files", hasAllFiles)
+            json.put("offlineModelsDir", offlineModelsDir.absolutePath)
+            val mailinh = resolveDownloadedOnnxFile("offline_mailinh")
+            json.put("mailinh_path", mailinh?.absolutePath ?: "not_found")
+            json.put("mailinh_size", mailinh?.length() ?: 0L)
+            json.put("mailinh_can_read", mailinh?.canRead() ?: false)
+            val vieneu = resolveDownloadedOnnxFile("offline_vieneu_v3_turbo")
+            json.put("vieneu_path", vieneu?.absolutePath ?: "not_found")
+            json.put("vieneu_size", vieneu?.length() ?: 0L)
+            json.put("vieneu_can_read", vieneu?.canRead() ?: false)
+            val nano = resolveDownloadedOnnxFile("offline_vieneu_v3_nano")
+            json.put("nano_path", nano?.absolutePath ?: "not_found")
+            json.put("nano_size", nano?.length() ?: 0L)
+
+            val allFoundOnnx = mutableListOf<JSONObject>()
+            for (dir in getAllOfflineModelDirs()) {
+                try {
+                    dir.listFiles()?.filter { it.isFile && it.name.endsWith(".onnx", true) }?.forEach { f ->
+                        allFoundOnnx.add(JSONObject().apply {
+                            put("name", f.name)
+                            put("path", f.absolutePath)
+                            put("size", f.length())
+                            put("canRead", f.canRead())
+                        })
+                    }
+                } catch (_: Exception) {}
+            }
+            json.put("found_onnx_files", JSONArray(allFoundOnnx))
+
+            val dirs = getAllOfflineModelDirs().map { it.absolutePath }
+            json.put("scanned_dirs", JSONArray(dirs))
+            return jsonResponse(json.toString(2))
+        }
+
         // 12. API Nghe thử giọng Offline AI
         if (uri.startsWith("/api/offline_voices/demo/")) {
-            val voiceId = uri.substringAfter("/api/offline_voices/demo/")
+            val voiceId = uri.substringAfter("/api/offline_voices/demo/").substringBefore("?").trim()
             try {
-                val demoUrl = "https://cdn.ainovelreader.com/demo_voice/demo_${voiceId}.wav"
-                val req = okhttp3.Request.Builder()
-                    .url(demoUrl)
-                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile)")
-                    .build()
-                val client = okhttp3.OkHttpClient.Builder()
-                    .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-                    .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
-                    .build()
-                val resp = client.newCall(req).execute()
-                val bytes = resp.body?.bytes()
-                if (bytes != null && bytes.isNotEmpty()) {
-                    return newFixedLengthResponse(Response.Status.OK, "audio/wav", ByteArrayInputStream(bytes), bytes.size.toLong())
+                val voiceDef = getPredefinedVoice(voiceId)
+                val demoUrl = voiceDef?.demoUrl?.ifEmpty { null } ?: "https://cdn.ainovelreader.com/demo_voice/demo_${voiceId}.wav"
+                if (demoUrl.isNotEmpty()) {
+                    // Cache file demo trong cacheDir để phát siêu tốc lần sau
+                    val demoCacheDir = File(context.cacheDir, "demo_voices").apply { mkdirs() }
+                    val ext = if (demoUrl.contains(".mp3", ignoreCase = true)) "mp3" else "wav"
+                    val cachedFile = File(demoCacheDir, "${voiceId}_demo.$ext")
+                    if (cachedFile.exists() && cachedFile.length() > 1024) {
+                        val mime = if (ext == "mp3") "audio/mpeg" else "audio/wav"
+                        return newFixedLengthResponse(Response.Status.OK, mime, FileInputStream(cachedFile), cachedFile.length())
+                    }
+                    val req = okhttp3.Request.Builder()
+                        .url(demoUrl)
+                        .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile)")
+                        .build()
+                    val client = okhttp3.OkHttpClient.Builder()
+                        .followRedirects(true)
+                        .followSslRedirects(true)
+                        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                        .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                        .build()
+                    val resp = client.newCall(req).execute()
+                    val bytes = resp.body?.bytes()
+                    if (bytes != null && bytes.isNotEmpty()) {
+                        try { cachedFile.writeBytes(bytes) } catch (_: Exception) {}
+                        val mime = if (ext == "mp3") "audio/mpeg" else "audio/wav"
+                        return newFixedLengthResponse(Response.Status.OK, mime, ByteArrayInputStream(bytes), bytes.size.toLong())
+                    }
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Lỗi nạp audio demo cho $voiceId: ${e.message}")
@@ -961,20 +1089,110 @@ class HonorLocalServer(
             }
         }
 
+        // 14. API Upload mô hình giọng Offline AI (.onnx / .json)
+        if (uri.startsWith("/api/offline_voices/upload") && method == Method.POST) {
+            try {
+                val files = HashMap<String, String>()
+                session.parseBody(files)
+                val params = session.parameters
+                val namesParam = params["names"]?.firstOrNull() ?: ""
+                val namesList = if (namesParam.isNotEmpty()) namesParam.split("|") else emptyList()
+                val uploadedList = JSONArray()
+                val targetDir = offlineModelsDir.apply { mkdirs() }
+
+                val sortedKeys = files.keys.sorted()
+                for ((idx, key) in sortedKeys.withIndex()) {
+                    val tempPath = files[key] ?: continue
+                    val originalName = if (idx < namesList.size && namesList[idx].isNotEmpty()) namesList[idx] else (params[key]?.firstOrNull() ?: key)
+                    val fileObj = File(tempPath)
+                    if (fileObj.exists()) {
+                        val safeName = if (originalName.endsWith(".onnx", true) || originalName.endsWith(".json", true)) {
+                            originalName
+                        } else {
+                            "$originalName.onnx"
+                        }
+                        val dest = File(targetDir, safeName)
+                        fileObj.copyTo(dest, overwrite = true)
+                        uploadedList.put(safeName)
+
+                        // Tự động chuẩn hóa bản sao cho các giọng định sẵn (Mai Linh, VieNeu, Ban Mai)
+                        val clean = safeName.lowercase().replace(" ", "").replace("-", "_")
+                        if (safeName.endsWith(".onnx", true)) {
+                            if (clean.contains("mailinh")) {
+                                dest.copyTo(File(targetDir, "mailinh250626.onnx"), overwrite = true)
+                                dest.copyTo(File(targetDir, "mailinh.onnx"), overwrite = true)
+                            } else if (clean.contains("diemdam") || clean.contains("turbo") || clean.contains("vieneu") || clean.contains("vietneu")) {
+                                dest.copyTo(File(targetDir, "vieneu_v3_turbo.onnx"), overwrite = true)
+                            } else if (clean.contains("altotram") || clean.contains("nano")) {
+                                dest.copyTo(File(targetDir, "vieneu_v3_nano.onnx"), overwrite = true)
+                            } else if (clean.contains("banmai") || clean.contains("vais")) {
+                                dest.copyTo(File(targetDir, "banmai.onnx"), overwrite = true)
+                            }
+                        } else if (safeName.endsWith(".json", true)) {
+                            if (clean.contains("mailinh")) {
+                                dest.copyTo(File(targetDir, "mailinh250626.onnx.json"), overwrite = true)
+                                dest.copyTo(File(targetDir, "mailinh.onnx.json"), overwrite = true)
+                            } else if (clean.contains("diemdam") || clean.contains("turbo") || clean.contains("vieneu") || clean.contains("vietneu")) {
+                                dest.copyTo(File(targetDir, "vieneu_v3_turbo.onnx.json"), overwrite = true)
+                            } else if (clean.contains("altotram") || clean.contains("nano")) {
+                                dest.copyTo(File(targetDir, "vieneu_v3_nano.onnx.json"), overwrite = true)
+                            } else if (clean.contains("banmai") || clean.contains("vais")) {
+                                dest.copyTo(File(targetDir, "banmai.onnx.json"), overwrite = true)
+                            }
+                        }
+                    }
+                }
+                return jsonResponse(JSONObject().apply {
+                    put("status", "ok")
+                    put("uploaded", uploadedList)
+                }.toString())
+            } catch (e: Exception) {
+                Log.e(TAG, "Lỗi upload mô hình giọng đọc: ${e.message}", e)
+                return jsonResponse("{\"error\":\"${e.message}\"}", Response.Status.INTERNAL_ERROR)
+            }
+        }
+
         // 14. API Xóa mô hình giọng Offline AI giải phóng bộ nhớ
         if (uri == "/api/offline_voices/delete" && method == Method.POST) {
             try {
                 val json = JSONObject(postData)
                 val voiceId = json.optString("voice_id", "").trim()
                 if (voiceId.isNotEmpty()) {
-                    val onnxFile = File(offlineModelsDir, "$voiceId.onnx")
-                    val jsonFile = File(offlineModelsDir, "$voiceId.onnx.json")
-                    if (onnxFile.exists()) onnxFile.delete()
-                    if (jsonFile.exists()) jsonFile.delete()
+                    val voiceDef = getPredefinedVoice(voiceId)
+                    val targetFileName = voiceDef?.fileName ?: "$voiceId.onnx"
+                    for (dir in getAllOfflineModelDirs()) {
+                        val toDelete = listOf(
+                            File(dir, targetFileName),
+                            File(dir, "$targetFileName.json"),
+                            File(dir, "$targetFileName.tmp"),
+                            File(dir, "$voiceId.onnx"),
+                            File(dir, "$voiceId.onnx.json"),
+                            File(dir, "$voiceId.onnx.tmp")
+                        )
+                        for (f in toDelete) {
+                            if (f.exists()) f.delete()
+                        }
+                    }
                     downloadStatusMap.remove(voiceId)
                     return jsonResponse("{\"success\":true,\"voice_id\":\"$voiceId\"}")
                 }
                 return jsonResponse("{\"error\":\"Thiếu voice_id\"}", Response.Status.BAD_REQUEST)
+            } catch (e: Exception) {
+                return jsonResponse("{\"error\":\"${e.message}\"}", Response.Status.INTERNAL_ERROR)
+            }
+        }
+
+        // 14b. API Xóa cache âm thanh khi đổi giọng đọc
+        if (uri == "/api/cache/clear" && (method == Method.POST || method == Method.GET)) {
+            try {
+                preloader.notifyCacheCleared()
+                var count = 0
+                cacheDir.listFiles()?.forEach { f ->
+                    if (f.name.endsWith(".mp3") || f.name.endsWith(".wav")) {
+                        if (f.delete()) count++
+                    }
+                }
+                return jsonResponse("{\"success\":true,\"cleared\":$count}")
             } catch (e: Exception) {
                 return jsonResponse("{\"error\":\"${e.message}\"}", Response.Status.INTERNAL_ERROR)
             }
@@ -1003,13 +1221,13 @@ class HonorLocalServer(
         if (uri == "/api/ota/update" && method == Method.POST) {
             try {
                 val json = JSONObject(postData)
-                val serverUrl = json.optString("server_url", "https://opinion-personality-activities-mailto.trycloudflare.com").trimEnd('/')
+                val serverUrl = json.optString("server_url", "https://memorial-stones-dear-watson.trycloudflare.com").trimEnd('/')
                 var htmlContent = json.optString("html_content", "")
 
                 if (htmlContent.isEmpty()) {
                     val candidateUrls = mutableListOf<String>()
                     if (serverUrl.isNotEmpty()) candidateUrls.add(serverUrl)
-                    val fallback3G = "https://opinion-personality-activities-mailto.trycloudflare.com"
+                    val fallback3G = "https://memorial-stones-dear-watson.trycloudflare.com"
                     val fallbackWifi = "http://192.168.1.204:5000"
                     if (!candidateUrls.contains(fallback3G)) candidateUrls.add(fallback3G)
                     if (!candidateUrls.contains(fallbackWifi)) candidateUrls.add(fallbackWifi)
@@ -1082,76 +1300,290 @@ class HonorLocalServer(
         return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found")
     }
 
-    private val offlineModelsDir = File(context.filesDir, "piper_models").apply { mkdirs() }
+    val offlineModelsDir: File
+        get() {
+            // 1. Ưu tiên cao nhất: Thư mục chuyên biệt của App trên bộ nhớ ngoài (Luôn đọc/ghi được 100% không bao giờ bị Scoped Storage chặn)
+            try {
+                val extAppDir = context.getExternalFilesDir("models")
+                if (extAppDir != null && (extAppDir.exists() || extAppDir.mkdirs()) && extAppDir.canWrite()) {
+                    return extAppDir
+                }
+            } catch (_: Exception) {}
+
+            // 2. Thư mục trên bộ nhớ dùng chung người dùng (nếu có quyền truy cập toàn bộ tệp)
+            try {
+                val vnloadDir = File(Environment.getExternalStorageDirectory(), "vnload/HonorReader/models")
+                if (vnloadDir.exists() || vnloadDir.mkdirs()) {
+                    if (vnloadDir.canWrite()) return vnloadDir
+                }
+            } catch (_: Exception) {}
+            try {
+                val pubDownloads = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "HonorReader/models")
+                if (pubDownloads.exists() || pubDownloads.mkdirs()) {
+                    if (pubDownloads.canWrite()) return pubDownloads
+                }
+            } catch (_: Exception) {}
+
+            // 3. Fallback an toàn tuyệt đối: Bộ nhớ trong private của App
+            return File(context.filesDir, "models").apply { mkdirs() }
+        }
+
+    private fun getAllOfflineModelDirs(): List<File> {
+        val dirs = LinkedHashSet<File>()
+
+        fun addDir(d: File?) {
+            if (d != null && d.exists() && d.isDirectory) {
+                dirs.add(d)
+            }
+        }
+
+        fun scanRecursive(dir: File?, currentDepth: Int, maxDepth: Int) {
+            if (dir == null || !dir.exists() || !dir.isDirectory || currentDepth > maxDepth) return
+            try {
+                addDir(dir)
+                val children = dir.listFiles() ?: return
+                for (child in children) {
+                    if (child.isDirectory && !child.name.startsWith(".") && !child.name.equals("Android", ignoreCase = true)) {
+                        scanRecursive(child, currentDepth + 1, maxDepth)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        // TẦNG 1: Toàn bộ thư mục App Private (Luôn truy cập 100% KHÔNG CẦN BẤT KỲ QUYỀN NÀO)
+        try { addDir(File(context.filesDir, "models")) } catch (_: Exception) {}
+        try { addDir(File(context.filesDir, "piper_offline_tts")) } catch (_: Exception) {}
+        try { addDir(File(context.filesDir, "piper_models")) } catch (_: Exception) {}
+        try { addDir(context.filesDir) } catch (_: Exception) {}
+        try { addDir(File(context.cacheDir, "models")) } catch (_: Exception) {}
+
+        // TẦNG 2: App-Specific External Storage (Không cần quyền READ_EXTERNAL_STORAGE / MANAGE_EXTERNAL_STORAGE)
+        try { addDir(context.getExternalFilesDir("models")) } catch (_: Exception) {}
+        try { addDir(context.getExternalFilesDir("piper_models")) } catch (_: Exception) {}
+        try { addDir(context.getExternalFilesDir("piper_offline_tts")) } catch (_: Exception) {}
+        try { addDir(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)) } catch (_: Exception) {}
+        try { scanRecursive(context.getExternalFilesDir(null), 1, 2) } catch (_: Exception) {}
+
+        // TẦNG 3: Bộ nhớ ngoài công cộng (Download, vnload, HonorReader, Thư mục gốc)
+        val roots = mutableListOf<File>()
+        try { roots.add(File(Environment.getExternalStorageDirectory(), "vnload/HonorReader/models")) } catch (_: Exception) {}
+        try { roots.add(File(Environment.getExternalStorageDirectory(), "Download/HonorReader/models")) } catch (_: Exception) {}
+        try { roots.add(File(Environment.getExternalStorageDirectory(), "HonorReader/models")) } catch (_: Exception) {}
+        try { roots.add(File(Environment.getExternalStorageDirectory(), "vnload/HonorReader")) } catch (_: Exception) {}
+        try { roots.add(File(Environment.getExternalStorageDirectory(), "vnload")) } catch (_: Exception) {}
+        try { roots.add(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)) } catch (_: Exception) {}
+        try { roots.add(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)) } catch (_: Exception) {}
+        try { roots.add(Environment.getExternalStorageDirectory()) } catch (_: Exception) {}
+
+        for (root in roots) {
+            try {
+                addDir(root)
+                val subs = root.listFiles()?.filter { it.isDirectory && !it.name.startsWith(".") && !it.name.equals("Android", ignoreCase = true) } ?: emptyList()
+                for (sub in subs) {
+                    scanRecursive(sub, 1, 2)
+                }
+            } catch (_: Exception) {}
+        }
+
+        return dirs.toList()
+    }
+
+    private fun findModelFile(fileName: String): File {
+        for (dir in getAllOfflineModelDirs()) {
+            val f = File(dir, fileName)
+            if (f.exists() && f.length() > 5 * 1024 * 1024 && f.canRead()) {
+                return f
+            }
+        }
+        return File(offlineModelsDir, fileName)
+    }
+
+    /**
+     * Tìm file .onnx thực tế trên điện thoại cho voiceId được chọn.
+     * Quét thông minh qua tất cả thư mục bộ nhớ ngoài & trong.
+     */
+    fun resolveDownloadedOnnxFile(voiceId: String): File? {
+        val clean = voiceId.removePrefix("offline_").trim().lowercase()
+        val voiceDef = getPredefinedVoice(clean)
+
+        // Danh sách tất cả file .onnx thực tế trên toàn bộ các thư mục
+        val allModelFiles = mutableListOf<File>()
+        for (dir in getAllOfflineModelDirs()) {
+            try {
+                dir.listFiles()?.filter {
+                    it.isFile && it.name.endsWith(".onnx", ignoreCase = true) && it.canRead() && it.length() > 5 * 1024 * 1024L
+                }?.forEach { f ->
+                    if (allModelFiles.none { it.absolutePath == f.absolutePath }) {
+                        allModelFiles.add(f)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        if (allModelFiles.isEmpty()) return null
+
+        // 1. Thử tìm khớp tên chính xác (Exact Match)
+        val candidates = mutableListOf<String>()
+        if (clean.contains("kokoro")) {
+            candidates.add("kokoro_vi.onnx")
+            candidates.add("kokoro.onnx")
+            candidates.add("kokoro_vi_sherpa_final.onnx")
+        }
+        if (voiceDef != null) {
+            val fn = voiceDef.fileName.lowercase()
+            if (fn.endsWith(".zip")) {
+                candidates.add(fn.replace(".zip", ".onnx"))
+                candidates.add(fn.replace("_package.zip", ".onnx"))
+            } else {
+                candidates.add(fn)
+            }
+        }
+        candidates.add("$clean.onnx")
+        if (clean.contains("vieneu") || clean.contains("vietneu") || clean.contains("multi")) {
+            candidates.add("vieneu_v3_turbo.onnx")
+            candidates.add("vieneu_turbo.onnx")
+            candidates.add("vieneu_v3.onnx")
+            candidates.add("vieneu.onnx")
+        }
+
+        var matched: File? = null
+        for (cand in candidates.distinct()) {
+            val matching = allModelFiles.filter { it.name.equals(cand, ignoreCase = true) && it.canRead() }
+            val best = matching.maxByOrNull { it.length() }
+            if (best != null && best.length() > 10 * 1024 * 1024L) {
+                matched = best
+                break
+            }
+        }
+
+        // 2. Khớp thông minh mờ: CHỈ khớp fuzzy khi voiceId thực sự là VieNeu hoặc Multi-Speaker!
+        // Tuyệt đối không fallback sang VieNeu cho các giọng VITS đơn lẻ (banmai, manhdung...) nếu chưa tải file tương ứng.
+        val isVitsSingle = clean in listOf("banmai", "manhdung", "calmwoman3688", "ngochuyennew", "deepman3909")
+        val isKokoroTarget = clean.contains("kokoro")
+        val matchedFuzzy = if (matched != null || isVitsSingle || isKokoroTarget) null else {
+            val fuzzyMatches = allModelFiles.filter { file ->
+                val fn = file.name.lowercase().replace(" ", "").replace("-", "_")
+                val isMatch = (fn.contains("vieneu") || fn.contains("vietneu")) && file.length() > 10 * 1024 * 1024L
+                isMatch && file.canRead()
+            }
+            fuzzyMatches.maxByOrNull { it.length() }
+        }
+
+        val result = matched ?: matchedFuzzy ?: return null
+        return result
+    }
+
+    data class PredefinedVoiceInfo(
+        val id: String,
+        val name: String,
+        val gender: String,
+        val accent: String,
+        val desc: String,
+        val fileName: String,
+        val onnxUrl: String,
+        val jsonUrl: String,
+        val demoUrl: String,
+        val defaultSizeMb: Double
+    )
+
+    private val PREDEFINED_OFFLINE_VOICES = listOf(
+        PredefinedVoiceInfo(
+            id = "kokoro_vietnamese",
+            name = "Kokoro-Vietnamese (NSƯT Kim Cúc & 14 Giọng Cao Cấp)",
+            gender = "Đa giọng (Nam & Nữ)",
+            accent = "Bắc, Trung & Nam",
+            desc = "Mô hình Kokoro Neural thế hệ mới 24kHz: NSƯT Kim Cúc (Đọc Truyện Đêm Khuya), Diễm Trinh, Mạnh Dũng, Ngọc Huyền, Mai Loan, Hưng Thịnh... Zero delay khi đổi giọng thoại (~287 MB)",
+            fileName = "kokoro_vi_package.zip",
+            onnxUrl = "https://memorial-stones-dear-watson.trycloudflare.com/static/kokoro_vi_package.zip",
+            jsonUrl = "",
+            demoUrl = "https://memorial-stones-dear-watson.trycloudflare.com/static/turn_0_sid13.wav",
+            defaultSizeMb = 287.0
+        ),
+        PredefinedVoiceInfo(
+            id = "vieneu_multispeaker",
+            name = "VITS Multi-Speaker Đa Giọng Gốc (12 Giọng)",
+            gender = "Đa giọng (Nam & Nữ)",
+            accent = "Bắc & Nam",
+            desc = "Mô hình VITS 5 giọng gốc độc lập (Ngọc Lan, Minh Anh, Quang Huy, Thu Hà, Yến Nhi) + biến điệu Ông/Bà lão & Bé trai/gái (~73.5 MB)",
+            fileName = "vieneu_v3_turbo.onnx",
+            onnxUrl = "https://memorial-stones-dear-watson.trycloudflare.com/api/offline_voices/models/vieneu_v3_turbo.onnx",
+            jsonUrl = "https://memorial-stones-dear-watson.trycloudflare.com/api/offline_voices/models/vieneu_v3_turbo.onnx.json",
+            demoUrl = "https://memorial-stones-dear-watson.trycloudflare.com/api/offline_voices/models/vieneu_v3_turbo_demo.wav",
+            defaultSizeMb = 73.5
+        )
+    )
+
+    private fun getPredefinedVoice(voiceId: String): PredefinedVoiceInfo? {
+        val clean = voiceId.removePrefix("offline_").lowercase()
+        return PREDEFINED_OFFLINE_VOICES.firstOrNull { it.id.lowercase() == clean }
+    }
+
     private val downloadStatusMap = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     private fun getOfflineVoicesCatalog(): JSONArray {
         val list = JSONArray()
-        val rawVoices = listOf(
-            Triple("banmai", "Ban Mai", "Nữ" to "Bắc"),
-            Triple("ngochuyennew", "Ngọc Huyền", "Nữ" to "Bắc"),
-            Triple("deepman3909", "Nam Trầm", "Nam" to "Bắc"),
-            Triple("calmwoman3688", "Nữ nhẹ nhàng", "Nữ" to "Bắc"),
-            Triple("manhdung", "Mạnh Dũng", "Nam" to "Bắc"),
-            Triple("maiphuong", "Mai Phương", "Nữ" to "Bắc"),
-            Triple("minhkhang", "Minh Khang", "Nam" to "Bắc"),
-            Triple("minhquang", "Minh Quang", "Nam" to "Bắc"),
-            Triple("phuongtrang", "Phương Trang", "Nữ" to "Bắc"),
-            Triple("duyoryx3175", "Duy", "Nam" to "Nam"),
-            Triple("chieuthanh", "Chiếu Thành", "Nam" to "Bắc"),
-            Triple("ngocngan3701", "Ngọc Ngân", "Nữ" to "Nam"),
-            Triple("thanhphuong2", "Thanh Phương", "Nữ" to "Bắc"),
-            Triple("vietthao3886", "Việt Thao", "Nam" to "Bắc"),
-            Triple("thientam", "Thiện Tâm", "Nam" to "Bắc"),
-            Triple("taian4", "Tài An", "Nam" to "Bắc"),
-            Triple("lacphi", "Lạc Phi", "Nam" to "Bắc"),
-            Triple("ngochuyen", "Ngọc Chuyên", "Nữ" to "Bắc")
-        )
 
-        val descMap = mapOf(
-            "banmai" to "Giọng nữ miền Bắc trẻ trung, tự nhiên, truyền cảm",
-            "ngochuyennew" to "Giọng nữ truyền cảm, mượt mà, chuyên đọc truyện tình cảm",
-            "deepman3909" to "Giọng nam trầm ấm, hào sảng, hợp truyện tiên hiệp, kiếm hiệp",
-            "calmwoman3688" to "Giọng nữ nhẹ nhàng, êm dịu, dễ ngủ",
-            "manhdung" to "Giọng nam chững chạc, rõ ràng, dứt khoát",
-            "maiphuong" to "Giọng nữ ấm áp, lưu loát",
-            "minhkhang" to "Giọng nam thanh niên hiện đại, tự nhiên",
-            "minhquang" to "Giọng nam đĩnh đạc, rõ từng từ",
-            "phuongtrang" to "Giọng nữ trong trẻo, nhẹ nhàng",
-            "duyoryx3175" to "Giọng nam miền Nam gần gũi, biểu cảm",
-            "chieuthanh" to "Giọng nam truyền thống, kể chuyện đêm khuya",
-            "ngocngan3701" to "Giọng nữ miền Nam thanh thoát, ngọt ngào",
-            "thanhphuong2" to "Giọng nữ đằm thắm, giàu cảm xúc",
-            "vietthao3886" to "Giọng nam trầm, lôi cuốn",
-            "thientam" to "Giọng nam ấm, thanh bình",
-            "taian4" to "Giọng nam khỏe khoắn, tươi vui",
-            "lacphi" to "Giọng nam bí ẩn, hấp dẫn",
-            "ngochuyen" to "Giọng nữ sâu lắng"
-        )
+        for (v in PREDEFINED_OFFLINE_VOICES) {
+            val resolvedFile = resolveDownloadedOnnxFile(v.id)
+            val isDl = resolvedFile != null && resolvedFile.exists() && resolvedFile.length() > 5 * 1024 * 1024
+            val targetFile = resolvedFile ?: findModelFile(v.fileName)
+            val status = if (isDl) "completed" else (downloadStatusMap[v.id] ?: "idle")
 
-        for ((id, name, pair) in rawVoices) {
-            val gender = pair.first
-            val accent = pair.second
-            val onnxFile = File(offlineModelsDir, "$id.onnx")
-            val isDl = onnxFile.exists() && onnxFile.length() > 5 * 1024 * 1024
-            val status = downloadStatusMap[id] ?: "idle"
+            val subvoicesArr = JSONArray()
+            val subArray = if (v.id.contains("kokoro", ignoreCase = true)) {
+                listOf(
+                    JSONObject().put("sid", 14).put("id", "kim_cuc").put("name", "NSƯT Kim Cúc (Đọc Truyện Đêm Khuya VOV)").put("gender", "Nữ").put("age", "Trưởng thành").put("region", "Bắc").put("desc", "Giọng đọc vàng huyền thoại, trầm ấm, truyền cảm, ngân nga diễn cảm đỉnh cao").put("demo_file", "turn_0_sid13.wav"),
+                    JSONObject().put("sid", 1).put("id", "diem_trinh").put("name", "Diễm Trinh (Nữ miền Nam)").put("gender", "Nữ").put("age", "Trưởng thành").put("region", "Nam").put("desc", "Giọng nữ miền Nam dịu dàng, trong trẻo, tự nhiên").put("demo_file", "turn_1_sid0.wav"),
+                    JSONObject().put("sid", 2).put("id", "manh_dung").put("name", "Mạnh Dũng (Nam miền Bắc)").put("gender", "Nam").put("age", "Trưởng thành").put("region", "Bắc").put("desc", "Giọng nam miền Bắc dõng dạc, khí chất, đĩnh đạc").put("demo_file", "turn_2_sid4.wav"),
+                    JSONObject().put("sid", 3).put("id", "ngoc_huyen").put("name", "Ngọc Huyền (Nữ trẻ miền Bắc)").put("gender", "Nữ").put("age", "Thanh niên").put("region", "Bắc").put("desc", "Giọng nữ Bắc thanh tú, nhẹ nhàng, biểu cảm").put("demo_file", "csa_1.wav"),
+                    JSONObject().put("sid", 4).put("id", "hung_thinh").put("name", "Hưng Thịnh (Nam miền Nam)").put("gender", "Nam").put("age", "Trưởng thành").put("region", "Nam").put("desc", "Giọng nam miền Nam ấm áp, hào sảng, chân thành").put("demo_file", "csa_2.wav"),
+                    JSONObject().put("sid", 13).put("id", "mai_loan").put("name", "Mai Loan (Nữ miền Bắc)").put("gender", "Nữ").put("age", "Trưởng thành").put("region", "Bắc").put("desc", "Giọng nữ truyền cảm, ấm áp, sâu lắng").put("demo_file", "csa_3.wav"),
+                    JSONObject().put("sid", 5).put("id", "thanh_dat").put("name", "Thành Đạt (Nam trẻ năng động)").put("gender", "Nam").put("age", "Thanh niên").put("region", "Bắc").put("desc", "Giọng nam trẻ năng động, tự tin").put("demo_file", "hai_dang.wav"),
+                    JSONObject().put("sid", 6).put("id", "tuan_ngoc").put("name", "Tuấn Ngọc (Nam trầm ấm)").put("gender", "Nam").put("age", "Trưởng thành").put("region", "Bắc").put("desc", "Giọng nam điềm đạm, ấm áp, từng trải").put("demo_file", "thai_son.wav"),
+                    JSONObject().put("sid", 7).put("id", "phat_tai").put("name", "Phát Tài (Nam Nam Bộ)").put("gender", "Nam").put("age", "Trưởng thành").put("region", "Nam").put("desc", "Giọng nam vui tươi, thân thiện, phóng khoáng").put("demo_file", "adam_bua.wav"),
+                    JSONObject().put("sid", 8).put("id", "ong_lao").put("name", "Ông lão (Trầm khàn, chậm rãi)").put("gender", "Nam").put("age", "Người già").put("region", "Bắc").put("desc", "Giọng cụ ông từng trải, trầm ấm, chậm rãi").put("demo_file", "csa_ong_lao.wav"),
+                    JSONObject().put("sid", 9).put("id", "ba_lao").put("name", "Bà lão (Hiền từ, từ tốn)").put("gender", "Nữ").put("age", "Người già").put("region", "Bắc").put("desc", "Giọng bà cụ hiền từ, phúc hậu, từ tốn").put("demo_file", "csa_ba_lao.wav"),
+                    JSONObject().put("sid", 10).put("id", "be_trai").put("name", "Bé trai (Lanh lợi, tinh nghịch)").put("gender", "Nam").put("age", "Trẻ em").put("region", "Bắc").put("desc", "Giọng bé trai ngây thơ, líu lo, tinh nghịch").put("demo_file", "csa_be_trai.wav"),
+                    JSONObject().put("sid", 11).put("id", "be_gai").put("name", "Bé gái (Trong trẻo, ngọt ngào)").put("gender", "Nữ").put("age", "Trẻ em").put("region", "Bắc").put("desc", "Giọng bé gái dễ thương, ngọt ngào, trong trẻo").put("demo_file", "csa_be_gai.wav")
+                )
+            } else {
+                listOf(
+                    JSONObject().put("sid", 0).put("id", "ngoc_lan").put("name", "Ngọc Lan (Dẫn chuyện - Nữ Bắc)").put("gender", "Nữ").put("age", "Trưởng thành").put("region", "Bắc").put("desc", "Giọng nữ Bắc dẫn chuyện truyền cảm, ấm áp, âm sắc tự nhiên gốc").put("demo_file", "csa_0.wav"),
+                    JSONObject().put("sid", 1).put("id", "minh_anh").put("name", "Minh Anh (Nữ chính - Nữ Bắc thanh tú)").put("gender", "Nữ").put("age", "Trưởng thành").put("region", "Bắc").put("desc", "Giọng nữ Bắc thanh thoát, phong cách kể chuyện trong trẻo gốc").put("demo_file", "csa_1.wav"),
+                    JSONObject().put("sid", 2).put("id", "quang_huy").put("name", "Quang Huy (Nam chính - Nam Bắc hào sảng)").put("gender", "Nam").put("age", "Trưởng thành").put("region", "Bắc").put("desc", "Giọng nam Bắc trầm ấm, dõng dạc, khí chất nam chính gốc").put("demo_file", "csa_2.wav"),
+                    JSONObject().put("sid", 3).put("id", "thu_ha").put("name", "Thu Hà (Nữ dịu dàng - Nữ Bắc)").put("gender", "Nữ").put("age", "Trưởng thành").put("region", "Bắc").put("desc", "Giọng nữ Bắc nhẹ nhàng, thanh lịch, êm tai gốc").put("demo_file", "csa_3.wav"),
+                    JSONObject().put("sid", 4).put("id", "yen_nhi").put("name", "Yến Nhi (Nữ Nam Bộ ngọt ngào)").put("gender", "Nữ").put("age", "Trưởng thành").put("region", "Nam").put("desc", "Giọng nữ miền Nam chuẩn âm sắc Nam Bộ tự nhiên gốc").put("demo_file", "csa_4.wav"),
+                    JSONObject().put("sid", 5).put("id", "hai_dang").put("name", "Hải Đăng (Nam trẻ trung - Nam Bắc)").put("gender", "Nam").put("age", "Thanh niên").put("region", "Bắc").put("desc", "Giọng nam trẻ trung, nhanh nhẹn, tươi sáng").put("demo_file", "hai_dang.wav"),
+                    JSONObject().put("sid", 6).put("id", "thai_son").put("name", "Thái Sơn (Nam trầm - Nam Bắc)").put("gender", "Nam").put("age", "Trưởng thành").put("region", "Bắc").put("desc", "Giọng nam trầm ấm, điềm đạm, nội lực").put("demo_file", "thai_son.wav"),
+                    JSONObject().put("sid", 7).put("id", "adam_bua").put("name", "Adam (Nam vui vẻ - Nam Bắc)").put("gender", "Nam").put("age", "Trưởng thành").put("region", "Bắc").put("desc", "Giọng nam hoạt bát, dí dỏm, biểu cảm phong phú").put("demo_file", "adam_bua.wav"),
+                    JSONObject().put("sid", 8).put("id", "ong_lao").put("name", "Ông lão (Người già Nam - Trầm khàn)").put("gender", "Nam").put("age", "Người già").put("region", "Bắc").put("desc", "Giọng cụ ông từng trải, trầm ấm, chậm rãi").put("demo_file", "csa_ong_lao.wav"),
+                    JSONObject().put("sid", 9).put("id", "ba_lao").put("name", "Bà lão (Người già Nữ - Ấm áp)").put("gender", "Nữ").put("age", "Người già").put("region", "Nam").put("desc", "Giọng bà cụ hiền từ, phúc hậu, từ tốn").put("demo_file", "csa_ba_lao.wav"),
+                    JSONObject().put("sid", 10).put("id", "be_trai").put("name", "Bé trai (Trẻ con Nam - Lanh lợi)").put("gender", "Nam").put("age", "Trẻ em").put("region", "Bắc").put("desc", "Giọng bé trai ngây thơ, líu lo, tinh nghịch").put("demo_file", "csa_be_trai.wav"),
+                    JSONObject().put("sid", 11).put("id", "be_gai").put("name", "Bé gái (Trẻ con Nữ - Trong veo)").put("gender", "Nữ").put("age", "Trẻ em").put("region", "Bắc").put("desc", "Giọng bé gái dễ thương, ngọt ngào, trong trẻo").put("demo_file", "csa_be_gai.wav")
+                )
+            }
+            for (sub in subArray) {
+                subvoicesArr.put(sub)
+            }
 
             list.put(JSONObject().apply {
-                put("id", id)
-                put("full_id", "offline_$id")
-                put("name", name)
-                put("gender", gender)
-                put("accent", accent)
-                put("desc", descMap[id] ?: "Giọng đọc AI tự nhiên")
-                put("fileName", "$id.onnx")
+                put("id", v.id)
+                put("full_id", "offline_${v.id}")
+                put("name", v.name)
+                put("gender", v.gender)
+                put("accent", v.accent)
+                put("desc", v.desc)
+                put("fileName", v.fileName)
                 put("is_downloaded", isDl)
                 put("download_status", status)
-                put("file_size_mb", if (isDl) (onnxFile.length() / (1024.0 * 1024.0)).let { Math.round(it * 10) / 10.0 } else 63.5)
-                put("onnxUrl", "https://cdn.ainovelreader.com/tts_model/$id.onnx")
-                put("jsonUrl", "https://cdn.ainovelreader.com/tts_model/$id.onnx.json")
-                put("demoUrl", "https://cdn.ainovelreader.com/demo_voice/demo_${id}.wav")
+                put("file_size_mb", if (isDl) (targetFile.length() / (1024.0 * 1024.0)).let { Math.round(it * 10) / 10.0 } else v.defaultSizeMb)
+                put("onnxUrl", v.onnxUrl)
+                put("jsonUrl", v.jsonUrl)
+                put("demoUrl", v.demoUrl)
+                put("subvoices", subvoicesArr)
             })
         }
+
         return list
     }
 
@@ -1159,55 +1591,169 @@ class HonorLocalServer(
         val cur = downloadStatusMap[voiceId]
         if (cur != null && cur.startsWith("downloading")) return
 
+        val voiceDef = getPredefinedVoice(voiceId)
+        val onnxUrl = voiceDef?.onnxUrl ?: "https://cdn.ainovelreader.com/tts_model/$voiceId.onnx"
+        val jsonUrl = voiceDef?.jsonUrl ?: "https://cdn.ainovelreader.com/tts_model/$voiceId.onnx.json"
+        val targetFileName = voiceDef?.fileName ?: "$voiceId.onnx"
+
         downloadStatusMap[voiceId] = "downloading_0%"
         Thread {
             try {
+                val targetDir = offlineModelsDir.apply { mkdirs() }
                 val client = okhttp3.OkHttpClient.Builder()
-                    .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                    .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+                    .followRedirects(true)
+                    .followSslRedirects(true)
+                    .connectTimeout(25, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(300, java.util.concurrent.TimeUnit.SECONDS)
                     .build()
 
+                // Danh sách URL dự phòng cho file JSON metadata
+                val jsonCandidates = mutableListOf<String>()
+                jsonCandidates.add("https://memorial-stones-dear-watson.trycloudflare.com/api/offline_voices/models/$targetFileName.json")
+                jsonCandidates.add("http://192.168.1.204:5000/api/offline_voices/models/$targetFileName.json")
+                if (jsonUrl.isNotEmpty() && !jsonCandidates.contains(jsonUrl)) jsonCandidates.add(jsonUrl)
+                when (voiceId.lowercase()) {
+                    "mailinh" -> jsonCandidates.add("https://huggingface.co/beyoru/MaiLinh-TTS-CoreML/resolve/main/Mai%20Linh/mailinh250626.onnx.json")
+                    "vieneu_v3_turbo" -> jsonCandidates.add("https://huggingface.co/vnhellboy/vietnamese-piper-voices/resolve/main/vits-piper-vi_VN-diemdam-medium/vi_VN-diemdam-medium.onnx.json")
+                    "vieneu_v3_nano" -> jsonCandidates.add("https://huggingface.co/vnhellboy/vietnamese-piper-voices/resolve/main/vits-piper-vi_VN-altotram-medium/vi_VN-altotram-medium.onnx.json")
+                    "banmai" -> jsonCandidates.add("https://huggingface.co/rhasspy/piper-voices/resolve/main/vi/vi_VN/vais1000/medium/vi_VN-vais1000-medium.onnx.json")
+                }
+
                 // 1. Tải JSON metadata
-                val jsonUrl = "https://cdn.ainovelreader.com/tts_model/$voiceId.onnx.json"
-                val jsonReq = okhttp3.Request.Builder().url(jsonUrl).header("User-Agent", "Mozilla/5.0").build()
-                client.newCall(jsonReq).execute().use { resp ->
-                    val bytes = resp.body?.bytes()
-                    if (bytes != null) {
-                        File(offlineModelsDir, "$voiceId.onnx.json").writeBytes(bytes)
+                for (jUrl in jsonCandidates) {
+                    try {
+                        val jsonReq = okhttp3.Request.Builder()
+                            .url(jUrl)
+                            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile)")
+                            .build()
+                        client.newCall(jsonReq).execute().use { resp ->
+                            if (resp.isSuccessful) {
+                                val bytes = resp.body?.bytes()
+                                if (bytes != null && bytes.size > 50) {
+                                    File(targetDir, "$targetFileName.json").writeBytes(bytes)
+                                    return@use
+                                }
+                            }
+                        }
+                        if (File(targetDir, "$targetFileName.json").exists()) break
+                    } catch (eJ: Exception) {
+                        Log.w(TAG, "Lỗi tải json từ $jUrl: ${eJ.message}")
                     }
                 }
 
-                // 2. Tải ONNX model weights
-                val onnxUrl = "https://cdn.ainovelreader.com/tts_model/$voiceId.onnx"
-                val onnxReq = okhttp3.Request.Builder().url(onnxUrl).header("User-Agent", "Mozilla/5.0").build()
-                client.newCall(onnxReq).execute().use { resp ->
-                    val body = resp.body ?: throw Exception("Empty response body")
-                    val total = body.contentLength()
-                    val tmpFile = File(offlineModelsDir, "$voiceId.onnx.tmp")
-                    val targetFile = File(offlineModelsDir, "$voiceId.onnx")
+                // Danh sách URL dự phòng cho file ONNX trọng số mô hình
+                val onnxCandidates = mutableListOf<String>()
+                onnxCandidates.add("https://memorial-stones-dear-watson.trycloudflare.com/api/offline_voices/models/$targetFileName")
+                onnxCandidates.add("http://192.168.1.204:5000/api/offline_voices/models/$targetFileName")
+                if (onnxUrl.isNotEmpty() && !onnxCandidates.contains(onnxUrl)) onnxCandidates.add(onnxUrl)
+                when (voiceId.lowercase()) {
+                    "mailinh" -> onnxCandidates.add("https://huggingface.co/beyoru/MaiLinh-TTS-CoreML/resolve/main/Mai%20Linh/mailinh250626.onnx")
+                    "vieneu_v3_turbo" -> onnxCandidates.add("https://huggingface.co/vnhellboy/vietnamese-piper-voices/resolve/main/vits-piper-vi_VN-diemdam-medium/vi_VN-diemdam-medium.onnx")
+                    "vieneu_v3_nano" -> onnxCandidates.add("https://huggingface.co/vnhellboy/vietnamese-piper-voices/resolve/main/vits-piper-vi_VN-altotram-medium/vi_VN-altotram-medium.onnx")
+                    "banmai" -> onnxCandidates.add("https://huggingface.co/rhasspy/piper-voices/resolve/main/vi/vi_VN/vais1000/medium/vi_VN-vais1000-medium.onnx")
+                }
 
-                    body.byteStream().use { input ->
-                        tmpFile.outputStream().use { output ->
-                            val buf = ByteArray(64 * 1024)
-                            var read: Int
-                            var downloaded: Long = 0
-                            while (input.read(buf).also { read = it } != -1) {
-                                output.write(buf, 0, read)
-                                downloaded += read
-                                if (total > 0) {
-                                    val pct = (downloaded * 100 / total).toInt()
+                // 2. Tải ONNX model weights
+                var dlSuccess = false
+                var lastErr = ""
+                val tmpFile = File(targetDir, "$targetFileName.tmp")
+                val targetFile = File(targetDir, targetFileName)
+
+                for (candUrl in onnxCandidates) {
+                    try {
+                        Log.i(TAG, "Đang thử tải model $voiceId từ: $candUrl")
+                        val onnxReq = okhttp3.Request.Builder()
+                            .url(candUrl)
+                            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile)")
+                            .build()
+                        val call = client.newCall(onnxReq)
+                        val resp = call.execute()
+                        if (!resp.isSuccessful) {
+                            resp.close()
+                            lastErr = "HTTP ${resp.code}"
+                            continue
+                        }
+                        val body = resp.body
+                        if (body == null) {
+                            resp.close()
+                            lastErr = "Empty response body"
+                            continue
+                        }
+
+                        val total = body.contentLength()
+                        val estTotal = if (total > 0) total else ((voiceDef?.defaultSizeMb ?: 60.5) * 1024 * 1024).toLong()
+
+                        body.byteStream().use { input ->
+                            tmpFile.outputStream().use { output ->
+                                val buf = ByteArray(128 * 1024)
+                                var read: Int
+                                var downloaded: Long = 0
+                                while (input.read(buf).also { read = it } != -1) {
+                                    output.write(buf, 0, read)
+                                    downloaded += read
+                                    val pct = Math.min(99, Math.max(1, (downloaded * 100 / estTotal).toInt()))
                                     downloadStatusMap[voiceId] = "downloading_${pct}%"
                                 }
                             }
                         }
-                    }
-                    if (tmpFile.exists()) {
-                        if (targetFile.exists()) targetFile.delete()
-                        tmpFile.renameTo(targetFile)
+                        resp.close()
+
+                        if (tmpFile.exists() && tmpFile.length() > 5 * 1024 * 1024) {
+                            if (targetFile.exists()) targetFile.delete()
+                            tmpFile.renameTo(targetFile)
+                            dlSuccess = true
+                            break
+                        } else {
+                            tmpFile.delete()
+                            lastErr = "File quá nhỏ hoặc bị gián đoạn"
+                        }
+                    } catch (eCand: Exception) {
+                        Log.w(TAG, "Lỗi tải từ candidate $candUrl: ${eCand.message}")
+                        lastErr = eCand.message ?: "Network error"
+                        if (tmpFile.exists()) tmpFile.delete()
                     }
                 }
-                downloadStatusMap[voiceId] = "completed"
-                Log.i(TAG, "Tải thành công giọng offline $voiceId")
+
+                if (dlSuccess && targetFile.exists() && targetFile.length() > 5 * 1024 * 1024) {
+                    // Nếu là gói nén zip (như Kokoro package: kokoro_vi.onnx, voices.bin, tokens.txt, lexicon-vi.txt), tiến hành giải nén tự động
+                    if (targetFileName.endsWith(".zip", ignoreCase = true) || voiceId.contains("kokoro", ignoreCase = true)) {
+                        try {
+                            Log.i(TAG, "Đang tự động giải nén gói mô hình Kokoro: ${targetFile.name}...")
+                            downloadStatusMap[voiceId] = "extracting..."
+                            java.io.FileInputStream(targetFile).use { fis ->
+                                java.util.zip.ZipInputStream(fis).use { zis ->
+                                    var entry = zis.nextEntry
+                                    val buffer = ByteArray(64 * 1024)
+                                    while (entry != null) {
+                                        val entryName = entry.name.replace('\\', '/')
+                                        val outFile = File(targetDir, entryName)
+                                        if (entry.isDirectory) {
+                                            outFile.mkdirs()
+                                        } else {
+                                            outFile.parentFile?.mkdirs()
+                                            java.io.FileOutputStream(outFile).use { fos ->
+                                                var len: Int
+                                                while (zis.read(buffer).also { len = it } > 0) {
+                                                    fos.write(buffer, 0, len)
+                                                }
+                                            }
+                                        }
+                                        zis.closeEntry()
+                                        entry = zis.nextEntry
+                                    }
+                                }
+                            }
+                            Log.i(TAG, "✅ Đã giải nén xong gói mô hình Kokoro tại: ${targetDir.absolutePath}")
+                        } catch (eZip: Exception) {
+                            Log.e(TAG, "Lỗi giải nén gói mô hình: ${eZip.message}", eZip)
+                        }
+                    }
+                    downloadStatusMap[voiceId] = "completed"
+                    Log.i(TAG, "✅ Tải thành công giọng offline $voiceId ($targetFileName - ${targetFile.length()} bytes)")
+                } else {
+                    downloadStatusMap[voiceId] = "error: $lastErr"
+                    Log.e(TAG, "❌ Thất bại tải giọng offline $voiceId: $lastErr")
+                }
             } catch (e: Exception) {
                 downloadStatusMap[voiceId] = "error: ${e.message}"
                 Log.e(TAG, "Lỗi tải giọng offline $voiceId: ${e.message}")
@@ -1365,8 +1911,8 @@ class HonorLocalServer(
                     for (seg in segments) {
                         val segVoice = if (seg.isDialogue) {
                             if (seg.gender == "female") {
-                                if (targetVoice.contains("BV421") || targetVoice.contains("huong")) "multi_female_richgirl_uranus_bigtts"
-                                else "BV421_vivn_streaming"
+                                if (targetVoice.contains("huong") || targetVoice.contains("BV074")) "multi_female_richgirl_uranus_bigtts"
+                                else "vi_female_huong"
                             } else if (seg.gender == "male") {
                                 if (targetVoice.contains("BV075")) "BV074_streaming"
                                 else "BV075_streaming"
@@ -1431,6 +1977,47 @@ class HonorLocalServer(
             }
         }
         return audioBytes
+    }
+
+    private fun forwardTtsToPcServer(text: String, voiceId: String, speed: Double, speakerId: Int = 0): ByteArray? {
+        val serverCandidates = mutableListOf(
+            "https://memorial-stones-dear-watson.trycloudflare.com/api/tts",
+            "http://192.168.1.204:5000/api/tts"
+        )
+        val jsonPayload = JSONObject().apply {
+            put("text", text)
+            put("voice_id", voiceId)
+            put("provider", "offline")
+            put("speed", speed)
+            put("speaker_id", speakerId)
+            put("sid", speakerId)
+        }.toString()
+
+        val body = jsonPayload.toRequestBody("application/json; charset=utf-8".toMediaType())
+        val client = okhttp3.OkHttpClient.Builder()
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(35, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+
+        for (endpoint in serverCandidates) {
+            try {
+                val req = okhttp3.Request.Builder()
+                    .url(endpoint)
+                    .addHeader("Content-Type", "application/json; charset=utf-8")
+                    .post(body)
+                    .build()
+                val resp = client.newCall(req).execute()
+                if (resp.isSuccessful) {
+                    val bytes = resp.body?.bytes()
+                    if (bytes != null && bytes.size > 500) {
+                        return bytes
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        return null
     }
 
     fun splitIntoSentences(rawText: String): List<String> {
@@ -1809,15 +2396,16 @@ class HonorLocalServer(
 
     inner class ChapterAudioPreloader {
         private val lock = Any()
-        var isEnabled = true
+        var isEnabled = false
         var currentBookId: String? = null
         var currentChapter: Int = 0
-        var windowSize: Int = 30
+        var windowSize: Int = 2
         var voiceId: String = "BV074_streaming"
         var targetVoice: String = "BV074_streaming"
         var multiVoice: Boolean = true
         var emotion: String = "normal"
         var isElevenLabs: Boolean = false
+        var generationId: Long = 0L
 
         var isWorking: Boolean = false
         var cachedCount: Int = 0
@@ -1842,22 +2430,36 @@ class HonorLocalServer(
             startWorker()
         }
 
+        fun notifyCacheCleared() {
+            synchronized(lock) {
+                generationId++
+                cachedCount = 0
+                workingPara = 0
+                (lock as java.lang.Object).notifyAll()
+            }
+        }
+
         fun update(bId: String, chIdx: Int, vId: String? = null, tVoice: String? = null, mVoice: Boolean? = null, emo: String? = null, e11: Boolean? = null, winSize: Int? = null) {
             synchronized(lock) {
+                val chapterChanged = (currentChapter != chIdx || currentBookId != bId)
+                val voiceChanged = (!vId.isNullOrEmpty() && voiceId != vId)
+                if (chapterChanged || voiceChanged) {
+                    generationId++
+                    workingChapter = chIdx
+                    workingPara = 0
+                    cachedCount = 0
+                }
                 currentBookId = bId
                 currentChapter = chIdx
                 if (!vId.isNullOrEmpty()) voiceId = vId
                 val effectiveVoice = if (!vId.isNullOrEmpty()) {
                     val clean = vId.removePrefix("offline_").lowercase()
                     when {
-                        vId.startsWith("offline_") -> when {
-                            clean.contains("ngochuyen") || clean.contains("thanhphuong") -> "BV421_vivn_streaming"
-                            clean.contains("banmai") || clean.contains("phuongtrang") -> "multi_female_richgirl_uranus_bigtts"
-                            clean.contains("calmwoman") || clean.contains("maiphuong") || clean.contains("ngocngan") -> "vi_female_huong"
-                            else -> "BV075_streaming"
-                        }
+                        vId.startsWith("offline_") -> vId
                         vId == "adam-my" || vId == "adam-us" -> "eleven_IRHApOXLvnW57QJPQH2P"
                         vId == "adam-anh" || vId == "adam" -> "eleven_Gsndh0O5AnuI2Hj3YUlA"
+                        vId.contains("BV421", ignoreCase = true) -> "vi_female_huong"
+                        vId.contains("thao_vy", ignoreCase = true) -> "BV074_streaming"
                         else -> tVoice ?: vId
                     }
                 } else tVoice
@@ -1865,7 +2467,7 @@ class HonorLocalServer(
                 if (mVoice != null) multiVoice = mVoice
                 if (emo != null) emotion = emo
                 if (e11 != null) isElevenLabs = e11
-                if (winSize != null) windowSize = minOf(winSize, 30)
+                if (winSize != null) windowSize = minOf(winSize, 5)
                 (lock as java.lang.Object).notifyAll()
             }
         }
@@ -1897,15 +2499,19 @@ class HonorLocalServer(
 
         private fun startWorker() {
             workerThread = Thread({
+                try {
+                    android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+                } catch (e: Exception) {}
                 while (isRunning) {
                     var bId: String? = null
                     var startCh = 0
-                    var win = 30
+                    var win = 2
                     var vId = "BV074_streaming"
                     var tVoice = "BV074_streaming"
                     var mVoice = true
                     var emo = "normal"
                     var e11 = false
+                    var curGen = 0L
 
                     synchronized(lock) {
                         while (isRunning && (!isEnabled || currentBookId.isNullOrEmpty())) {
@@ -1926,6 +2532,7 @@ class HonorLocalServer(
                         mVoice = multiVoice
                         emo = emotion
                         e11 = isElevenLabs
+                        curGen = generationId
                     }
 
                     if (bId.isNullOrEmpty()) continue
@@ -1977,7 +2584,7 @@ class HonorLocalServer(
 
                     for (chIdx in startCh until endCh) {
                         synchronized(lock) {
-                            if (!isRunning || !isEnabled || currentBookId != bId || currentChapter != startCh) {
+                            if (!isRunning || !isEnabled || currentBookId != bId || currentChapter != startCh || voiceId != vId || generationId != curGen) {
                                 break
                             }
                         }
@@ -2006,7 +2613,7 @@ class HonorLocalServer(
                         }
 
                         // Kiểm tra câu nào còn thiếu audio
-                        data class MissingSent(val index: Int, val text: String, val cacheFile: File)
+                        data class MissingSent(val index: Int, val text: String, val cacheKeys: List<String>)
                         val missingList = mutableListOf<MissingSent>()
                         var alreadyCachedCount = 0
 
@@ -2020,15 +2627,17 @@ class HonorLocalServer(
                             text = text.replace(Regex("[.…~–—\\s]+$"), ".")
                             text = text.replace(Regex(" {2,}"), " ").trim()
 
-                            val cacheKey = md5("$vId:$mVoice:$emo:$text")
-                            val cFile = File(cacheDir, "$cacheKey.mp3")
-                            val altFile1 = File(cacheDir, "${md5("$tVoice:$mVoice:$emo:$text")}.mp3")
-                            val cleanBase = vId.removePrefix("offline_")
-                            val altFile2 = File(cacheDir, "${md5("$cleanBase:$mVoice:normal:$text")}.mp3")
-                            if ((cFile.exists() && cFile.length() > 500) || (altFile1.exists() && altFile1.length() > 500) || (altFile2.exists() && altFile2.length() > 500)) {
+                            var pSid = 0
+                            if (vId.contains(":")) {
+                                val sp = vId.substringAfterLast(":")
+                                if (sp.all { it.isDigit() }) pSid = sp.toInt()
+                            }
+                            val keys = getTtsCacheKeys(vId, tVoice, mVoice, emo, text, pSid)
+                            val isCached = keys.any { k -> File(cacheDir, "$k.mp3").let { it.exists() && it.length() > 500 } }
+                            if (isCached) {
                                 alreadyCachedCount++
                             } else {
-                                missingList.add(MissingSent(sIdx, text, cFile))
+                                missingList.add(MissingSent(sIdx, text, keys))
                             }
                         }
 
@@ -2062,12 +2671,14 @@ class HonorLocalServer(
                             )
                         } catch (e: Exception) {}
 
-                        // Tải song song tối đa 3 câu cùng lúc để tăng tốc độ gấp 3 lần
+                        // Đối với giọng Offline AI: tổng hợp tuần tự (1 luồng) để không tranh chấp engineLock và tránh quá nhiệt CPU
+                        val isOfflineVoice = vId.startsWith("offline_")
+                        val maxConcurrent = if (isOfflineVoice) 1 else 3
                         val futures = mutableListOf<Future<*>>()
                         var stopMissing = false
                         for (item in missingList) {
                             synchronized(lock) {
-                                if (!isRunning || !isEnabled || currentBookId != bId || currentChapter != startCh) {
+                                if (!isRunning || !isEnabled || currentBookId != bId || currentChapter != startCh || voiceId != vId || generationId != curGen) {
                                     stopMissing = true
                                 }
                             }
@@ -2075,24 +2686,48 @@ class HonorLocalServer(
 
                             val f = pool.submit {
                                 try {
-                                    val aBytes = synthesizeAudioUnified(item.text, tVoice, mVoice, e11)
+                                    // Nhường tuyệt đối tài nguyên CPU/engineLock khi người dùng đang phát câu hiện tại
+                                    while (activeInteractiveRequests.get() > 0 && isRunning) {
+                                        try { Thread.sleep(50) } catch (_: Exception) {}
+                                    }
+
+                                    synchronized(lock) {
+                                        if (!isRunning || !isEnabled || currentBookId != bId || currentChapter != startCh || voiceId != vId || generationId != curGen) {
+                                            return@submit
+                                        }
+                                    }
+
+                                    var aBytes: ByteArray? = null
+                                    if (vId.startsWith("offline_")) {
+                                        val onnxFile = resolveDownloadedOnnxFile(vId)
+                                        var pSid = 0
+                                        if (vId.contains(":")) {
+                                            val sp = vId.substringAfterLast(":")
+                                            if (sp.all { it.isDigit() }) pSid = sp.toInt()
+                                        }
+                                        if (onnxFile != null && onnxFile.exists() && onnxFile.length() > 5 * 1024 * 1024) {
+                                            aBytes = SherpaOnnxTtsEngine.synthesizeToWavBytes(
+                                                context = context,
+                                                onnxFile = onnxFile,
+                                                text = item.text,
+                                                speed = 1.0f,
+                                                emotion = emo,
+                                                speakerId = pSid
+                                            )
+                                        }
+                                        if (aBytes == null || aBytes.isEmpty()) {
+                                            aBytes = forwardTtsToPcServer(item.text, vId, 1.0, pSid)
+                                        }
+                                    }
+                                    if ((aBytes == null || aBytes.isEmpty()) && !vId.startsWith("offline_")) {
+                                        aBytes = synthesizeAudioUnified(item.text, tVoice, mVoice, e11)
+                                    }
                                     if (aBytes != null && aBytes.size > 500) {
-                                        item.cacheFile.writeBytes(aBytes)
-                                        try {
-                                            val altKey1 = md5("$tVoice:$mVoice:$emo:${item.text}")
-                                            if (altKey1 != item.cacheFile.nameWithoutExtension) {
-                                                File(cacheDir, "$altKey1.mp3").writeBytes(aBytes)
-                                            }
-                                            val cleanBase = vId.removePrefix("offline_")
-                                            val altKey2 = md5("$cleanBase:$mVoice:normal:${item.text}")
-                                            if (altKey2 != item.cacheFile.nameWithoutExtension) {
-                                                File(cacheDir, "$altKey2.mp3").writeBytes(aBytes)
-                                            }
-                                        } catch (e: Exception) {}
-                                    } else {
-                                        try {
-                                            item.cacheFile.writeBytes(getSilentMp3())
-                                        } catch (e: Exception) {}
+                                        for (k in item.cacheKeys) {
+                                            try {
+                                                File(cacheDir, "$k.mp3").writeBytes(aBytes)
+                                            } catch (_: Exception) {}
+                                        }
                                     }
                                 } catch (e: Exception) {
                                     Log.w(TAG, "Preload error sentence: ${e.message}")
@@ -2103,11 +2738,14 @@ class HonorLocalServer(
                                 }
                             }
                             futures.add(f)
-                            if (futures.size >= 3) {
+                            if (futures.size >= maxConcurrent) {
                                 for (fut in futures) {
                                     try { fut.get(15, TimeUnit.SECONDS) } catch (e: Exception) {}
                                 }
                                 futures.clear()
+                                if (isOfflineVoice) {
+                                    try { Thread.sleep(25) } catch (_: Exception) {}
+                                }
                                 try {
                                     ReaderMediaService.startOrUpdate(
                                         context,
@@ -2124,7 +2762,7 @@ class HonorLocalServer(
                             try { fut.get(15, TimeUnit.SECONDS) } catch (e: Exception) {}
                         }
 
-                        // Kiểm tra lại toàn bộ câu của chương
+                        // Kiểm tra lại toàn bộ câu của chương bằng getTtsCacheKeys chuẩn
                         var chSuccess = true
                         for (rawSent in sentenceList) {
                             var text = normalizeSpokenText(rawSent)
@@ -2135,12 +2773,8 @@ class HonorLocalServer(
                             text = text.replace(Regex(" {2,}"), " ")
                             text = text.replace(Regex("[.…~–—\\s]+$"), ".")
                             text = text.replace(Regex(" {2,}"), " ").trim()
-                            val cacheKey = md5("$vId:$mVoice:$emo:$text")
-                            val cFile = File(cacheDir, "$cacheKey.mp3")
-                            val altFile1 = File(cacheDir, "${md5("$tVoice:$mVoice:$emo:$text")}.mp3")
-                            val cleanBase = vId.removePrefix("offline_")
-                            val altFile2 = File(cacheDir, "${md5("$cleanBase:$mVoice:normal:$text")}.mp3")
-                            val exists = (cFile.exists() && cFile.length() > 300) || (altFile1.exists() && altFile1.length() > 300) || (altFile2.exists() && altFile2.length() > 300)
+                            val chKeys = getTtsCacheKeys(vId, tVoice, mVoice, emo, text)
+                            val exists = chKeys.any { k -> File(cacheDir, "$k.mp3").let { it.exists() && it.length() > 300 } }
                             if (!exists) {
                                 chSuccess = false
                                 break
@@ -2166,7 +2800,7 @@ class HonorLocalServer(
                         releaseWakeLock()
                         try {
                             if (isAudioPlaying) {
-                                ReaderMediaService.startOrUpdate(context, bookTitle, "🎧 Đã đệm đủ 30 chương", true, bookTitle)
+                                ReaderMediaService.startOrUpdate(context, bookTitle, "🎧 Đã đệm đủ chương sẵn sàng", true, bookTitle)
                             } else {
                                 ReaderMediaService.stop(context)
                             }

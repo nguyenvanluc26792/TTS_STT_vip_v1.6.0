@@ -29,3 +29,10 @@ DesktopEpubReader/apply_template_fixes.py
 DesktopEpubReader/fix_*.py
 DesktopEpubReader/update_honor_server.py
 DesktopEpubReader/measure_pauses.py
+
+*.apk
+*.zip
+cloudflared.exe
+TTS_STT_vip_v1.6.0/
+.kotlin/
+

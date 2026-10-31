@@ -21,206 +21,484 @@ DATA_DIR = OFFLINE_TTS_DIR / "espeak-ng-data"
 
 USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Mobile)"
 
-OFFLINE_VOICES = [
+try:
+    from vietnamese_prosody_engine import VietnameseProsodyPlanner, VietnameseProsodyDSP, VietnamesePhonologyHelper
+    _prosody_planner = VietnameseProsodyPlanner()
+except Exception as _e:
+    print(f"[OfflineTTS] Prosody Engine load warning: {_e}")
+    _prosody_planner = None
+
+_prosody_dsp_cache = {}
+def get_prosody_dsp(sample_rate: int = 22050):
+    if sample_rate not in _prosody_dsp_cache:
+        try:
+            from vietnamese_prosody_engine import VietnameseProsodyDSP
+            _prosody_dsp_cache[sample_rate] = VietnameseProsodyDSP(sample_rate=sample_rate)
+        except Exception:
+            return None
+    return _prosody_dsp_cache[sample_rate]
+
+# Danh mục Subvoices trong Mô hình Đa Giọng Gốc VieNeu TTS
+VIENEU_SUBVOICES = [
+    {
+        "sid": 0,
+        "base_sid": 0,
+        "id": "narrator_female",
+        "name": "Ngọc Lan (Dẫn truyện - Nữ Bắc thanh tao)",
+        "gender": "Nữ",
+        "age": "Trưởng thành",
+        "region": "Bắc",
+        "desc": "Giọng nữ dẫn truyện điềm đạm, ấm áp, chuẩn phát thanh miền Bắc",
+        "base_voice": "Ngọc Lan",
+        "pitch_shift": 0.0,
+        "speed_factor": 1.0,
+        "demo_file": "csa_0.wav"
+    },
+    {
+        "sid": 1,
+        "base_sid": 1,
+        "id": "minh_anh",
+        "name": "Minh Anh (Nữ chính - Nữ Bắc trẻ trung)",
+        "gender": "Nữ",
+        "age": "Trưởng thành",
+        "region": "Bắc",
+        "desc": "Giọng nữ Bắc trong trẻo, tự nhiên, biểu cảm linh hoạt",
+        "base_voice": "Minh Anh",
+        "pitch_shift": 0.0,
+        "speed_factor": 1.0,
+        "demo_file": "csa_1.wav"
+    },
+    {
+        "sid": 2,
+        "base_sid": 2,
+        "id": "quang_huy",
+        "name": "Quang Huy (Nam chính - Nam Bắc hào sảng)",
+        "gender": "Nam",
+        "age": "Trưởng thành",
+        "region": "Bắc",
+        "desc": "Giọng nam hào sảng, mạnh mẽ, cực chuẩn vai nam chính và anh hùng",
+        "base_voice": "Quang Huy",
+        "pitch_shift": 0.0,
+        "speed_factor": 1.0,
+        "demo_file": "csa_2.wav"
+    },
+    {
+        "sid": 3,
+        "base_sid": 3,
+        "id": "thu_ha",
+        "name": "Thu Hà (Nữ Bắc dịu dàng, truyền cảm)",
+        "gender": "Nữ",
+        "age": "Trưởng thành",
+        "region": "Bắc",
+        "desc": "Giọng nữ nhẹ nhàng, êm dịu, hợp tự sự và lãng mạn",
+        "base_voice": "Thu Hà",
+        "pitch_shift": 0.0,
+        "speed_factor": 1.0,
+        "demo_file": "csa_3.wav"
+    },
+    {
+        "sid": 4,
+        "base_sid": 4,
+        "id": "yen_nhi",
+        "name": "Yến Nhi (Nữ chính - Nữ Nam Bộ dịu dàng)",
+        "gender": "Nữ",
+        "age": "Trưởng thành",
+        "region": "Nam",
+        "desc": "Giọng nữ Nam Bộ ngọt ngào, truyền cảm, tự nhiên",
+        "base_voice": "Yến Nhi",
+        "pitch_shift": 0.0,
+        "speed_factor": 1.0,
+        "demo_file": "csa_4.wav"
+    },
+    {
+        "sid": 5,
+        "base_sid": 2,
+        "id": "hai_dang",
+        "name": "Hải Đăng (Nam trẻ - Nam Bắc nhẹ nhàng)",
+        "gender": "Nam",
+        "age": "Trưởng thành",
+        "region": "Bắc",
+        "desc": "Giọng nam trẻ trung, nhẹ nhàng, truyền cảm",
+        "base_voice": "Quang Huy",
+        "pitch_shift": 1.2,
+        "speed_factor": 1.0,
+        "demo_file": "csa_2.wav"
+    },
+    {
+        "sid": 6,
+        "base_sid": 2,
+        "id": "thai_son",
+        "name": "Thái Sơn (Nam trầm ấm - Uy nghiêm)",
+        "gender": "Nam",
+        "age": "Trưởng thành",
+        "region": "Bắc",
+        "desc": "Giọng nam trầm ấm, điềm đạm, uy nghiêm",
+        "base_voice": "Quang Huy",
+        "pitch_shift": -1.5,
+        "speed_factor": 1.0,
+        "demo_file": "csa_2.wav"
+    },
+    {
+        "sid": 7,
+        "base_sid": 2,
+        "id": "adam_bua",
+        "name": "Adam (Nam Bắc vui vẻ, hài hước)",
+        "gender": "Nam",
+        "age": "Trưởng thành",
+        "region": "Bắc",
+        "desc": "Giọng nam hóm hỉnh, sống động, phong cách tự nhiên",
+        "base_voice": "Quang Huy",
+        "pitch_shift": 0.6,
+        "speed_factor": 1.0,
+        "demo_file": "csa_2.wav"
+    },
+    {
+        "sid": 8,
+        "base_sid": 2,
+        "id": "ong_lao",
+        "name": "Ông lão (Người già Nam - Trầm khàn)",
+        "gender": "Nam",
+        "age": "Người già",
+        "region": "Bắc",
+        "desc": "Giọng ông lão từng trải, chậm rãi, trầm khàn (DSP Pitch & Formant)",
+        "base_voice": "Quang Huy",
+        "pitch_shift": -3.8,
+        "speed_factor": 0.82,
+        "demo_file": "csa_ong_lao.wav"
+    },
+    {
+        "sid": 9,
+        "base_sid": 4,
+        "id": "ba_lao",
+        "name": "Bà lão (Người già Nữ - Ấm áp, từ tốn)",
+        "gender": "Nữ",
+        "age": "Người già",
+        "region": "Nam",
+        "desc": "Giọng bà lão hiền từ, phúc hậu, từ tốn (DSP Pitch & Formant)",
+        "base_voice": "Yến Nhi",
+        "pitch_shift": -2.8,
+        "speed_factor": 0.90,
+        "demo_file": "csa_ba_lao.wav"
+    },
+    {
+        "sid": 10,
+        "base_sid": 1,
+        "id": "be_trai",
+        "name": "Bé trai (Trẻ con Nam - Líu lo, lanh lợi)",
+        "gender": "Nam",
+        "age": "Trẻ em",
+        "region": "Bắc",
+        "desc": "Giọng bé trai ngây thơ, tinh nghịch, líu lo (DSP Pitch & Formant)",
+        "base_voice": "Minh Anh",
+        "pitch_shift": 4.5,
+        "speed_factor": 1.0,
+        "demo_file": "csa_be_trai.wav"
+    },
+    {
+        "sid": 11,
+        "base_sid": 1,
+        "id": "be_gai",
+        "name": "Bé gái (Trẻ con Nữ - Trong trẻo, ngây thơ)",
+        "gender": "Nữ",
+        "age": "Trẻ em",
+        "region": "Bắc",
+        "desc": "Giọng bé gái trong veo, dễ thương, hồn nhiên (DSP Pitch & Formant)",
+        "base_voice": "Minh Anh",
+        "pitch_shift": 5.0,
+        "speed_factor": 1.0,
+        "demo_file": "csa_be_gai.wav"
+    },
+    {
+        "sid": 12,
+        "base_sid": 1,
+        "id": "bich_giao",
+        "name": "Bích Giao (Nữ trẻ lanh lợi, trong trẻo - Clone)",
+        "gender": "Nữ",
+        "age": "Trẻ tuổi",
+        "region": "Bắc",
+        "desc": "Giọng Bích Giao âm sắc trong sáng, lanh lợi, tự nhiên và ngọt ngào",
+        "base_voice": "Minh Anh",
+        "pitch_shift": 1.2,
+        "speed_factor": 1.0,
+        "demo_file": "csa_12.wav"
+    },
+    {
+        "sid": 13,
+        "base_sid": 0,
+        "id": "kim_tuyen",
+        "name": "Kim Tuyến (Nữ đọc truyện truyền cảm, ấm áp - Clone)",
+        "gender": "Nữ",
+        "age": "Trưởng thành",
+        "region": "Bắc",
+        "desc": "Giọng Kim Tuyến chất đọc truyện chuyên nghiệp, ấm áp, sâu lắng và điềm đạm",
+        "base_voice": "Ngọc Lan",
+        "pitch_shift": -0.8,
+        "speed_factor": 0.96,
+        "demo_file": "csa_13.wav"
+    },
+    {
+        "sid": 14,
+        "base_sid": 5,
+        "id": "kim_cuc",
+        "name": "NSƯT Kim Cúc (Đọc Truyện Đêm Khuya VOV - Master Prosody)",
+        "gender": "Nữ",
+        "age": "Trưởng thành",
+        "region": "Bắc",
+        "desc": "Giọng đọc kinh điển Đài Tiếng nói Việt Nam (Speaker Độc Lập), diễn cảm sâu lắng, nhịp ngắt tâm tình bậc thầy",
+        "base_voice": "NSƯT Kim Cúc",
+        "pitch_shift": 0.0,
+        "speed_factor": 0.94,
+        "demo_file": "csa_14.wav"
+    }
+]
+
+# Chỉ giữ duy nhất Mô hình Đa Giọng Gốc VieNeu
+
+KOKORO_SUBVOICES = [
+    {
+        "sid": 14,
+        "base_sid": 13,
+        "id": "kim_cuc",
+        "name": "NSƯT Kim Cúc (Đọc Truyện Đêm Khuya VOV)",
+        "gender": "Nữ",
+        "age": "Trưởng thành",
+        "region": "Bắc",
+        "desc": "Giọng đọc vàng huyền thoại, trầm ấm, truyền cảm, ngân nga diễn cảm đỉnh cao",
+        "demo_file": "turn_0_sid13.wav"
+    },
+    {
+        "sid": 1,
+        "base_sid": 0,
+        "id": "diem_trinh",
+        "name": "Diễm Trinh (Nữ miền Nam)",
+        "gender": "Nữ",
+        "age": "Trưởng thành",
+        "region": "Nam",
+        "desc": "Giọng nữ miền Nam dịu dàng, trong trẻo, tự nhiên",
+        "demo_file": "turn_1_sid0.wav"
+    },
+    {
+        "sid": 2,
+        "base_sid": 4,
+        "id": "manh_dung",
+        "name": "Mạnh Dũng (Nam miền Bắc)",
+        "gender": "Nam",
+        "age": "Trưởng thành",
+        "region": "Bắc",
+        "desc": "Giọng nam miền Bắc dõng dạc, khí chất, đĩnh đạc",
+        "demo_file": "turn_2_sid4.wav"
+    },
+    {
+        "sid": 3,
+        "base_sid": 6,
+        "id": "ngoc_huyen",
+        "name": "Ngọc Huyền (Nữ trẻ miền Bắc)",
+        "gender": "Nữ",
+        "age": "Thanh niên",
+        "region": "Bắc",
+        "desc": "Giọng nữ Bắc thanh tú, nhẹ nhàng, biểu cảm",
+        "demo_file": "turn_3_sid13.wav"
+    },
+    {
+        "sid": 4,
+        "base_sid": 1,
+        "id": "hung_thinh",
+        "name": "Hưng Thịnh (Nam miền Nam)",
+        "gender": "Nam",
+        "age": "Trưởng thành",
+        "region": "Nam",
+        "desc": "Giọng nam miền Nam ấm áp, hào sảng, chân thành",
+        "demo_file": "csa_2.wav"
+    },
+    {
+        "sid": 13,
+        "base_sid": 3,
+        "id": "mai_loan",
+        "name": "Mai Loan (Nữ miền Bắc)",
+        "gender": "Nữ",
+        "age": "Trưởng thành",
+        "region": "Bắc",
+        "desc": "Giọng nữ truyền cảm, ấm áp, sâu lắng",
+        "demo_file": "csa_3.wav"
+    },
+    {
+        "sid": 5,
+        "base_sid": 8,
+        "id": "thanh_dat",
+        "name": "Thành Đạt (Nam trẻ năng động)",
+        "gender": "Nam",
+        "age": "Thanh niên",
+        "region": "Bắc",
+        "desc": "Giọng nam trẻ năng động, tự tin",
+        "demo_file": "hai_dang.wav"
+    },
+    {
+        "sid": 6,
+        "base_sid": 10,
+        "id": "tuan_ngoc",
+        "name": "Tuấn Ngọc (Nam trầm ấm)",
+        "gender": "Nam",
+        "age": "Trưởng thành",
+        "region": "Bắc",
+        "desc": "Giọng nam điềm đạm, ấm áp, từng trải",
+        "demo_file": "thai_son.wav"
+    },
+    {
+        "sid": 7,
+        "base_sid": 7,
+        "id": "phat_tai",
+        "name": "Phát Tài (Nam Nam Bộ)",
+        "gender": "Nam",
+        "age": "Trưởng thành",
+        "region": "Nam",
+        "desc": "Giọng nam vui tươi, thân thiện, phóng khoáng",
+        "demo_file": "adam_bua.wav"
+    },
+    {
+        "sid": 8,
+        "base_sid": 4,
+        "id": "ong_lao",
+        "name": "Ông lão (Trầm khàn, chậm rãi)",
+        "gender": "Nam",
+        "age": "Người già",
+        "region": "Bắc",
+        "desc": "Giọng cụ ông từng trải, trầm ấm, chậm rãi",
+        "pitch_shift": -3.5,
+        "speed_factor": 0.82,
+        "demo_file": "csa_ong_lao.wav"
+    },
+    {
+        "sid": 9,
+        "base_sid": 3,
+        "id": "ba_lao",
+        "name": "Bà lão (Hiền từ, từ tốn)",
+        "gender": "Nữ",
+        "age": "Người già",
+        "region": "Bắc",
+        "desc": "Giọng bà cụ hiền từ, phúc hậu, từ tốn",
+        "pitch_shift": -2.5,
+        "speed_factor": 0.90,
+        "demo_file": "csa_ba_lao.wav"
+    },
+    {
+        "sid": 10,
+        "base_sid": 6,
+        "id": "be_trai",
+        "name": "Bé trai (Lanh lợi, tinh nghịch)",
+        "gender": "Nam",
+        "age": "Trẻ em",
+        "region": "Bắc",
+        "desc": "Giọng bé trai ngây thơ, líu lo, tinh nghịch",
+        "pitch_shift": 4.2,
+        "speed_factor": 1.0,
+        "demo_file": "csa_be_trai.wav"
+    },
+    {
+        "sid": 11,
+        "base_sid": 6,
+        "id": "be_gai",
+        "name": "Bé gái (Trong trẻo, ngọt ngào)",
+        "gender": "Nữ",
+        "age": "Trẻ em",
+        "region": "Bắc",
+        "desc": "Giọng bé gái dễ thương, ngọt ngào, trong trẻo",
+        "pitch_shift": 5.0,
+        "speed_factor": 1.0,
+        "demo_file": "csa_be_gai.wav"
+    }
+]
+
+
+# ─── VITS Single-Speaker Voices ─────────────────────────
+VITS_SINGLE_VOICES = [
     {
         "id": "banmai",
-        "name": "Ban Mai",
+        "name": "Ban Mai (Nữ Bắc - Trong trẻo, rõ ràng)",
         "gender": "Nữ",
         "accent": "Bắc",
-        "desc": "Giọng nữ miền Bắc trẻ trung, tự nhiên, truyền cảm",
+        "desc": "Giọng nữ Bắc chuẩn phát thanh, trong trẻo, rõ ràng",
         "fileName": "banmai.onnx",
-        "onnxUrl": "https://cdn.ainovelreader.com/tts_model/banmai.onnx",
-        "jsonUrl": "https://cdn.ainovelreader.com/tts_model/banmai.onnx.json",
-        "demoUrl": "https://cdn.ainovelreader.com/demo_voice/demo_banmai.wav"
-    },
-    {
-        "id": "ngochuyennew",
-        "name": "Ngọc Huyền",
-        "gender": "Nữ",
-        "accent": "Bắc",
-        "desc": "Giọng nữ truyền cảm, mượt mà, chuyên đọc truyện tình cảm",
-        "fileName": "ngochuyennew.onnx",
-        "onnxUrl": "https://cdn.ainovelreader.com/tts_model/ngochuyennew.onnx",
-        "jsonUrl": "https://cdn.ainovelreader.com/tts_model/ngochuyennew.onnx.json",
-        "demoUrl": "https://cdn.ainovelreader.com/demo_voice/demo_ngochuyennew.wav"
-    },
-    {
-        "id": "deepman3909",
-        "name": "Nam Trầm",
-        "gender": "Nam",
-        "accent": "Bắc",
-        "desc": "Giọng nam trầm ấm, hào sảng, hợp truyện tiên hiệp, kiếm hiệp",
-        "fileName": "deepman3909.onnx",
-        "onnxUrl": "https://cdn.ainovelreader.com/tts_model/deepman3909.onnx",
-        "jsonUrl": "https://cdn.ainovelreader.com/tts_model/deepman3909.onnx.json",
-        "demoUrl": "https://cdn.ainovelreader.com/demo_voice/demo_deepman3909.wav"
-    },
-    {
-        "id": "calmwoman3688",
-        "name": "Nữ nhẹ nhàng",
-        "gender": "Nữ",
-        "accent": "Bắc",
-        "desc": "Giọng nữ nhẹ nhàng, êm dịu, dễ ngủ",
-        "fileName": "calmwoman3688.onnx",
-        "onnxUrl": "https://cdn.ainovelreader.com/tts_model/calmwoman3688.onnx",
-        "jsonUrl": "https://cdn.ainovelreader.com/tts_model/calmwoman3688.onnx.json",
-        "demoUrl": "https://cdn.ainovelreader.com/demo_voice/demo_calmwoman3688.wav"
+        "onnxUrl": "https://invitation-aaa-compute-fantastic.trycloudflare.com/static/banmai.onnx",
+        "jsonUrl": "https://invitation-aaa-compute-fantastic.trycloudflare.com/static/banmai.onnx.json",
+        "demoUrl": "",
+        "group": "vits"
     },
     {
         "id": "manhdung",
-        "name": "Mạnh Dũng",
+        "name": "Mạnh Dũng (Nam Bắc - Dõng dạc, khí chất)",
         "gender": "Nam",
         "accent": "Bắc",
-        "desc": "Giọng nam chững chạc, rõ ràng, dứt khoát",
+        "desc": "Giọng nam Bắc khỏe khoắn, dõng dạc, đĩnh đạc",
         "fileName": "manhdung.onnx",
-        "onnxUrl": "https://cdn.ainovelreader.com/tts_model/manhdung.onnx",
-        "jsonUrl": "https://cdn.ainovelreader.com/tts_model/manhdung.onnx.json",
-        "demoUrl": "https://cdn.ainovelreader.com/demo_voice/demo_manhdung.wav"
+        "onnxUrl": "https://invitation-aaa-compute-fantastic.trycloudflare.com/static/manhdung.onnx",
+        "jsonUrl": "https://invitation-aaa-compute-fantastic.trycloudflare.com/static/manhdung.onnx.json",
+        "demoUrl": "",
+        "group": "vits"
     },
     {
-        "id": "maiphuong",
-        "name": "Mai Phương",
+        "id": "calmwoman3688",
+        "name": "Thùy Dung (Nữ - Nhẹ nhàng, điềm đạm)",
         "gender": "Nữ",
         "accent": "Bắc",
-        "desc": "Giọng nữ ấm áp, lưu loát",
-        "fileName": "maiphuong.onnx",
-        "onnxUrl": "https://cdn.ainovelreader.com/tts_model/maiphuong.onnx",
-        "jsonUrl": "https://cdn.ainovelreader.com/tts_model/maiphuong.onnx.json",
-        "demoUrl": "https://cdn.ainovelreader.com/demo_voice/demo_maiphuong.wav"
+        "desc": "Giọng nữ nhẹ nhàng, điềm đạm, tự nhiên",
+        "fileName": "calmwoman3688.onnx",
+        "onnxUrl": "https://invitation-aaa-compute-fantastic.trycloudflare.com/static/calmwoman3688.onnx",
+        "jsonUrl": "https://invitation-aaa-compute-fantastic.trycloudflare.com/static/calmwoman3688.onnx.json",
+        "demoUrl": "",
+        "group": "vits"
     },
     {
-        "id": "minhkhang",
-        "name": "Minh Khang",
-        "gender": "Nam",
-        "accent": "Bắc",
-        "desc": "Giọng nam thanh niên hiện đại, tự nhiên",
-        "fileName": "minhkhang.onnx",
-        "onnxUrl": "https://cdn.ainovelreader.com/tts_model/minhkhang.onnx",
-        "jsonUrl": "https://cdn.ainovelreader.com/tts_model/minhkhang.onnx.json",
-        "demoUrl": "https://cdn.ainovelreader.com/demo_voice/demo_minhkhang.wav"
-    },
-    {
-        "id": "minhquang",
-        "name": "Minh Quang",
-        "gender": "Nam",
-        "accent": "Bắc",
-        "desc": "Giọng nam đĩnh đạc, rõ từng từ",
-        "fileName": "minhquang.onnx",
-        "onnxUrl": "https://cdn.ainovelreader.com/tts_model/minhquang.onnx",
-        "jsonUrl": "https://cdn.ainovelreader.com/tts_model/minhquang.onnx.json",
-        "demoUrl": "https://cdn.ainovelreader.com/demo_voice/demo_minhquang.wav"
-    },
-    {
-        "id": "phuongtrang",
-        "name": "Phương Trang",
+        "id": "ngochuyennew",
+        "name": "Ngọc Huyền (Nữ Bắc - Thanh tú, biểu cảm)",
         "gender": "Nữ",
         "accent": "Bắc",
-        "desc": "Giọng nữ trong trẻo, nhẹ nhàng",
-        "fileName": "phuongtrang.onnx",
-        "onnxUrl": "https://cdn.ainovelreader.com/tts_model/phuongtrang.onnx",
-        "jsonUrl": "https://cdn.ainovelreader.com/tts_model/phuongtrang.onnx.json",
-        "demoUrl": "https://cdn.ainovelreader.com/demo_voice/demo_phuongtrang.wav"
+        "desc": "Giọng nữ Bắc thanh tú, nhẹ nhàng, biểu cảm linh hoạt",
+        "fileName": "ngochuyennew.onnx",
+        "onnxUrl": "https://invitation-aaa-compute-fantastic.trycloudflare.com/static/ngochuyennew.onnx",
+        "jsonUrl": "https://invitation-aaa-compute-fantastic.trycloudflare.com/static/ngochuyennew.onnx.json",
+        "demoUrl": "",
+        "group": "vits"
     },
     {
-        "id": "duyoryx3175",
-        "name": "Duy",
-        "gender": "Nam",
-        "accent": "Nam",
-        "desc": "Giọng nam miền Nam gần gũi, biểu cảm",
-        "fileName": "duyoryx3175.onnx",
-        "onnxUrl": "https://cdn.ainovelreader.com/tts_model/duyoryx3175.onnx",
-        "jsonUrl": "https://cdn.ainovelreader.com/tts_model/duyoryx3175.onnx.json",
-        "demoUrl": "https://cdn.ainovelreader.com/demo_voice/demo_duyoryx3175.wav"
-    },
-    {
-        "id": "chieuthanh",
-        "name": "Chiếu Thành",
+        "id": "deepman3909",
+        "name": "Trọng Nghĩa (Nam - Trầm sâu, uy nghiêm)",
         "gender": "Nam",
         "accent": "Bắc",
-        "desc": "Giọng nam truyền thống, kể chuyện đêm khuya",
-        "fileName": "chieuthanh.onnx",
-        "onnxUrl": "https://cdn.ainovelreader.com/tts_model/chieuthanh.onnx",
-        "jsonUrl": "https://cdn.ainovelreader.com/tts_model/chieuthanh.onnx.json",
-        "demoUrl": "https://cdn.ainovelreader.com/demo_voice/demo_chieuthanh.wav"
-    },
-    {
-        "id": "ngocngan3701",
-        "name": "Ngọc Ngân",
-        "gender": "Nữ",
-        "accent": "Nam",
-        "desc": "Giọng nữ miền Nam thanh thoát, ngọt ngào",
-        "fileName": "ngocngan3701.onnx",
-        "onnxUrl": "https://cdn.ainovelreader.com/tts_model/ngocngan3701.onnx",
-        "jsonUrl": "https://cdn.ainovelreader.com/tts_model/ngocngan3701.onnx.json",
-        "demoUrl": "https://cdn.ainovelreader.com/demo_voice/demo_ngocngan3701.wav"
-    },
-    {
-        "id": "thanhphuong2",
-        "name": "Thanh Phương",
-        "gender": "Nữ",
-        "accent": "Bắc",
-        "desc": "Giọng nữ đằm thắm, giàu cảm xúc",
-        "fileName": "thanhphuong2.onnx",
-        "onnxUrl": "https://cdn.ainovelreader.com/tts_model/thanhphuong2.onnx",
-        "jsonUrl": "https://cdn.ainovelreader.com/tts_model/thanhphuong2.onnx.json",
-        "demoUrl": "https://cdn.ainovelreader.com/demo_voice/demo_thanhphuong2.wav"
-    },
-    {
-        "id": "vietthao3886",
-        "name": "Việt Thao",
-        "gender": "Nam",
-        "accent": "Bắc",
-        "desc": "Giọng nam trầm, lôi cuốn",
-        "fileName": "vietthao3886.onnx",
-        "onnxUrl": "https://cdn.ainovelreader.com/tts_model/vietthao3886.onnx",
-        "jsonUrl": "https://cdn.ainovelreader.com/tts_model/vietthao3886.onnx.json",
-        "demoUrl": "https://cdn.ainovelreader.com/demo_voice/demo_vietthao3886.wav"
-    },
-    {
-        "id": "thientam",
-        "name": "Thiện Tâm",
-        "gender": "Nam",
-        "accent": "Bắc",
-        "desc": "Giọng nam ấm, thanh bình",
-        "fileName": "thientam.onnx",
-        "onnxUrl": "https://cdn.ainovelreader.com/tts_model/thientam.onnx",
-        "jsonUrl": "https://cdn.ainovelreader.com/tts_model/thientam.onnx.json",
-        "demoUrl": "https://cdn.ainovelreader.com/demo_voice/demo_thientam.wav"
-    },
-    {
-        "id": "taian4",
-        "name": "Tài An",
-        "gender": "Nam",
-        "accent": "Bắc",
-        "desc": "Giọng nam khỏe khoắn, tươi vui",
-        "fileName": "taian4.onnx",
-        "onnxUrl": "https://cdn.ainovelreader.com/tts_model/taian4.onnx",
-        "jsonUrl": "https://cdn.ainovelreader.com/tts_model/taian4.onnx.json",
-        "demoUrl": "https://cdn.ainovelreader.com/demo_voice/demo_taian4.wav"
-    },
-    {
-        "id": "lacphi",
-        "name": "Lạc Phi",
-        "gender": "Nam",
-        "accent": "Bắc",
-        "desc": "Giọng nam bí ẩn, hấp dẫn",
-        "fileName": "lacphi.onnx",
-        "onnxUrl": "https://cdn.ainovelreader.com/tts_model/lacphi.onnx",
-        "jsonUrl": "https://cdn.ainovelreader.com/tts_model/lacphi.onnx.json",
-        "demoUrl": "https://cdn.ainovelreader.com/demo_voice/demo_lacphi.wav"
-    },
-    {
-        "id": "ngochuyen",
-        "name": "Ngọc Chuyên",
-        "gender": "Nữ",
-        "accent": "Bắc",
-        "desc": "Giọng nữ sâu lắng",
-        "fileName": "ngochuyen.onnx",
-        "onnxUrl": "https://cdn.ainovelreader.com/tts_model/ngochuyen.onnx",
-        "jsonUrl": "https://cdn.ainovelreader.com/tts_model/ngochuyen.onnx.json",
-        "demoUrl": "https://cdn.ainovelreader.com/demo_voice/demo_ngochuyen.wav"
+        "desc": "Giọng nam trầm sâu, uy nghiêm, phù hợp phản diện hoặc nhân vật uy quyền",
+        "fileName": "deepman3909.onnx",
+        "onnxUrl": "https://invitation-aaa-compute-fantastic.trycloudflare.com/static/deepman3909.onnx",
+        "jsonUrl": "https://invitation-aaa-compute-fantastic.trycloudflare.com/static/deepman3909.onnx.json",
+        "demoUrl": "",
+        "group": "vits"
     }
 ]
+
+OFFLINE_VOICES = [
+    {
+        "id": "kokoro_vietnamese",
+        "name": "Kokoro-Vietnamese (NSƯT Kim Cúc & 14 Giọng Cao Cấp 24kHz)",
+        "gender": "Đa giọng",
+        "accent": "Bắc - Trung - Nam",
+        "desc": "Mô hình Kokoro Neural thế hệ mới 24kHz: NSƯT Kim Cúc (Đọc Truyện Đêm Khuya VOV), Diễm Trinh, Mạnh Dũng, Ngọc Huyền, Mai Loan, Hưng Thịnh... Zero delay khi chuyển giọng thoại (~310 MB)",
+        "fileName": "kokoro_vi.onnx",
+        "onnxUrl": "https://invitation-aaa-compute-fantastic.trycloudflare.com/static/kokoro_vi_package.zip",
+        "jsonUrl": "",
+        "demoUrl": "https://invitation-aaa-compute-fantastic.trycloudflare.com/static/turn_0_sid13.wav",
+        "subvoices": KOKORO_SUBVOICES
+    },
+    {
+        "id": "vieneu_multispeaker",
+        "name": "VieNeu Multi-Speaker (15 Giọng Gốc, Độ Tuổi & NSƯT Kim Cúc)",
+        "gender": "Đa giọng",
+        "accent": "Bắc - Trung - Nam",
+        "desc": "Mô hình đa giọng gốc chuẩn VITS tích hợp 15 giọng: Dẫn truyện, Nam/Nữ chính, Ông lão, Bà lão, Trẻ em, Bích Giao, Kim Tuyến & NSƯT Kim Cúc VOV (~73.5 MB)",
+        "fileName": "vieneu_v3_turbo.onnx",
+        "onnxUrl": "https://invitation-aaa-compute-fantastic.trycloudflare.com/api/offline_voices/models/vieneu_v3_turbo.onnx",
+        "jsonUrl": "https://invitation-aaa-compute-fantastic.trycloudflare.com/api/offline_voices/models/vieneu_v3_turbo.onnx.json",
+        "demoUrl": "https://invitation-aaa-compute-fantastic.trycloudflare.com/api/offline_voices/models/vieneu_v3_turbo_demo.wav",
+        "subvoices": VIENEU_SUBVOICES
+    }
+] + VITS_SINGLE_VOICES
 
 # Bộ đệm instance Sherpa-ONNX trong bộ nhớ (tránh tải lại model mỗi câu)
 _loaded_engines = {}
@@ -229,17 +507,73 @@ _engine_lock = threading.Lock()
 # Trạng thái tiến trình tải
 _download_status = {}
 
+
+def extract_subvoice_sid(voice_id, speaker_id=0):
+    try:
+        s_int = int(speaker_id)
+        if s_int > 0:
+            return s_int
+    except Exception:
+        pass
+    if voice_id:
+        v_str = str(voice_id).strip()
+        if ":" in v_str:
+            parts = v_str.split(":")
+            if parts[-1].isdigit():
+                return int(parts[-1])
+        clean = v_str.replace("offline_vieneu_", "").replace("offline_vieneu:", "").replace("offline_", "").lower()
+        if clean.isdigit():
+            return int(clean)
+        for sv in VIENEU_SUBVOICES:
+            if sv["id"].lower() == clean:
+                return sv["sid"]
+    try:
+        return int(speaker_id)
+    except Exception:
+        return 0
+
+def normalize_offline_voice_id(voice_id):
+    if not voice_id:
+        return "kokoro_vietnamese"
+    v = str(voice_id).strip().lower().replace("offline_", "")
+    # VITS single-speaker: nhận dạng trực tiếp, không route sang vieneu_multispeaker
+    _vits_ids = {"banmai", "manhdung", "calmwoman3688", "ngochuyennew", "deepman3909"}
+    if v in _vits_ids:
+        return v
+    if "kokoro" in v:
+        return "kokoro_vietnamese"
+    v = v.replace("vietneu", "vieneu")
+    if "vieneu" in v or "vietneu" in v or v in ("vieneu_multispeaker", "multispeaker", "vieneu_v3_turbo", "vieneu", "vietneu", "turbo", "diemdam", "vieneu_v3_nano", "nano", "altotram", "alto", "mailinh"):
+        return "vieneu_multispeaker"
+    return v
+
 def get_voice_info(voice_id):
+    clean_id = normalize_offline_voice_id(voice_id)
     for v in OFFLINE_VOICES:
-        if v["id"] == voice_id or f"offline_{v['id']}" == voice_id:
+        if v["id"] == clean_id or v["id"] == voice_id or f"offline_{v['id']}" == voice_id:
+            return v
+    for v in OFFLINE_VOICES:
+        if clean_id in v["id"] or v["id"] in clean_id:
             return v
     return None
 
 def is_voice_downloaded(voice_id):
     v = get_voice_info(voice_id)
     if not v:
+        # Thử tìm trong VITS_SINGLE_VOICES
+        clean = str(voice_id).strip().lower().replace("offline_", "")
+        for sv in VITS_SINGLE_VOICES:
+            if sv["id"] == clean:
+                f = MODELS_DIR / sv["fileName"]
+                j = MODELS_DIR / f"{sv['fileName']}.json"
+                return f.exists() and f.stat().st_size > 10 * 1024 * 1024 and j.exists()
         return False
     onnx_file = MODELS_DIR / v["fileName"]
+    if v["id"] == "kokoro_vietnamese":
+        voices_file = MODELS_DIR / "voices.bin"
+        tokens_file = MODELS_DIR / "tokens.txt"
+        lexicon_file = MODELS_DIR / "lexicon-vi.txt"
+        return onnx_file.exists() and onnx_file.stat().st_size > 10 * 1024 * 1024 and voices_file.exists() and tokens_file.exists() and lexicon_file.exists()
     json_file = MODELS_DIR / f"{v['fileName']}.json"
     return onnx_file.exists() and onnx_file.stat().st_size > 10 * 1024 * 1024 and json_file.exists()
 
@@ -250,11 +584,21 @@ def get_all_voices_status():
         item["full_id"] = f"offline_{v['id']}"
         item["is_downloaded"] = is_voice_downloaded(v["id"])
         item["download_status"] = _download_status.get(v["id"], "idle")
+        item["group"] = v.get("group", "multispeaker")
         if item["is_downloaded"]:
             onnx_file = MODELS_DIR / v["fileName"]
             item["file_size_mb"] = round(onnx_file.stat().st_size / (1024 * 1024), 1)
         else:
-            item["file_size_mb"] = 63.5
+            if "mailinh" in v["id"]:
+                item["file_size_mb"] = 60.5
+            elif "turbo" in v["id"]:
+                item["file_size_mb"] = 235.0
+            elif "nano" in v["id"]:
+                item["file_size_mb"] = 180.0
+            elif v.get("group") == "vits":
+                item["file_size_mb"] = 60.6
+            else:
+                item["file_size_mb"] = 63.5
         result.append(item)
     return result
 
@@ -270,11 +614,12 @@ def download_voice_thread(voice_id):
         json_file = MODELS_DIR / f"{v['fileName']}.json"
         headers = {"User-Agent": USER_AGENT}
 
-        # 1. Tải file JSON cấu hình
-        req_json = urllib.request.Request(v["jsonUrl"], headers=headers)
-        with urllib.request.urlopen(req_json, timeout=15) as resp:
-            with open(json_file, "wb") as f:
-                f.write(resp.read())
+        # 1. Tải file JSON cấu hình (nếu có)
+        if v.get("jsonUrl"):
+            req_json = urllib.request.Request(v["jsonUrl"], headers=headers)
+            with urllib.request.urlopen(req_json, timeout=20) as resp:
+                with open(json_file, "wb") as f:
+                    f.write(resp.read())
 
         # 2. Tải file ONNX trọng số mô hình
         req_onnx = urllib.request.Request(v["onnxUrl"], headers=headers)
@@ -332,15 +677,78 @@ def delete_voice(voice_id):
     return True
 
 def get_demo_audio_bytes(voice_id):
+    # Hỗ trợ nghe thử trực tiếp từng subvoice trong 12 giọng VieNeu
+    sub_sample_dir = BASE_DIR / "static" / "vieneu_samples"
+    clean_sub = str(voice_id).replace("offline_vieneu:", "").replace("offline_vieneu_", "").replace("offline_", "").strip().lower()
+    
+    # 1. Tìm theo sid số (0..11) hoặc mã id của subvoice
+    matched_sub = None
+    if clean_sub.isdigit():
+        target_sid = int(clean_sub)
+        matched_sub = next((sv for sv in VIENEU_SUBVOICES if sv["sid"] == target_sid), None)
+    else:
+        matched_sub = next((sv for sv in VIENEU_SUBVOICES if sv["id"].lower() == clean_sub), None)
+        
+    if matched_sub and matched_sub.get("demo_file"):
+        demo_path = sub_sample_dir / matched_sub["demo_file"]
+        if demo_path.exists() and demo_path.stat().st_size > 1024:
+            return demo_path.read_bytes()
+
     v = get_voice_info(voice_id)
-    if not v:
+    if not v or not v.get("demoUrl"):
         return None
-    req = urllib.request.Request(v["demoUrl"], headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        return resp.read()
+    demo_url = v["demoUrl"]
+    ext = "mp3" if "mp3" in demo_url else "wav"
+    cache_file = MODELS_DIR / f"{v['id']}_demo.{ext}"
+    if cache_file.exists() and cache_file.stat().st_size > 1024:
+        return cache_file.read_bytes()
+    try:
+        req = urllib.request.Request(demo_url, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = resp.read()
+            if data and len(data) > 1024:
+                try:
+                    cache_file.write_bytes(data)
+                except Exception:
+                    pass
+            return data
+    except Exception as e:
+        logger.warning(f"Lỗi tải demo audio cho {voice_id}: {e}")
+        return None
+
+def _ensure_model_tokens_file(file_name):
+    """Tạo file tokens riêng biệt chuẩn 100% từ phoneme_id_map trong .onnx.json của từng model để tránh lệch ID gây rè/tạch"""
+    json_path = MODELS_DIR / f"{file_name}.json"
+    custom_tokens_path = MODELS_DIR / f"{file_name}.tokens.txt"
+    noise_scale = 0.667
+    noise_w = 0.8
+    length_scale = 1.15
+
+    if json_path.exists():
+        try:
+            cfg = json.loads(json_path.read_text(encoding="utf-8"))
+            inf = cfg.get("inference", {})
+            noise_scale = float(inf.get("noise_scale", 0.667))
+            noise_w = float(inf.get("noise_w", 0.8))
+            length_scale = float(inf.get("length_scale", 1.15))
+
+            pmap = cfg.get("phoneme_id_map")
+            if pmap and isinstance(pmap, dict):
+                lines = []
+                for sym, ids in pmap.items():
+                    # Sherpa-ONNX piper-phonemize yêu cầu mỗi token là đúng 1 ký tự Unicode (UTF-32 length == 1)
+                    if ids and len(sym) == 1:
+                        lines.append(f"{sym} {ids[0]}")
+                if lines:
+                    custom_tokens_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                    return str(custom_tokens_path), noise_scale, noise_w, length_scale
+        except Exception as e:
+            logger.warning(f"Lỗi tạo tokens riêng cho {file_name}: {e}")
+
+    return str(TOKENS_PATH), noise_scale, noise_w, length_scale
 
 def get_sherpa_engine(voice_id):
-    clean_id = voice_id.replace("offline_", "")
+    clean_id = normalize_offline_voice_id(voice_id)
     v = get_voice_info(clean_id)
     if not v or not is_voice_downloaded(clean_id):
         return None
@@ -351,23 +759,41 @@ def get_sherpa_engine(voice_id):
 
         import sherpa_onnx
         onnx_file = str(MODELS_DIR / v["fileName"])
-        tokens_file = str(TOKENS_PATH)
+        tokens_file, noise_scale, noise_w, length_scale = _ensure_model_tokens_file(v["fileName"])
         data_dir = str(DATA_DIR)
 
-        tts_config = sherpa_onnx.OfflineTtsConfig(
-            model=sherpa_onnx.OfflineTtsModelConfig(
-                vits=sherpa_onnx.OfflineTtsVitsModelConfig(
-                    model=onnx_file,
-                    tokens=tokens_file,
-                    data_dir=data_dir,
-                    noise_scale=0.78,    # Phương án 1: Tăng biến thiên cao độ biểu cảm tự nhiên
-                    noise_scale_w=0.85,  # Phương án 1: Tăng biến thiên nhịp thở & trường độ âm tiết
-                    length_scale=1.0
-                ),
-                num_threads=2,
-                debug=False
+        if clean_id == "kokoro_vietnamese":
+            voices_file = str(MODELS_DIR / "voices.bin")
+            tokens_file = str(MODELS_DIR / "tokens.txt")
+            lexicon_file = str(MODELS_DIR / "lexicon-vi.txt")
+            tts_config = sherpa_onnx.OfflineTtsConfig(
+                model=sherpa_onnx.OfflineTtsModelConfig(
+                    kokoro=sherpa_onnx.OfflineTtsKokoroModelConfig(
+                        model=onnx_file,
+                        voices=voices_file,
+                        tokens=tokens_file,
+                        data_dir=data_dir,
+                        lexicon=lexicon_file
+                    ),
+                    num_threads=4,
+                    debug=False
+                )
             )
-        )
+        else:
+            tts_config = sherpa_onnx.OfflineTtsConfig(
+                model=sherpa_onnx.OfflineTtsModelConfig(
+                    vits=sherpa_onnx.OfflineTtsVitsModelConfig(
+                        model=onnx_file,
+                        tokens=tokens_file,
+                        data_dir=data_dir,
+                        noise_scale=noise_scale,
+                        noise_scale_w=noise_w,
+                        length_scale=length_scale
+                    ),
+                    num_threads=4,
+                    debug=False
+                )
+            )
         engine = sherpa_onnx.OfflineTts(tts_config)
         _loaded_engines[clean_id] = engine
         return engine
@@ -628,93 +1054,244 @@ def parse_contextual_story_segments(text):
         })
     return segments
 
-def synthesize_offline(text, voice_id, speed=1.0, multi_voice=True):
+def _apply_smooth_fade(samples, sample_rate=22050, fade_ms=25, is_trailing=False):
     """
-    Tổng hợp âm thanh giọng đọc Offline AI kết hợp:
-    1. Emotion Scales VITS: noise_scale 0.78, noise_scale_w 0.85
-    2. Contextual Prosody Engine: Ngắt nghỉ tự nhiên & điều biến tốc độ
-    3. Multi-Voice Drama: Tự động phân vai Nam - Nữ theo ngữ cảnh Tiên Hiệp
-    4. Foley Audio Drama: Chèn âm thanh thực tế (Nổ, Quyền cước, Binh khí, Kiếm khí)
+    Làm mượt biên âm thanh tự nhiên bằng đường dốc cosine nhẹ nhàng:
+    - Giữ đệm đuôi hào phóng 120ms (hoặc 180ms với câu ngập ngừng) để tuyệt đối không cắt cụt đuôi chữ, âm gió hay tiếng thở.
+    - Fade out 25ms siêu mịn màng, loại bỏ hoàn toàn mọi tiếng lách cách (click/pop) hoặc rè rè cuối câu.
     """
-    clean_id = voice_id.replace("offline_", "")
-    default_info = get_voice_info(clean_id) or {}
-    default_gender = default_info.get("gender", "Nam")
-    
-    # Phân tích các phân đoạn câu chuyện
-    segments = parse_contextual_story_segments(text)
-    if not segments:
+    if not samples or len(samples) < 64:
+        return samples
+    import numpy as np
+    arr = np.asarray(samples, dtype=np.float32).copy()
+    # Ngưỡng phát hiện âm: Giữ đệm đuôi an toàn 120ms (hoặc 180ms nếu trailing)
+    non_silent = np.where(np.abs(arr) > 0.001)[0]
+    if len(non_silent) > 0:
+        pad_start = int(sample_rate * 0.020)
+        pad_end = int(sample_rate * (0.180 if is_trailing else 0.120))
+        start_idx = max(0, int(non_silent[0]) - pad_start)
+        end_idx = min(len(arr), int(non_silent[-1]) + pad_end)
+        arr = arr[start_idx:end_idx]
+
+    fade_len = min(int(sample_rate * (fade_ms / 1000.0)), len(arr) // 4)
+    if fade_len > 4:
+        fade_in = 0.5 * (1.0 - np.cos(np.linspace(0, np.pi, fade_len, dtype=np.float32)))
+        fade_out = 0.5 * (1.0 + np.cos(np.linspace(0, np.pi, fade_len, dtype=np.float32)))
+        arr[:fade_len] *= fade_in
+        arr[-fade_len:] *= fade_out
+    return arr.tolist()
+
+def apply_dsp_voice_profile(samples, sample_rate, pitch_shift=0.0, speed_factor=1.0):
+    """
+    Biến đổi giọng nói Formant/Pitch shift bằng thuật toán DSP thời gian thực:
+    - n_semitones: độ cao/trầm (âm số = già/trầm hơn, dương số = trẻ con/líu lo)
+    - speed_factor: tốc độ nói (già chậm hơn 0.88, trẻ nhanh hơn 1.15)
+    """
+    if pitch_shift == 0.0 and speed_factor == 1.0:
+        return samples
+    import numpy as np
+    import scipy.signal
+    arr = np.asarray(samples, dtype=np.float32)
+    if pitch_shift != 0.0:
+        factor = 2.0 ** (pitch_shift / 12.0)
+        new_len = int(len(arr) / factor)
+        resampled = scipy.signal.resample(arr, new_len)
+        orig_indices = np.linspace(0, len(resampled) - 1, len(arr))
+        arr = np.interp(orig_indices, np.arange(len(resampled)), resampled).astype(np.float32)
+    if speed_factor != 1.0:
+        target_len = int(len(arr) / speed_factor)
+        arr = scipy.signal.resample(arr, target_len).astype(np.float32)
+    return arr.tolist()
+
+
+def synthesize_vits_single_speaker(voice_id, text, speed=1.0, sample_rate=22050):
+    """Tổng hợp giọng VITS đơn giọng (banmai, manhdung, calmwoman3688, ngochuyennew, deepman3909)"""
+    import sherpa_onnx
+    import numpy as np
+    import io
+    import wave
+
+    clean_id = str(voice_id).strip().lower().replace("offline_", "")
+    vits_info = None
+    for sv in VITS_SINGLE_VOICES:
+        if sv["id"] == clean_id:
+            vits_info = sv
+            break
+    if not vits_info:
+        raise ValueError(f"Không tìm thấy VITS voice: {voice_id}")
+
+    onnx_path = str(MODELS_DIR / vits_info["fileName"])
+    tokens_file, noise_scale, noise_w, length_scale = _ensure_model_tokens_file(vits_info["fileName"])
+
+    cache_key = f"vits_{clean_id}"
+    with _engine_lock:
+        if cache_key not in _loaded_engines:
+            tts_config = sherpa_onnx.OfflineTtsConfig(
+                model=sherpa_onnx.OfflineTtsModelConfig(
+                    vits=sherpa_onnx.OfflineTtsVitsModelConfig(
+                        model=onnx_path,
+                        lexicon="",
+                        tokens=tokens_file,
+                        data_dir=str(DATA_DIR) if DATA_DIR.exists() else "",
+                        noise_scale=noise_scale,
+                        noise_scale_w=noise_w,
+                        length_scale=length_scale,
+                        dict_dir="",
+                    ),
+                    provider="cpu",
+                    num_threads=2,
+                    debug=0,
+                ),
+                rule_fsts="",
+                max_num_sentences=1,
+            )
+            _loaded_engines[cache_key] = sherpa_onnx.OfflineTts(tts_config)
+        engine = _loaded_engines[cache_key]
+
+    result = engine.generate(text, sid=0, speed=float(speed))
+    audio_data = np.array(result.samples, dtype=np.float32)
+    audio_int16 = (audio_data * 32767).clip(-32768, 32767).astype(np.int16)
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(result.sample_rate)
+        wf.writeframes(audio_int16.tobytes())
+    return buf.getvalue()
+
+def synthesize_offline(text, voice_id="vieneu_multispeaker", speed=1.0, multi_voice=False, speaker_id=0):
+    """
+    Tổng hợp âm thanh giọng đọc Offline AI Đa Giọng Gốc VieNeu TTS:
+    1. Mô hình duy nhất: VieNeu Multi-Speaker (14 Giọng Gốc & Độ Tuổi).
+    2. Hỗ trợ chọn subvoice trực tiếp qua speaker_id (0-11) hoặc voice_id.
+    3. Hỗ trợ tự động phân vai thoại: Nam chính, Nữ chính, Ông lão, Bà lão, Bé trai, Bé gái khi bật multi_voice.
+    4. Áp dụng biến đổi DSP Formant/Pitch mượt mà không độ trễ.
+    """
+    # VITS single-speaker route: banmai, manhdung, calmwoman3688, ngochuyennew, deepman3909
+    _vits_ids = {"banmai", "manhdung", "calmwoman3688", "ngochuyennew", "deepman3909"}
+    _clean_vid = str(voice_id).strip().lower().replace("offline_", "")
+    if _clean_vid in _vits_ids:
+        return synthesize_vits_single_speaker(voice_id, text, speed=speed, sample_rate=22050)
+
+    clean_id = normalize_offline_voice_id(voice_id)
+    story_segments = parse_contextual_story_segments(text)
+    if not story_segments:
         return None
 
-    # Tìm sẵn giọng đối ứng nếu cần phân vai Nam - Nữ (Phương án 3)
-    female_voice_id = find_best_downloaded_voice("Nữ") if multi_voice else None
-    male_voice_id = find_best_downloaded_voice("Nam") if multi_voice else None
-
     import sherpa_onnx
-    safe_speed = max(0.5, min(2.0, float(speed)))
+    safe_speed = max(0.5, min(2.2, float(speed)))
     all_samples = []
     final_sample_rate = 22050
 
-    for idx, seg in enumerate(segments):
-        # 4. Chèn hiệu ứng âm thanh thực tế (SFX) nếu có
-        if seg.get("sfx"):
-            sfx_samples = generate_sfx_samples(seg["sfx"], final_sample_rate)
-            if sfx_samples:
-                all_samples.extend(sfx_samples)
-                all_samples.extend([0.0] * int(final_sample_rate * 0.08))
+    is_kokoro = (clean_id == "kokoro_vietnamese" or "kokoro" in str(voice_id).lower())
+    engine_id = "kokoro_vietnamese" if is_kokoro else "vieneu_multispeaker"
+    engine = get_sherpa_engine(engine_id)
+    if not engine:
+        # Fallback to the other engine if available
+        fallback_id = "vieneu_multispeaker" if is_kokoro else "kokoro_vietnamese"
+        engine = get_sherpa_engine(fallback_id)
+        if engine:
+            engine_id = fallback_id
+            is_kokoro = (engine_id == "kokoro_vietnamese")
+        else:
+            raise ValueError(f"Mô hình giọng offline ({engine_id}) chưa được tải về máy!")
 
-        seg_text = seg["text"].strip()
+    # Tra cứu profile subvoice theo speaker_id hoặc subvoice_id
+    current_sid = extract_subvoice_sid(voice_id, speaker_id)
+    if is_kokoro:
+        # Kokoro SID mapping:
+        # 14 -> 13 (Kim Cúc), 0 -> 13 (Dẫn chuyện mặc định: Kim Cúc), 1 -> 0 (Diễm Trinh), 2 -> 4 (Mạnh Dũng)...
+        kokoro_map = {14: 13, 0: 13, 1: 0, 2: 4, 3: 6, 4: 1, 5: 8, 6: 10, 7: 7, 8: 4, 9: 3, 10: 6, 11: 6, 12: 2, 13: 3}
+        current_sid = kokoro_map.get(current_sid, current_sid if current_sid < 14 else 13)
+
+    for idx, s_seg in enumerate(story_segments):
+        seg_text = s_seg["text"].strip()
         if not seg_text:
             continue
-            
-        # Xác định giọng đọc cho phân đoạn này (Phương án 3: Kịch truyền thanh)
-        chosen_voice_id = clean_id
-        if multi_voice and seg["is_dialogue"]:
-            if seg["gender"] == "female" and default_gender == "Nam" and female_voice_id:
-                chosen_voice_id = female_voice_id
-            elif seg["gender"] == "male" and default_gender == "Nữ" and male_voice_id:
-                chosen_voice_id = male_voice_id
-                
-        engine = get_sherpa_engine(chosen_voice_id) or get_sherpa_engine(clean_id)
-        if not engine:
-            engine = get_sherpa_engine(clean_id)
-            if not engine:
-                raise ValueError(f"Giọng offline '{voice_id}' chưa được tải về máy!")
 
-        # Phương án 2: Tinh chỉnh nhịp điệu theo ngữ cảnh & cảm xúc
-        seg_speed = safe_speed
-        if seg["is_dialogue"]:
-            if seg["emotion"] == "excited":
-                seg_speed = min(2.0, safe_speed * 1.06)
-            elif seg["emotion"] == "trailing":
-                seg_speed = max(0.5, safe_speed * 0.94)
-            elif seg["emotion"] == "question":
-                seg_speed = safe_speed * 1.02
+        target_sid = current_sid
+        pitch_shift = 0.0
+        dsp_speed = 1.0
+
+        if multi_voice and s_seg["is_dialogue"]:
+            gender = s_seg.get("gender", "neutral")
+            seg_lower = seg_text.lower()
+
+            # Phân vai chỉ đúng 2 giọng nhân vật thoại theo giới tính (Nam & Nữ):
+            # Tuyệt đối không đột biến sang giọng người già/trẻ em
+            if gender == "female":
+                target_sid = 1  # Minh Anh (Nữ chính)
+            elif gender == "male":
+                target_sid = 2  # Quang Huy (Nam chính)
+            else:
+                target_sid = 2 if any(w in seg_lower for w in ("ta", "huynh", "anh", "hắn", "chàng", "đệ", "ông")) else 1
+
+        # Lấy thông số DSP theo target_sid
+        if is_kokoro:
+            sub_info = next((sv for sv in KOKORO_SUBVOICES if sv["sid"] == target_sid or sv.get("base_sid") == target_sid), None)
+            if sub_info:
+                pitch_shift = sub_info.get("pitch_shift", 0.0)
+                dsp_speed = sub_info.get("speed_factor", 1.0)
+                model_sid = sub_info.get("base_sid", target_sid)
+            else:
+                model_sid = target_sid if target_sid < 14 else 13
         else:
-            seg_speed = safe_speed * 0.98
+            sub_info = next((sv for sv in VIENEU_SUBVOICES if sv["sid"] == target_sid), None)
+            if sub_info:
+                pitch_shift = sub_info.get("pitch_shift", 0.0)
+                dsp_speed = sub_info.get("speed_factor", 1.0)
+            model_sid = sub_info.get("base_sid", target_sid) if sub_info else (target_sid if target_sid in (0, 1, 2, 3, 4) else 0)
 
-        part_audio = engine.generate(seg_text, sid=0, speed=seg_speed)
+        is_trailing = (s_seg.get("emotion") == "trailing" or seg_text.endswith("…") or seg_text.endswith("..."))
+        base_speed = safe_speed
+        if s_seg["is_dialogue"]:
+            if s_seg["emotion"] == "excited":
+                base_speed = min(2.2, base_speed * 1.05)
+            elif s_seg["emotion"] == "trailing":
+                base_speed = max(0.5, base_speed * 0.93)
+            elif s_seg["emotion"] == "question":
+                base_speed = base_speed * 1.02
+        else:
+            base_speed = base_speed * 0.99
+        part_audio = engine.generate(seg_text, sid=model_sid, speed=base_speed)
         if part_audio and len(part_audio.samples) > 0:
             final_sample_rate = part_audio.sample_rate
-            all_samples.extend(part_audio.samples)
-            
-            # Khoảng nghỉ ngữ cảnh tự nhiên (Contextual Pause)
-            if idx < len(segments) - 1:
-                next_seg = segments[idx + 1]
-                if seg["is_dialogue"] != next_seg["is_dialogue"]:
-                    pause_ms = 0.12
-                elif seg["emotion"] == "trailing":
-                    pause_ms = 0.25
-                else:
-                    pause_ms = 0.08
-                all_samples.extend([0.0] * int(final_sample_rate * pause_ms))
+            # Giữ trọn vẹn độ ngân đuôi câu không bị cắt cụt
+            clean_samples = _apply_smooth_fade(part_audio.samples, final_sample_rate, fade_ms=8, is_trailing=is_trailing)
+            # Áp dụng DSP Pitch Shift và Time-Stretching chuyên sâu (ví dụ: ông lão chậm rãi 0.76x)
+            if pitch_shift != 0.0 or dsp_speed != 1.0:
+                clean_samples = apply_dsp_voice_profile(clean_samples, final_sample_rate, pitch_shift=pitch_shift, speed_factor=dsp_speed)
+            all_samples.extend(clean_samples)
+
+        # Khoảng nghỉ tự nhiên
+        if idx < len(story_segments) - 1:
+            next_seg = story_segments[idx + 1]
+            pause_sec = 0.16 if (s_seg["is_dialogue"] != next_seg["is_dialogue"]) else 0.10
+            all_samples.extend([0.0] * int(final_sample_rate * pause_sec))
 
     if not all_samples:
         return None
 
+    # BẢO TỒN ĐỘ TRONG TRẺO NGUYÊN BẢN (CRYSTAL CLEAR BIT-PERFECT SCALING):
+    # Dùng chuẩn hóa đỉnh tuyến tính (Linear Peak 0.84) giống hệt các file mẫu Master
+    # Tuyệt đối không can thiệp dải nén (knee compression) để âm sắc trong vắt, không rè, không đục
+    import numpy as np
+    arr = np.asarray(all_samples, dtype=np.float32)
+    if len(arr) > 0:
+        peak = float(np.max(np.abs(arr)))
+        if peak > 1e-4:
+            target_peak = 0.84
+            arr = arr * (target_peak / peak)
+        arr = np.clip(arr, -0.98, 0.98)
+        norm_samples = arr.tolist()
+    else:
+        norm_samples = all_samples
+
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
         tmp_name = tmp.name
     try:
-        sherpa_onnx.write_wave(tmp_name, all_samples, final_sample_rate)
+        sherpa_onnx.write_wave(tmp_name, norm_samples, final_sample_rate)
         with open(tmp_name, "rb") as f:
             data = f.read()
         return data
@@ -725,4 +1302,13 @@ def synthesize_offline(text, voice_id, speed=1.0, multi_voice=True):
             except Exception:
                 pass
 
+def _warmup_background():
+    """Tải trước mô hình đa giọng VieNeu vào RAM"""
+    try:
+        if is_voice_downloaded("vieneu_multispeaker"):
+            get_sherpa_engine("vieneu_multispeaker")
+    except Exception:
+        pass
+
+threading.Thread(target=_warmup_background, daemon=True).start()
 
