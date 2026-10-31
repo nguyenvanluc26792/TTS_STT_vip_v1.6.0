@@ -1,12 +1,7 @@
 {
-  "version": "v1.6.167",
-  "build": 340,
-  "release_date": "2026-10-31",
-  "description": "Bản vá khôi phục phản hồi nút bấm giao diện v1.6.167 (Build 340): Cố định 2 giọng thoại Nam/Nữ nguyên bản, chống biến dạng pitch shift, chọn giọng theo tên nhân vật.",
-  "download_url": "https://memorial-stones-dear-watson.trycloudflare.com/static/ota_update_v1.6.167.zip",
-  "download_url_direct": "/static/ota_update_v1.6.167.zip",
-  "sha256": "0addf57a443cc334336619586d3218650a93fcca7298e760ac318184953e304c",
-  "size": 178261,
-  "index_sha256": "585dd76d7a5a179355494facbb66f22818311ee510c482287214daf376f74922",
-  "index_size": 832060
+  "version": "v1.6.168",
+  "build": 341,
+  "sha256": "05ce78e0d19d545831201640986cf0234fcca7724b412439f35f3f0a113da788",
+  "zip_url": "/static/ota_update_v1.6.168.zip",
+  "changelog": "Fix JavaScript syntax error (Identifier mode redeclared) restoring all button clicks & UI interactions."
 }

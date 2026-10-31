@@ -1,0 +1,7 @@
+{
+  "version": "v1.6.168",
+  "build": 341,
+  "sha256": "05ce78e0d19d545831201640986cf0234fcca7724b412439f35f3f0a113da788",
+  "zip_url": "/static/ota_update_v1.6.168.zip",
+  "changelog": "Fix JavaScript syntax error (Identifier mode redeclared) restoring all button clicks & UI interactions."
+}

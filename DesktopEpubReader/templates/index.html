@@ -13844,10 +13844,6 @@ body.zen-mode #nrFabAdd {
       if (customVoiceId && customVoiceId.trim()) {
         return customVoiceId.trim();
       }
-      const mode = getVoiceMode();
-      if (mode === 'single') {
-        return baseVoiceId;
-      }
       // ƯU TIÊN TUYỆT ĐỐI giọng người dùng đã chọn riêng cho từng vai (Mode 1):
       // ĐẢM BẢO CHỈ DUY NHẤT 3 LOẠI GIỌNG: Dẫn truyện, Thoại Nam, Thoại Nữ
       const userMale = localStorage.getItem('reader_voice_male');
@@ -17142,7 +17138,7 @@ body.zen-mode #nrFabAdd {
     // ==========================================
     const DEFAULT_OTA_3G_URL = 'https://memorial-stones-dear-watson.trycloudflare.com';
     const DEFAULT_OTA_WIFI_URL = 'http://192.168.1.204:5000';
-    const CURRENT_APP_VERSION = 'v1.6.167';
+    const CURRENT_APP_VERSION = 'v1.6.168';
     const CURRENT_APP_BUILD = 340;
 
     async function autoSilentOtaCheck() {
